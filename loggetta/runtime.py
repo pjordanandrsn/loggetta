@@ -85,11 +85,12 @@ def execute(plan: ExecutionPlan, *, out_dir: str | None = None, seed: int = 0, l
 
 
 def load_observations(path: str | None) -> list:
-    """Receipts in ``path`` (a directory of ``*.json``), newest first, for the planner to learn runtime overheads from."""
+    """Receipts in ``path`` (a directory of ``*.json``), newest first by their recorded start time, for the planner to
+    learn runtime overheads from."""
     if not path or not os.path.isdir(path):
         return []
     out = []
-    for name in sorted(os.listdir(path), reverse=True):
+    for name in os.listdir(path):
         if name.endswith(".json"):
             try:
                 with open(os.path.join(path, name)) as f:
@@ -98,7 +99,8 @@ def load_observations(path: str | None) -> list:
                 continue
             if r.get("schema") == RECEIPT_SCHEMA:
                 out.append(r)
-    return out
+    return sorted(out, key=lambda r: (r.get("provenance", {}).get("started_at") or "", r.get("run_id") or ""),
+                  reverse=True)
 
 
 def summarize(receipt: dict) -> str:
