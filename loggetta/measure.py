@@ -17,10 +17,13 @@ import time
 
 
 class DriverMemorySampler:
-    """Peak driver-reported device memory of THIS process, sampled every ``interval`` seconds."""
+    """Peak driver-reported device memory of THIS process, and its peak anonymous / file-backed host RSS, sampled
+    every ``interval`` seconds. VmHWM alone overstates what a run NEEDS from the host: memory-mapped checkpoint shards
+    count in it as file-backed pages the kernel can reclaim; ``RssAnon`` is the part that cannot be."""
 
     def __init__(self, interval: float = 0.25):
         self.interval, self.peak, self.samples = interval, 0, 0
+        self.anon_peak, self.file_peak = 0, 0
         self._stop = threading.Event()
         self._smi = shutil.which("nvidia-smi")
         self._t = threading.Thread(target=self._run, daemon=True)
@@ -38,16 +41,18 @@ class DriverMemorySampler:
     def _run(self):
         while not self._stop.is_set():
             try:
-                v = self._read()
+                v = self._read() if self._smi else None
             except (subprocess.SubprocessError, OSError):
                 v = None
             if v is not None:
                 self.peak, self.samples = max(self.peak, v), self.samples + 1
+            st = proc_status()
+            self.anon_peak = max(self.anon_peak, st.get("RssAnon", 0))
+            self.file_peak = max(self.file_peak, st.get("RssFile", 0))
             self._stop.wait(self.interval)
 
     def __enter__(self):
-        if self._smi:
-            self._t.start()
+        self._t.start()
         return self
 
     def __exit__(self, *exc):
@@ -62,7 +67,7 @@ def proc_status() -> dict:
         with open("/proc/self/status") as f:
             for line in f:
                 k, _, v = line.partition(":")
-                if k in ("VmHWM", "VmRSS"):
+                if k in ("VmHWM", "VmRSS", "RssAnon", "RssFile"):
                     out[k] = int(v.split()[0]) * 1024
     except OSError:
         pass
@@ -70,9 +75,14 @@ def proc_status() -> dict:
 
 
 def git_commit(path) -> dict:
-    """``{"commit", "dirty"}`` for the git checkout containing ``path``, or ``{}`` when it is not one (an installed wheel)."""
+    """``{"commit", "branch", "dirty"}`` for the git checkout that TRACKS ``path``, or ``{}`` (an installed wheel, or a
+    file that merely sits inside some enclosing repository -- reporting that repository's commit would be false)."""
     d = os.path.dirname(os.path.abspath(path))
     try:
+        tracked = subprocess.run(["git", "-C", d, "ls-files", "--error-unmatch", os.path.abspath(path)],
+                                 capture_output=True, text=True, timeout=10)
+        if tracked.returncode:
+            return {}
         sha = subprocess.run(["git", "-C", d, "rev-parse", "HEAD"], capture_output=True, text=True, timeout=10)
         if sha.returncode:
             return {}

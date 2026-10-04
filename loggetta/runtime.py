@@ -32,14 +32,18 @@ def _executor(backend: str):
 
 def compare(plan: ExecutionPlan, measured: dict) -> dict:
     lines = plan.selected.lines
-    ctx = sum(ln.bytes for ln in lines if ln.where == "device" and ln.name.startswith("CUDA context"))
+    ctx = sum(ln.bytes for ln in lines if ln.where == "device"
+              and ln.name.startswith(("CUDA context", "allocator reserve")))
     est_alloc = plan.selected.device_bytes - ctx
     out = {"device_allocator": {"estimated": est_alloc, "measured": measured.get("device_peak_bytes"),
-                                "what": "PyTorch allocator peak during training vs the estimate without the context line"},
+                                "what": "PyTorch allocator peak during training vs the estimate without the context and reserve lines"},
            "device_driver": {"estimated": plan.selected.device_bytes, "measured": measured.get("driver_process_peak_bytes"),
                              "what": "driver-reported process peak vs the full device estimate"},
-           "host": {"estimated": plan.selected.host_bytes, "measured": measured.get("host_peak_bytes"),
-                    "what": "peak resident set (VmHWM, includes load transients) vs the host estimate"}}
+           "host": {"estimated": plan.selected.host_bytes,
+                    "measured": measured.get("host_anon_peak_bytes") or measured.get("host_peak_bytes"),
+                    "what": ("peak anonymous RSS (file-backed checkpoint pages excluded; load transients included) "
+                             "vs the host estimate") if measured.get("host_anon_peak_bytes") else
+                            "peak resident set (VmHWM: includes mapped checkpoint pages and load transients)"}}
     for v in out.values():
         if v["measured"] is not None:
             v["residual"] = v["measured"] - v["estimated"]

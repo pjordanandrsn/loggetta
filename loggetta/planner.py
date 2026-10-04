@@ -25,23 +25,36 @@ def headroom_policy(budget: int) -> int:
     return max(HEADROOM_MIN, int(HEADROOM_FRAC * budget))
 
 
+DEFAULT_RESERVE_FRAC = 0.20
+
+
 def _overheads(hardware, gpu, observations):
-    """Runtime costs the backends' estimates exclude: the CUDA context (device) and the process baseline (host)."""
+    """Runtime costs the backends' estimates exclude, preferring measurements from receipts for this GPU + driver:
+    the CUDA context (device), the allocator's reserved-but-unallocated blocks as a fraction of the allocator peak
+    (device), and the process's own host baseline. Returns (device lines, host lines, reserve fraction, its line meta)."""
     key = (gpu.name if gpu else None, gpu.driver.value if gpu else None)
     for obs in observations:
         m = obs.get("measured", {})
         g = obs.get("hardware", {}).get("gpu", {})
-        if (g.get("name"), g.get("driver")) == key and m.get("cuda_context_bytes") is not None:
-            src = f"receipt {obs.get('run_id')}"
-            return ([MemoryLine("CUDA context + library workspaces", "device", int(m["cuda_context_bytes"]), "measured",
-                                f"{src}: driver-reported process peak minus allocator reserved peak")],
-                    [MemoryLine("process baseline (torch, CUDA, libraries)", "host",
-                                int(m.get("host_baseline_bytes") or DEFAULT_HOST_BASELINE),
-                                "measured" if m.get("host_baseline_bytes") else "inferred", src)])
+        if (g.get("name"), g.get("driver")) != key or m.get("cuda_context_bytes") is None:
+            continue
+        src = f"receipt {obs.get('run_id')}"
+        alloc, reserved = m.get("device_peak_bytes"), m.get("device_reserved_peak_bytes")
+        frac = (reserved - alloc) / alloc if alloc and reserved else DEFAULT_RESERVE_FRAC
+        base = m.get("host_anon_after_load_bytes") if obs.get("setup", {}).get("expert_residency") == "device" else None
+        return ([MemoryLine("CUDA context + library workspaces", "device", max(0, int(m["cuda_context_bytes"])),
+                            "measured", f"{src}: driver-reported process peak minus allocator reserved peak")],
+                [MemoryLine("process baseline (torch, CUDA, libraries, model objects)", "host",
+                            int(base or m.get("host_baseline_bytes") or DEFAULT_HOST_BASELINE),
+                            "measured" if (base or m.get("host_baseline_bytes")) else "inferred",
+                            f"{src}: anonymous RSS after load" if base else src)],
+                frac, ("measured", f"{src}: reserved peak / allocated peak - 1 = {frac:.3f}"))
     return ([MemoryLine("CUDA context + library workspaces", "device", DEFAULT_CUDA_CONTEXT, "inferred",
                         "default; no receipt on file measured this GPU + driver")],
-            [MemoryLine("process baseline (torch, CUDA, libraries)", "host", DEFAULT_HOST_BASELINE, "inferred",
-                        "default; no receipt on file measured this host")])
+            [MemoryLine("process baseline (torch, CUDA, libraries, model objects)", "host", DEFAULT_HOST_BASELINE,
+                        "inferred", "default; no receipt on file measured this host")],
+            DEFAULT_RESERVE_FRAC, ("inferred", f"default {DEFAULT_RESERVE_FRAC:.0%} of the allocator estimate; "
+                                               "no receipt on file measured this GPU + driver"))
 
 
 #: PCIe payload bandwidth per lane, GB/s, by generation (after line coding): the theoretical ceiling, never achieved
@@ -144,7 +157,7 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
         return refuse([f"no installed backend plans {workload.kind!r} workloads yet "
                        f"(backends: {', '.join(b.NAME for b in backends)}; they plan {sorted({w for b in backends for w in b.WORKLOADS})})"])
 
-    dev_over, host_over = _overheads(hardware, gpu, observations)
+    dev_over, host_over, reserve_frac, reserve_meta = _overheads(hardware, gpu, observations)
     link_gbps, link_basis, link_src = link_bandwidth(gpu, observations)
     cands, statuses = [], {}
     for b in usable:
@@ -159,7 +172,10 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
                 reasons.append(f"{b.NAME}: kernel {k} not usable here: {why}")
         for setup in b.candidates(topology, workload, constraints, st):
             raw, unmodelled, refusals = b.estimate(topology, setup, workload)
-            lines = tuple(MemoryLine(*r) for r in raw) + tuple(dev_over) + tuple(host_over)
+            alloc = sum(r[2] for r in raw if r[1] == "device")
+            reserve = MemoryLine("allocator reserve (cached, unallocated blocks)", "device", int(reserve_frac * alloc),
+                                 reserve_meta[0], reserve_meta[1])
+            lines = tuple(MemoryLine(*r) for r in raw) + (reserve,) + tuple(dev_over) + tuple(host_over)
             dev = sum(ln.bytes for ln in lines if ln.where == "device")
             host = sum(ln.bytes for ln in lines if ln.where == "host")
             rejected = list(refusals)
@@ -201,7 +217,8 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
         why = [f"{closest.label()}: " + "; ".join(closest.rejected)]
         if not valid:
             why = sorted({r for c in infeasible for r in c.rejected})
-        suggestions = _suggest(topology, workload, constraints, budget, closest, usable, statuses, dev_over, host_over)
+        suggestions = _suggest(topology, workload, constraints, budget, closest, usable, statuses, dev_over, host_over,
+                               reserve_frac)
         return ExecutionPlan(status="refused", selected=None, alternatives=tuple(infeasible), reasons=tuple(reasons),
                              warnings=tuple(warnings), performance=perf,
                              refusal={"reasons": why, "closest": closest.label(),
@@ -249,7 +266,8 @@ def _explain(sel, feasible, infeasible, budget, status, backend, constraints):
     return out
 
 
-def _suggest(topology, workload, constraints, budget, closest, backends, statuses, dev_over, host_over):
+def _suggest(topology, workload, constraints, budget, closest, backends, statuses, dev_over, host_over,
+             reserve_frac=DEFAULT_RESERVE_FRAC):
     out = []
     dev_short = closest.device_bytes + budget["headroom"] - budget["device"]
     if dev_short > 0:
@@ -264,7 +282,7 @@ def _suggest(topology, workload, constraints, budget, closest, backends, statuse
                 if setup["expert_residency"] != "host":
                     continue
                 raw, _, refusals = b.estimate(topology, setup, workload)
-                dev = sum(r[2] for r in raw if r[1] == "device") + sum(x.bytes for x in dev_over)
+                dev = int((1 + reserve_frac) * sum(r[2] for r in raw if r[1] == "device")) + sum(x.bytes for x in dev_over)
                 host = sum(r[2] for r in raw if r[1] == "host") + sum(x.bytes for x in host_over)
                 if not refusals and dev + budget["headroom"] <= budget["device"] and host <= budget["host"]:
                     out.append(f"allow host-backed experts: {dev / GiB:.2f} GiB device + {host / GiB:.2f} GiB host fits")
@@ -280,7 +298,7 @@ def _suggest(topology, workload, constraints, budget, closest, backends, statuse
             t //= 2
             w = Workload(**{**workload.__dict__, "seq_len": t, "micro_batch": 1})
             raw, _, refusals = b.estimate(topology, closest.setup, w)
-            dev = sum(r[2] for r in raw if r[1] == "device") + sum(x.bytes for x in dev_over)
+            dev = int((1 + reserve_frac) * sum(r[2] for r in raw if r[1] == "device")) + sum(x.bytes for x in dev_over)
             if not refusals and dev + budget["headroom"] <= budget["device"]:
                 out.append(f"reduce tokens per micro-batch to {t} (seq x micro-batch) with the same setup")
                 break

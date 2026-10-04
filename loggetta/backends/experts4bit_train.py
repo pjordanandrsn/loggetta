@@ -89,6 +89,7 @@ def run(plan, *, seed: int = 0, warmup: int = 2, log=print) -> dict:
                                       revision=plan.model.get("revision"))
         meas["load_seconds"] = time.time() - t0
         meas["load_device_peak_bytes"] = torch.cuda.max_memory_allocated()
+        meas["host_anon_after_load_bytes"] = proc_status().get("RssAnon")
         out = train_loop(prep.model, prep.trainable, plan.model["model"], plan.workload, smi, meas,
                          revision=plan.model.get("revision"), seed=seed, warmup=warmup, log=log)
     out["engaged"] = prep.report
@@ -149,6 +150,8 @@ def train_loop(model, trainable, model_id, w, smi, meas, *, revision=None, seed=
     if smi.peak:
         meas["cuda_context_bytes"] = smi.peak - meas["device_reserved_peak_bytes"]
     meas["host_peak_bytes"] = proc_status().get("VmHWM")
+    meas["host_anon_peak_bytes"] = smi.anon_peak or None
+    meas["host_file_peak_bytes"] = smi.file_peak or None
     timed = step_s[warmup:] or step_s
     meas.update(step_seconds=step_s, s_per_step_median=statistics.median(timed),
                 tokens_per_s=w.tokens_per_microbatch * w.grad_accum / statistics.median(timed),
