@@ -62,18 +62,27 @@ PCIE_LANE_GBPS = {1: 0.25, 2: 0.5, 3: 0.985, 4: 1.969, 5: 3.938, 6: 7.563}
 
 
 def reserve_fraction(gpu, setup, observations, default):
-    """Allocator reserve slack (reserved peak / allocated peak - 1) for a candidate: from a receipt on this GPU with the
-    same expert residency and kernel if one exists (slack depends on the allocation pattern: offload's per-layer staging
-    leaves more cached blocks), else any receipt on this GPU, else ``default``. Returns (fraction, basis, source)."""
+    """Allocator reserve slack (reserved peak / allocated peak - 1) for a candidate.
+
+    From a receipt on this GPU with the same expert residency and kernel when one exists: slack depends on the allocation
+    pattern (offload's per-layer staging leaves more cached blocks). A candidate without one gets the LARGEST slack
+    measured on this GPU, labelled conservative. Borrowing a smaller figure from another setup would make the unmeasured
+    candidate look cheaper than the measured one and bias the choice toward whatever has not been run yet. With no receipt
+    on this GPU, ``default``. Returns (fraction, basis, source)."""
+    def frac(o):
+        m = o["measured"]
+        return m["device_reserved_peak_bytes"] / m["device_peak_bytes"] - 1
+
     same_gpu = [o for o in observations if o.get("hardware", {}).get("gpu", {}).get("name") == gpu.name
                 and o.get("measured", {}).get("device_peak_bytes") and o.get("measured", {}).get("device_reserved_peak_bytes")]
-    for pool, how in (([o for o in same_gpu if {k: o.get("setup", {}).get(k) for k in ("expert_residency", "expert_kernel")}
-                        == {k: setup.get(k) for k in ("expert_residency", "expert_kernel")}], "same residency and kernel"),
-                      (same_gpu, "same GPU, different setup")):
-        if pool:
-            m = pool[0]["measured"]
-            frac = m["device_reserved_peak_bytes"] / m["device_peak_bytes"] - 1
-            return frac, "measured", f"receipt {pool[0].get('run_id')} ({how}): reserved / allocated peak - 1 = {frac:.3f}"
+    key = ("expert_residency", "expert_kernel")
+    match = [o for o in same_gpu if {k: o.get("setup", {}).get(k) for k in key} == {k: setup.get(k) for k in key}]
+    if match:
+        return frac(match[0]), "measured", f"receipt {match[0].get('run_id')} (same residency and kernel): reserved / allocated peak - 1 = {frac(match[0]):.3f}"
+    if same_gpu:
+        worst = max(same_gpu, key=frac)
+        return frac(worst), "measured", (f"no receipt for this setup; the largest slack measured on this GPU, receipt "
+                                         f"{worst.get('run_id')} = {frac(worst):.3f} (conservative)")
     return default[0], default[1], default[2]
 
 

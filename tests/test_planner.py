@@ -203,3 +203,15 @@ def test_reserve_slack_comes_from_the_matching_setup(topo):
     assert p.selected.setup["expert_residency"] == "device"
     assert "dev-run" in line.detail and abs(line.bytes / sum(ln.bytes for ln in p.selected.lines if ln.where == "device"
                                                              and ln.basis in ("derived", "heuristic")) - 0.2) < 1e-3
+
+
+def test_an_unmeasured_setup_gets_the_conservative_slack(topo):
+    def rec(rid, residency, alloc, reserved):
+        return {"schema": "execution-receipt/1", "run_id": rid, "status": "OK",
+                "hardware": {"gpu": {"name": "Test GPU", "driver": "575.64.05"}},
+                "setup": {"expert_residency": residency, "expert_kernel": "grouped_nf4"},
+                "measured": {"cuda_context_bytes": 100 << 20, "device_peak_bytes": alloc, "device_reserved_peak_bytes": reserved}}
+    obs = [rec("dev-run", "device", 100, 110), rec("host-run", "host", 100, 140)]
+    p = plan(topo, hw(), Workload(seq_len=512), Constraints(fixed={"expert_kernel": "reference"}), observations=obs)
+    line = next(ln for ln in p.selected.lines if ln.name.startswith("allocator reserve"))
+    assert "conservative" in line.detail and "host-run" in line.detail
