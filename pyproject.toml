@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+# PRIVATE INCUBATION. Not for any package index. The distribution and import name are a working name: nothing
+# serialized depends on it (tests/test_renameable.py), so a rename is this file + the package directory.
+[project]
+name = "loggetta"
+version = "0.0.1"
+description = "A planning layer for MoE training and serving: decide how a workload runs on this machine, and why, before loading anything."
+requires-python = ">=3.10"
+license = "MIT"
+# The core (hardware inventory, plan types, planner policy) is pure Python. Everything model- or kernel-shaped
+# comes from the backend packages, which stay independently installable and usable on their own.
+dependencies = []
+
+[project.optional-dependencies]
+# experts4bit-qlora >= the release carrying `recipe` and `arch.topology` (not released yet: install the branch);
+# grouped-nf4-gemm >= the release carrying `nf4_route.route_for`.
+experts4bit = ["experts4bit-qlora[train,fast]", "grouped-nf4-gemm", "datasets"]
+test = ["pytest>=7"]
+
+[project.scripts]
+loggetta = "loggetta.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["loggetta*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["gpu: needs a CUDA device and downloads/loads a real model"]
