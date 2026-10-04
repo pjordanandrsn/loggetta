@@ -35,10 +35,13 @@ def main():
     ap.add_argument("--seq", type=int, default=2048)
     ap.add_argument("--out", default=os.path.join(os.path.dirname(__file__), "family_sweep.json"))
     ap.add_argument("--models", nargs="*", default=MODELS)
+    ap.add_argument("--observations", help="receipt directory measured on the profiled machine")
     a = ap.parse_args()
     from loggetta import Workload, describe_model, plan
     from loggetta.hardware import HardwareProfile
+    from loggetta.runtime import load_observations
 
+    obs = load_observations(a.observations)
     hw = HardwareProfile.from_dict(json.load(open(a.hardware)), origin=os.path.basename(a.hardware))
     rows, texts = [], []
     for m in a.models:
@@ -50,7 +53,7 @@ def main():
                        moe_layers=len(topo.expert_stacks), n_layers=topo.n_layers,
                        attention_layers=topo.attention.layers if topo.attention else None,
                        expert_bias=list(topo.expert_bias_tensors), loader_refusal=topo.loader_refusal)
-            p = plan(topo, hw, Workload(seq_len=a.seq))
+            p = plan(topo, hw, Workload(seq_len=a.seq), observations=obs)
             row.update(status=p.status, seconds=round(time.time() - t0, 2))
             if p.status == "feasible":
                 row.update(selected=p.selected.setup, device_gib=round(p.selected.device_bytes / 2**30, 2),
