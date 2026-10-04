@@ -64,8 +64,17 @@ predicted no times. The one number it can derive for host residency is a **lower
 | R3b host offload (fixed host metric, matching-setup slack) | 2.09 / 2.31 | 3.04 / 3.33 | 4.04 / 5.05 (anon + pinned) |
 | R4 resident, reference loop | 5.26 / 5.27 | 7.42 / 6.28 (slack from a non-matching setup; fixed after) | 0.70 / 1.50 |
 | R5 granite-3.1-3b (second family) | 3.04 / 3.09 | 4.34 / 3.93 | 0.70 / 1.86 |
+| R6 granite-4.0-h-tiny (Mamba hybrid) | 6.62 / 6.69 | 8.26 / 7.41 | 0.70 / 2.79 |
 
 All values GiB.
+
+- **The allocator column is the estimator's own accuracy:** +0.01 to +0.21 GiB across six runs, three families,
+  resident and offload.
+- **The driver column adds the planner's learned overheads,** and it is only as good as the receipts available
+  when the plan was made. R4 and R6 over-estimate it: R4 borrowed host-run slack before the matching-setup fix, and
+  R6's granite slack (8.3%) is much lower than OLMoE's (22%).
+- **The host column under-estimates when the baseline is borrowed from another model's receipt.** The load
+  transient is listed as not modelled.
 
 **What the measurements taught the planner during the session.** Each item changed code, and each change is a
 commit:
@@ -102,28 +111,31 @@ scale, not a precise one;** receipts are how it gets better.
 
 ## 4. Model families
 
-**Planned with no per-family code anywhere in the planner** (`bench/family_sweep.py`, seat hardware profile,
-QLoRA at seq 2048):
+**Planned with no per-family code anywhere in the planner.** Final sweep: `bench/family_sweep.py`, the seat's
+hardware profile, every receipt above as observations, QLoRA at seq 2048 × micro-batch 1, experts4bit-qlora over
+#1048.
 
-| model (model_type) | outcome on the A2000 |
+| model (model_type) | outcome on the A2000 (10.65 GiB free, 21.9 GiB host available) |
 |---|---|
-| OLMoE-1B-7B (olmoe) | feasible: resident, grouped NF4 |
-| Qwen3-30B-A3B (qwen3_moe) | feasible after the pageable-host axis: host-resident pageable experts, about 18 GiB host. Pinned power-of-two homes would need more host RAM than is free now |
-| Qwen3.6-35B-A3B (qwen3_5_moe; 10 of 40 layers attention) | refused at seq 2048: device short by about 3.5 GiB. Suggests "reduce tokens per micro-batch to 512" |
-| granite-3.1-3b-a800m (granitemoe, pre-fused legacy spelling) | feasible, resident; **run for real** (R5) |
-| granite-4.0-h-tiny (granitemoehybrid: Mamba + 4 attention layers) | feasible, resident; the non-attention mixers are listed as not modelled; run in R6 |
-| LFM2-8B-A1B (lfm2_moe; out_proj attention) | feasible; attention LoRA turned off by policy, with the reason |
-| Mixtral-8x7B (mixtral) | refused: host short |
-| ERNIE-4.5-21B-A3B (ernie4_5_moe, admitted by convention) | feasible: host-resident experts |
-| DeepSeek-V2-Lite (deepseek_v2, MLA) | feasible with attention LoRA off: the detector cannot describe MLA |
-| gpt-oss-20b (gpt_oss) | refused by structure: biased experts cannot take ExpertsLoRA, and biased attention cannot go NF4 |
+| OLMoE-1B-7B (olmoe) | feasible: resident, grouped NF4, 6.45 GiB; **run** (R1–R4) |
+| Qwen3-30B-A3B (qwen3_moe) | refused by 0.58 GiB of device memory with host-resident pageable experts. Suggests **"reduce tokens per micro-batch to 1024"**, which agrees with the register's A2000 run at 555 tokens |
+| Qwen3.6-35B-A3B (qwen3_5_moe; 10 of 40 layers attention) | refused: device short by 8.2 GiB (248k-entry vocabulary: embeddings + logits). Suggests 256 tokens |
+| granite-3.1-3b-a800m (granitemoe, pre-fused legacy spelling) | feasible, resident, 4.06 GiB; **run** (R5) |
+| granite-4.0-h-tiny (granitemoehybrid: Mamba + 4 attention layers) | feasible, resident, 8.50 GiB; non-attention mixers listed as not modelled; **run** (R6): allocator estimate +0.07 GiB off |
+| LFM2-8B-A1B (lfm2_moe) | feasible, resident. Before #1048 the detector found no attention and the planner turned attention LoRA off with a reason; after #1048 (out_proj attention support) it trains attention, with no planner change |
+| Mixtral-8x7B (mixtral) | refused: host short by 2.5 GiB even with pageable homes |
+| ERNIE-4.5-21B-A3B (ernie4_5_moe, admitted by convention) | feasible: host-resident pinned experts, 12.1 GiB host |
+| DeepSeek-V2-Lite (deepseek_v2, MLA) | feasible with attention LoRA off: the detector cannot describe MLA, said in the plan |
+| gpt-oss-20b (gpt_oss) | refused by structure: biased experts cannot take ExpertsLoRA |
 
-**What the sweep forced.**
+**What the sweep forced.** Fixes made during the session:
 - Two refusals were added in experts4bit-qlora: attention that cannot be described (MLA) and attention with no
   wrappable projections (LFM2). Without them, DeepSeek-V2 would have crashed in `add_attention_lora`, and LFM2
   would have "trained attention" with zero adapters.
 - A not-modelled note was added for non-attention mixers.
 - A `pin` axis was added to the planner.
+- An unmeasured setup takes the largest reserve slack measured on the GPU (conservative). Borrowing a smaller
+  figure had made the sweep pick Qwen3-30B's reference-kernel candidate only because it had not been measured.
 
 None of these is a family-name branch.
 
@@ -154,3 +166,43 @@ None of these is a family-name branch.
 - experts4bit-qlora's base moved during the session while main was merging, including #1048. R1–R5 ran on the
   branch over `2631d3d7` (`fa324db3`, or `65ddf4a6` for R2's same code over `5c74564e`); R3b onward over
   `520b0b5d` (`f0af2b3d`).
+
+## Appendix: generated receipt tables
+
+`python bench/summarize_receipts.py runs/receipts` (R1–R6, R3b, the direct arm):
+
+| run | setup | s/step (median, steps 3+) | tokens/s | loss step 1 -> 12 | frozen bytes unchanged | adapters moved | load s |
+|---|---|---|---|---|---|---|---|
+| `OLMoE-1B-7B-0924-device-grouped_nf4-t1024-20261004T173932Z` | device, grouped_nf4 | 2.35 | 436 | 1.8590 -> 1.2240 | True | True | 1893 |
+| `OLMoE-1B-7B-0924-device-grouped_nf4-t1024-20261004T175201Z` | device, grouped_nf4 | 2.13 | 481 | 1.8590 -> 1.2242 | True | True | 12 |
+| `OLMoE-1B-7B-0924-device-reference-t1024-20261004T175624Z` | device, reference | 6.96 | 147 | 1.8580 -> 1.2271 | True | True | 12 |
+| `OLMoE-1B-7B-0924-host-grouped_nf4-t1024-20261004T175357Z` | host, grouped_nf4 | 3.13 | 327 | 1.8590 -> 1.2227 | True | True | 24 |
+| `OLMoE-1B-7B-0924-host-grouped_nf4-t1024-20261004T182135Z` | host, grouped_nf4 | 2.79 | 368 | 1.8590 -> 1.2219 | True | True | 11 |
+| `granite-3.1-3b-a800m-instruct-device-grouped_nf4-t1024-20261` | device, grouped_nf4 | 1.77 | 578 | 1.6382 -> 1.0636 | True | True | 164 |
+| `granite-4.0-h-tiny-device-grouped_nf4-t1024-20261004T183236Z` | device, grouped_nf4 | 2.30 | 446 | 1.5906 -> 0.8898 | True | True | 492 |
+| `direct-OLMoE-1B-7B-0924-device-grouped_nf4-t1024-20261004T17` | device, grouped_nf4 | 2.16 | 475 | 1.8590 -> 1.2203 | True | True | 437 |
+
+| run | allocator est / meas (GiB) | driver est / meas (GiB) | host est / meas (GiB) | measured context, reserve slack | link H2D GB/s | overhead basis in plan |
+|---|---|---|---|---|---|---|
+| `OLMoE-1B-7B-0924-device-grouped_nf4-t1024-20261004T173932Z` | 5.26 / 5.47 | 5.76 / 6.82 | 3.00 / 8.61 | 0.13, 22.2% | n/a | {'CUDA': 'inferred'} |
+| `OLMoE-1B-7B-0924-device-grouped_nf4-t1024-20261004T175201Z` | 5.26 / 5.47 | 6.56 / 6.82 | 0.72 / 1.42 | 0.13, 22.2% | 6.24 | {'allocator': 'measured', 'CUDA': 'measured'} |
+| `OLMoE-1B-7B-0924-device-reference-t1024-20261004T175624Z` | 5.26 / 5.27 | 7.42 / 6.28 | 0.70 / 1.50 | 0.13, 16.6% | 6.22 | {'allocator': 'measured', 'CUDA': 'measured'} |
+| `OLMoE-1B-7B-0924-host-grouped_nf4-t1024-20261004T175357Z` | 2.09 / 2.31 | 2.69 / 3.33 | 4.10 / 1.42 | 0.13, 38.6% | 4.73 | {'allocator': 'measured', 'CUDA': 'measured'} |
+| `OLMoE-1B-7B-0924-host-grouped_nf4-t1024-20261004T182135Z` | 2.09 / 2.31 | 3.04 / 3.33 | 4.04 / 5.05 | 0.13, 38.5% | 6.21 | {'allocator': 'measured', 'CUDA': 'measured'} |
+| `granite-3.1-3b-a800m-instruct-device-grouped_nf4-t1024-20261` | 3.04 / 3.09 | 4.34 / 3.93 | 0.70 / 1.86 | 0.13, 22.8% | 6.14 | {'allocator': 'measured', 'CUDA': 'measured'} |
+| `granite-4.0-h-tiny-device-grouped_nf4-t1024-20261004T183236Z` | 6.62 / 6.69 | 8.26 / 7.41 | 0.70 / 2.79 | 0.17, 8.3% | 6.23 | {'allocator': 'measured', 'CUDA': 'measured'} |
+
+| run | transfer lower bound s/step (basis) | measured s/step | bound holds |
+|---|---|---|---|
+| `OLMoE-1B-7B-0924-host-grouped_nf4-t1024-20261004T175357Z` | 1.16 (measured, 6.24 GB/s) | 3.13 | True |
+| `OLMoE-1B-7B-0924-host-grouped_nf4-t1024-20261004T182135Z` | 1.18 (measured, 6.14 GB/s) | 2.79 | True |
+
+Provenance per run (commit, dirty):
+- `OLMoE-1B-7B-0924-device-grouped_nf4-t1024-20261004T173932Z`: {'experts4bit_qlora': ('b567fc9f25', False), 'loggetta': ('a31ad13c64', True), 'nf4_grouped': ('c420a80ed8', False)}
+- `OLMoE-1B-7B-0924-device-grouped_nf4-t1024-20261004T175201Z`: {'experts4bit_qlora': ('fa324db3a2', False), 'loggetta': ('8c462f710e', False), 'nf4_grouped': ('b48f2e6740', False)}
+- `OLMoE-1B-7B-0924-device-reference-t1024-20261004T175624Z`: {'experts4bit_qlora': ('fa324db3a2', False), 'loggetta': ('acd2cef167', False), 'nf4_grouped': ('b48f2e6740', False)}
+- `OLMoE-1B-7B-0924-host-grouped_nf4-t1024-20261004T175357Z`: {'experts4bit_qlora': ('fa324db3a2', False), 'loggetta': ('8c462f710e', False), 'nf4_grouped': ('b48f2e6740', False)}
+- `OLMoE-1B-7B-0924-host-grouped_nf4-t1024-20261004T182135Z`: {'experts4bit_qlora': ('f0af2b3df8', False), 'loggetta': ('c1a1764fcf', False), 'nf4_grouped': ('b48f2e6740', False)}
+- `granite-3.1-3b-a800m-instruct-device-grouped_nf4-t1024-20261004T180058Z`: {'experts4bit_qlora': ('fa324db3a2', False), 'loggetta': ('fd76c3084b', False), 'nf4_grouped': ('b48f2e6740', False)}
+- `granite-4.0-h-tiny-device-grouped_nf4-t1024-20261004T183236Z`: {'experts4bit_qlora': ('f0af2b3df8', False), 'loggetta': ('c1a1764fcf', False), 'nf4_grouped': ('b48f2e6740', False)}
+- `direct-OLMoE-1B-7B-0924-device-grouped_nf4-t1024-20261004T173932Z`: {'experts4bit_qlora': ('65ddf4a6ba', False), 'loggetta': ('8c462f710e', False), 'nf4_grouped': ('c420a80ed8', False)}
