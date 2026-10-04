@@ -112,6 +112,9 @@ repository name.
 - No schema, environment variable, protocol string, serialized field or lower-layer API carries the name.
 - `tests/test_renameable.py` fails if any of that changes.
 - The two public packages never mention it.
+- Existing receipts name it only in provenance: argv, source file paths and the import-name key of the code that
+  ran. That is the historical record of what executed, correct to keep. A renamed package writes its new name there
+  automatically.
 
 ## What the final standard asks, answered
 
