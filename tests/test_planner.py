@@ -290,3 +290,21 @@ def test_slack_for_an_unmeasured_gpu_transfers_through_an_anchor(topo):
                 and not ln.name.startswith("allocator reserve"))
     assert line.basis == "heuristic" and "transferred" in line.detail and "big-on-5090" in line.detail
     assert abs(line.bytes / alloc - 0.20) < 1e-3
+
+
+def test_serve_slack_prefers_the_receipt_with_the_whole_setup(topo):
+    pytest.importorskip("fp8_paged_attn", reason="needs grouped-nf4-gemm")
+    base = _serve(topo, 4096, 4).selected.setup
+
+    def rec(rid, graphs, reserved):
+        return {"run_id": rid, "status": "OK", "model": {"model": topo.model}, "workload": {"kind": "serve"},
+                "setup": {**base, "graphs": graphs, "buckets": list(base["buckets"])},
+                "hardware": {"gpu": {"name": "Test GPU", "driver": "575.64.05"}},
+                "measured": {"cuda_context_bytes": 200 << 20, "device_peak_bytes": 4 * GiB,
+                             "device_reserved_peak_bytes": reserved}}
+    obs = [rec("eager", False, int(4.4 * GiB)), rec("graphs", True, int(5.0 * GiB))]
+    p = plan(topo, hw(), Workload(kind="serve", context_len=4096, concurrency=4), observations=obs)
+    by = {c.setup["graphs"]: next(ln for ln in c.lines if ln.name.startswith("allocator reserve"))
+          for c in (p.selected,) + p.alternatives}
+    assert by[True].basis == by[False].basis == "measured"
+    assert "receipt graphs" in by[True].detail and "receipt eager" in by[False].detail

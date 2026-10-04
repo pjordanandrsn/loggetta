@@ -1,4 +1,4 @@
-# Results of the first slice (2026-10-04)
+# Results of the first slice and serving v1 (2026-10-04)
 
 **Setup.**
 - Hardware: one RTX A2000 12 GB (sm_86, driver 575.64.05, PCIe link reported at x8). The host is a container
@@ -173,17 +173,71 @@ All values GiB. Integrity is clean on every arm.
 | RTX 5090, host-offload | 9.16; transfer floor 1.04 s (PCIe ceiling) | 10.08; floor **1.58 s** (measured 20.8 GB/s) | 9.41; step **2.00 s** |
 | RTX A2000, resident | 24.08 (Granite-4's 8.3%, same GPU) | 24.96 (Qwen3's 8.3% × anchor 0.222/0.150 = 12.3%) | not run: refused both times, the card has 12 GB |
 
-The 5090 resident prediction moved from 2.7 GiB high to 0.2 GiB of the measured process peak. On the A2000 the
+The 5090 resident prediction moved from 2.7 GiB high to 0.2 GiB of the measured process peak. (Rerun after section
+6's tie rule, the A2000 "before" reads 25.93: the largest same-setup slack on that card, OLMoE's 22.2%, instead of
+the first one found.) On the A2000 the
 30B slack is now an explicit transfer rather than another model's figure. It is labelled heuristic, because no A2000
 run of Qwen3 exists.
 
-## 6. Not measured, said plainly
+## 6. Serving: the paged server's all-VRAM placement
+
+**What is planned.** `kind="serve"` with context × concurrency. The plan prices `serve_paged.build_engine` under
+`E4B_PAGED_PLACEMENT=all-vram` via e4b's `estimate_serve_footprint` (e4b#1080). Its items:
+- expert stacks and bf16 dense weights, derived;
+- the FP8 paged KV pool, from `Fp8PagedKV`'s own arithmetic and tested byte-equal to a constructed pool;
+- a heuristic working set.
+
+The plan's "Why" carries the `E4B_PAGED_*` environment that builds the priced setup. Serve plans are planned only
+(not executed). The solver's tiers are refused in words.
+
+**Checked against receipts that already existed.** Lane P109 ran `serve_paged` all-VRAM on one RTX 5090:
+- Qwen3-30B-A3B, 16 sequences × 4096 tokens, NF4 experts, no int4;
+- six arms, eager and graphed decode (`e4b/bench/p109/receipts/p109-5090-2`, imported by `bench/import_p109.py`).
+
+| arms | allocator estimate | measured allocator peak | reserve slack | context (end of run) |
+|---|---|---|---|---|
+| eager decode (D1, E1, E2) | 21.35 | 21.51 (−0.7%) | 0.13% | 0.59 |
+| decode graphs (G1, G2) | 21.36 | 21.56 (−0.9%) | 0.85% | 0.71 |
+| decode graphs + prefill graph (P1) | 21.36 | 21.51 (−0.7%) | 0.06% | 0.59 |
+
+All values GiB. The estimate does not price the prefill-graph setting; P1 is shown for completeness. P109 read memory
+after load and after the runs rather than sampling it, so its reserve is an end-of-run lower bound.
+
+**What it changed.**
+- **A server's slack is not a trainer's:** 0.06–0.85% here, against 8–39% for training. The planner now matches
+  slack by workload kind. Among same-setup receipts it prefers one with the candidate's whole setup, and of
+  several it takes the largest. With no serve receipt for a GPU it uses the stated 20% default.
+
+| plan (`bench/replan_with_p109.py`) | device total, before | after | measured (reserved + context) |
+|---|---|---|---|
+| eager decode | 26.24 (default 20% = 4.27) | **21.99** (P109's 0.13%) | 22.12 |
+| decode graphs | 26.25 | **22.16** (P109's 0.85%) | 22.11–22.45 |
+
+- **Independence.** The allocator estimate is independent of P109. The context line in both columns is FP1's
+  training receipt on the same card (0.61 GiB, a different driver). The "after" reserve is P109's own, so that line
+  agrees by construction. Before P109, the default over-reserved 4.1 GiB at 30B: a 5090 plan would have refused
+  setups that fit.
+
+**Plan-only sweep** (`bench/serve_plan_sweep.py`, `evidence/serve-plan-sweep.json`; budget = the card's total,
+default slack):
+
+| model, card | weights | fits | refused, with the planner's suggestions |
+|---|---|---|---|
+| OLMoE-1B-7B, RTX A2000 | 4.26 | up to 32k KV tokens (2048×16, 8192×4, 32768×1) | 8192×16 → "context 5744 at 16" or "concurrency 8 at 8192"; 32768×4 → "context 22976 at 4" or "concurrency 2" |
+| Qwen3-30B-A3B, RTX 5090 | 18.06 | up to 131k KV tokens (8192×16, 32768×4) | 32768×16 → "context 5648 at 16" or "concurrency 2 at 32768" |
+
+Every suggestion is itself planned. The tests check that each one is feasible, and that the context suggestion is the
+largest at 16-token-block granularity. The A2000 sweep ran before any A2000 serve receipt, so it uses the 20% default. The figures in the
+"fits" column carry that over-reserve.
+
+## 7. Not measured, said plainly
 
 - **No performance model.** Speed is ordered from evidence, never predicted, apart from the transfer lower bound.
 - **The activation heuristic** is a formula, checked against nine allocator peaks (three here, six in the
   register), not derived.
 - **Qwen3-30B ran once, on a rented RTX 5090 (FP1).** Every other model above 8B was planned, not run.
-- **Serving** is represented and refused; see `SERVING-PRESSURE-TEST.md`.
+- **Serving** is planned for the all-VRAM placement only, checked on one model and card (P109). Tiers, int4 stores
+  and decode speed are not planned; see `SERVING-PRESSURE-TEST.md`.
 
 ## Provenance
 

@@ -1,0 +1,55 @@
+{
+ "schema": "execution-receipt/1",
+ "run_id": "p109-5090-2/G1",
+ "status": "OK",
+ "source": "experts4bit-qlora lane P109 (p109-5090-2), arm G1",
+ "model": {
+  "model": "Qwen/Qwen3-30B-A3B",
+  "revision": "ad44e777bcd18fa416d9da3bd8f70d33ebb85d39"
+ },
+ "workload": {
+  "kind": "serve",
+  "context_len": 4096,
+  "concurrency": 16
+ },
+ "setup": {
+  "placement": "all-vram",
+  "max_seqs": 16,
+  "max_tokens_per_seq": 4096,
+  "chunk_tokens": 512,
+  "graphs": true,
+  "buckets": [
+   1,
+   2,
+   4,
+   8,
+   16
+  ],
+  "kv_groups": "auto"
+ },
+ "hardware": {
+  "gpu": {
+   "name": "NVIDIA GeForce RTX 5090",
+   "driver": "580.95.05",
+   "memory_total": "32607 MiB"
+  }
+ },
+ "measured": {
+  "device_peak_bytes": 23149519872,
+  "device_reserved_peak_bytes": 23345496064,
+  "cuda_context_bytes": 759365632,
+  "load_device_peak_bytes": 22934426624,
+  "load_seconds": 36.71
+ },
+ "notes": [
+  "memory read after load and after the runs, not sampled: reserved is the end-of-run reserve (a lower bound on its peak); the context is (total - free) - reserved at that moment",
+  "nvidia-smi after the runs: 22989 MiB used"
+ ],
+ "provenance": {
+  "started_at": "",
+  "imported_from": "/home/node/work/loggetta-ws/e4b/bench/p109/receipts/p109-5090-2/arm_G1.json",
+  "e4b_sha": "3185b46ab041666894fd776fed904a6a96f1c396",
+  "gnf4_sha": "51a49166ae7bc1a0f84188b7b5d1f42ecbc37e00",
+  "torch": "2.8.0+cu128"
+ }
+}

@@ -1,0 +1,99 @@
+{
+ "schema": "replan-comparison/1",
+ "model": "Qwen/Qwen3-30B-A3B",
+ "workload": "serve 4096 x 16, all-vram",
+ "rows": [
+  {
+   "graphs": false,
+   "observations": "before",
+   "status": "feasible",
+   "allocator_estimate_gib": 21.351,
+   "measured_allocator_peak_gib": [
+    21.505,
+    21.505,
+    21.505
+   ],
+   "reserve_gib": 4.27,
+   "reserve_basis": "inferred",
+   "reserve_detail": "default 20% of the allocator estimate; no serve receipt on file measured this GPU",
+   "context_gib": 0.615,
+   "context_basis": "measured",
+   "plan_device_total_gib": 26.236,
+   "measured_device_used_gib": 22.123,
+   "measured_arms": [
+    "p109-5090-2/E2",
+    "p109-5090-2/E1",
+    "p109-5090-2/D1"
+   ]
+  },
+  {
+   "graphs": false,
+   "observations": "after",
+   "status": "feasible",
+   "allocator_estimate_gib": 21.351,
+   "measured_allocator_peak_gib": [
+    21.505,
+    21.505,
+    21.505
+   ],
+   "reserve_gib": 0.028,
+   "reserve_basis": "measured",
+   "reserve_detail": "receipt p109-5090-2/D1 (this GPU, setup and model; largest of 6) = 0.001",
+   "context_gib": 0.615,
+   "context_basis": "measured",
+   "plan_device_total_gib": 21.994,
+   "measured_device_used_gib": 22.123,
+   "measured_arms": [
+    "p109-5090-2/E2",
+    "p109-5090-2/E1",
+    "p109-5090-2/D1"
+   ]
+  },
+  {
+   "graphs": true,
+   "observations": "before",
+   "status": "feasible",
+   "allocator_estimate_gib": 21.364,
+   "measured_allocator_peak_gib": [
+    21.512,
+    21.56,
+    21.56
+   ],
+   "reserve_gib": 4.273,
+   "reserve_basis": "inferred",
+   "reserve_detail": "default 20% of the allocator estimate; no serve receipt on file measured this GPU",
+   "context_gib": 0.615,
+   "context_basis": "measured",
+   "plan_device_total_gib": 26.252,
+   "measured_device_used_gib": 22.449,
+   "measured_arms": [
+    "p109-5090-2/P1",
+    "p109-5090-2/G2",
+    "p109-5090-2/G1"
+   ]
+  },
+  {
+   "graphs": true,
+   "observations": "after",
+   "status": "feasible",
+   "allocator_estimate_gib": 21.364,
+   "measured_allocator_peak_gib": [
+    21.512,
+    21.56,
+    21.56
+   ],
+   "reserve_gib": 0.181,
+   "reserve_basis": "measured",
+   "reserve_detail": "receipt p109-5090-2/G2 (this GPU, setup and model; largest of 6) = 0.008",
+   "context_gib": 0.615,
+   "context_basis": "measured",
+   "plan_device_total_gib": 22.16,
+   "measured_device_used_gib": 22.449,
+   "measured_arms": [
+    "p109-5090-2/P1",
+    "p109-5090-2/G2",
+    "p109-5090-2/G1"
+   ]
+  }
+ ]
+}

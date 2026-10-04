@@ -8,6 +8,8 @@ Deterministic: the same inputs give the same plan, byte for byte (``ExecutionPla
 """
 from __future__ import annotations
 
+import json
+
 from .backends import BACKENDS
 from .plan import Candidate, Constraints, ExecutionPlan, MemoryLine, Workload
 
@@ -68,7 +70,8 @@ def reserve_fraction(gpu, setup, observations, default, model=None, kind="train"
     Slack depends on the allocation pattern (offload's per-layer staging leaves more cached blocks), on the model and on
     the GPU: OLMoE's resident slack measured 0.222 on an RTX A2000 and 0.150 on an RTX 5090. In order:
 
-    1. a receipt for this GPU, this residency + kernel and this model: measured;
+    1. a receipt for this GPU, this residency + kernel and this model (those with the candidate's whole setup first;
+       of several, the largest slack): measured;
     2. this model + setup measured on ANOTHER GPU, scaled by an anchor model measured with the same setup on both GPUs
        (slack(model, here) = slack(model, there) x slack(anchor, here) / slack(anchor, there)): a stated transfer;
     3. this GPU + setup, another model: measured, but for a different model;
@@ -94,10 +97,20 @@ def reserve_fraction(gpu, setup, observations, default, model=None, kind="train"
               and o.get("measured", {}).get("device_reserved_peak_bytes")
               and o.get("workload", {}).get("kind", "train") == kind]
     same_setup = [o for o in usable if {k: o.get("setup", {}).get(k) for k in key} == {k: setup.get(k) for k in key}]
+    # among receipts with the same key fields, those with the candidate's whole setup win; of several, the largest
+    # slack (repeats differ, and a setting the setup does not name can change it)
+    whole = json.dumps(setup, sort_keys=True, default=list)
+    same_setup.sort(key=lambda o: json.dumps(o.get("setup"), sort_keys=True, default=list) != whole)
+
+    def pick(group):
+        top = [o for o in group if json.dumps(o.get("setup"), sort_keys=True, default=list) == whole] or group
+        return max(top, key=frac)
+
     here = [o for o in same_setup if gname(o) == gpu.name]
     exact = [o for o in here if model and mname(o) == model]
     if exact:
-        return frac(exact[0]), "measured", f"receipt {exact[0].get('run_id')} (this GPU, setup and model) = {frac(exact[0]):.3f}"
+        e = pick(exact)
+        return frac(e), "measured", f"receipt {e.get('run_id')} (this GPU, setup and model; largest of {len(exact)}) = {frac(e):.3f}"
     if model:
         for there in (o for o in same_setup if mname(o) == model and gname(o) != gpu.name):
             for anchor_here in here:
@@ -108,8 +121,8 @@ def reserve_fraction(gpu, setup, observations, default, model=None, kind="train"
                                             f"(receipt {there.get('run_id')}) x anchor {mname(anchor_here)} "
                                             f"{frac(anchor_here):.3f} here / {frac(anchor_there):.3f} there = {f:.3f}")
     if here:
-        return frac(here[0]), "measured", (f"receipt {here[0].get('run_id')} (this GPU and setup, model "
-                                           f"{mname(here[0])}) = {frac(here[0]):.3f}")
+        h = pick(here)
+        return frac(h), "measured", (f"receipt {h.get('run_id')} (this GPU and setup, model {mname(h)}) = {frac(h):.3f}")
     same_gpu = [o for o in usable if gname(o) == gpu.name]
     if same_gpu:
         worst = max(same_gpu, key=frac)

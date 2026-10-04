@@ -35,7 +35,7 @@ def bake(model, arena, log=print):
     from huggingface_hub import snapshot_download
     from nvme_bake_nf4 import bake_nf4
 
-    snap = snapshot_download(model, local_files_only=True)
+    snap = snapshot_download(model, local_files_only=True, allow_patterns=["*.json", "*.safetensors"])
     t0 = time.time()
     bake_nf4(snap, arena, log=log)
     return {"snapshot": snap, "seconds": round(time.time() - t0, 1)}
