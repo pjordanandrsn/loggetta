@@ -200,6 +200,8 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
             if obs:
                 note += (f"; measured before: device peak {obs['measured']['device_peak_bytes'] / GiB:.2f} GiB "
                          f"(receipt {obs.get('run_id')})")
+            # the planner charges the context, allocator reserve and process baseline itself: drop the backend's note
+            unmodelled = tuple(u for u in unmodelled if not u.startswith("CUDA context"))
             cands.append(Candidate(backend=b.NAME, setup=setup, lines=lines, device_bytes=dev, host_bytes=host,
                                    feasible=not rejected, rejected=tuple(rejected), unmodelled=tuple(unmodelled),
                                    rank=rank, rank_note=note, bounds=bounds))
