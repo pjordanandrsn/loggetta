@@ -69,6 +69,9 @@ def _plan(a):
 
 
 def main(argv=None) -> int:
+    from .measure import provenance
+
+    prov = {**provenance(), "taken": "at process start, before the measured code was imported"}
     ap = argparse.ArgumentParser(description="Plan, explain and run MoE workloads on this machine.")
     sub = ap.add_subparsers(dest="cmd", required=True)
     pi = sub.add_parser("inspect", help="the hardware inventory, and a model's topology if one is given")
@@ -114,7 +117,7 @@ def main(argv=None) -> int:
     from .runtime import execute, summarize
 
     print("\nExecuting the selected plan...")
-    receipt = execute(p, out_dir=a.out, seed=a.seed)
+    receipt = execute(p, out_dir=a.out, seed=a.seed, prov=prov)
     print("\n" + summarize(receipt))
     print(f"\nreceipt: {a.out}/{receipt['run_id']}.json")
     return 0 if receipt["status"] == "OK" else 1

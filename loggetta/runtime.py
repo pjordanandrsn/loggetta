@@ -11,7 +11,7 @@ import json
 import os
 import time
 
-from .measure import provenance
+from .measure import changed_since, provenance
 from .plan import ExecutionPlan
 
 RECEIPT_SCHEMA = "execution-receipt/1"
@@ -57,11 +57,14 @@ def compare(plan: ExecutionPlan, measured: dict) -> dict:
     return out
 
 
-def execute(plan: ExecutionPlan, *, out_dir: str | None = None, seed: int = 0, log=print) -> dict:
-    """Run ``plan``. A refused plan is not executed: it raises ``PlanNotExecutable`` with the refusal's reasons."""
+def execute(plan: ExecutionPlan, *, out_dir: str | None = None, seed: int = 0, log=print,
+            prov: dict | None = None) -> dict:
+    """Run ``plan``. A refused plan is not executed: it raises ``PlanNotExecutable`` with the refusal's reasons.
+    ``prov`` is :func:`measure.provenance` taken at process start (the CLI does); without it, provenance is taken here
+    and is only as good as the claim that nothing changed on disk since the code was imported."""
     if plan.status != "feasible":
         raise PlanNotExecutable("refused plan: " + "; ".join(plan.refusal.get("reasons", ())))
-    prov = provenance()
+    prov = prov or {**provenance(), "taken": "at execute(), after import"}
     t0 = time.time()
     result = _executor(plan.selected.backend)(plan, seed=seed, log=log)
     model_short = plan.model["model"].rstrip("/").split("/")[-1]
@@ -75,7 +78,8 @@ def execute(plan: ExecutionPlan, *, out_dir: str | None = None, seed: int = 0, l
         "setup": s, "hardware": plan.hardware, "plan": plan.to_dict(),
         "measured": result["measured"], "correctness": result["correctness"], "engaged": result["engaged"],
         "data": result["data"], "comparison": compare(plan, result["measured"]),
-        "provenance": {**prov, "runtime_seconds": time.time() - t0, "seed": seed},
+        "provenance": {**prov, "runtime_seconds": time.time() - t0, "seed": seed,
+                       "changed_during_run": changed_since(prov)},
     }
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)

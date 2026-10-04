@@ -100,16 +100,28 @@ def git_commit(path) -> dict:
         return {}
 
 
+def _source_file(name):
+    """Where ``name`` WOULD be imported from, without importing it (so provenance can be taken before any import)."""
+    import importlib.util
+
+    mod = sys.modules.get(name)
+    if mod is not None:
+        return getattr(mod, "__file__", None)
+    try:
+        spec = importlib.util.find_spec(name)
+    except (ImportError, ValueError):
+        return None
+    return spec.origin if spec else None
+
+
 def provenance(modules=("experts4bit_qlora", "nf4_grouped", __package__.split(".")[0])) -> dict:
+    """Commits, versions and argv. Call it at PROCESS START, before the measured code is imported: a commit read later
+    can name code that changed on disk after the process loaded it. :func:`changed_since` checks for that."""
     out = {"argv": list(sys.argv), "python": sys.version.split()[0], "sources": {}}
     for name in modules:
-        mod = sys.modules.get(name)
-        if mod is None:
-            try:
-                mod = __import__(name)
-            except ImportError:
-                continue
-        out["sources"][name] = {"file": getattr(mod, "__file__", None), **git_commit(mod.__file__)}
+        f = _source_file(name)
+        if f:
+            out["sources"][name] = {"file": f, **git_commit(f)}
     from importlib.metadata import PackageNotFoundError, version
 
     for dist in ("torch", "triton", "transformers", "bitsandbytes", "accelerate", "experts4bit-qlora",
@@ -119,4 +131,15 @@ def provenance(modules=("experts4bit_qlora", "nf4_grouped", __package__.split(".
         except PackageNotFoundError:
             pass
     out["started_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    return out
+
+
+def changed_since(prov: dict) -> list:
+    """Source trees whose commit or dirty state differs now from ``prov``: the run's code may not be what it names."""
+    out = []
+    for name, src in prov.get("sources", {}).items():
+        now = git_commit(src["file"]) if src.get("file") else {}
+        if (now.get("commit"), now.get("dirty")) != (src.get("commit"), src.get("dirty")):
+            out.append(f"{name}: {src.get('commit', 'untracked')[:10]}{'+dirty' if src.get('dirty') else ''} at start, "
+                       f"{now.get('commit', 'untracked')[:10]}{'+dirty' if now.get('dirty') else ''} at end")
     return out

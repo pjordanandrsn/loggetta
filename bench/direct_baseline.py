@@ -23,6 +23,9 @@ def main():
     ap.add_argument("--out", default="receipts")
     ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args()
+    from loggetta.measure import changed_since, provenance
+
+    prov = {**provenance(), "taken": "at process start, before the measured code was imported"}
     planned = json.load(open(a.receipt))
     s, wd = planned["setup"], planned["workload"]
     model_id, revision = planned["model"]["model"], planned["model"].get("revision")
@@ -33,7 +36,7 @@ def main():
     from experts4bit_qlora.lora import ExpertsLoRA, LoRALinear, add_attention_lora
 
     from loggetta.backends.experts4bit_train import train_loop
-    from loggetta.measure import DriverMemorySampler, proc_status, provenance
+    from loggetta.measure import DriverMemorySampler, proc_status
     from loggetta.plan import Workload
 
     assert not s["attn_4bit"] and s["adapter_dtype"] == "bf16" and not s["keep_moe_layers"], \
@@ -67,7 +70,7 @@ def main():
     out.update(arm="direct (hand-composed public API, no planner)", setup=s, workload=wd,
                engaged={"attention_lora_projections": n_attn, "fused_expert_modules": n_fused,
                         "trainable_numel": sum(p.numel() for p in trainable)},
-               provenance=provenance(), planned_receipt=os.path.basename(a.receipt), schema="execution-receipt/1",
+               provenance={**prov, "changed_during_run": changed_since(prov)}, planned_receipt=os.path.basename(a.receipt), schema="execution-receipt/1",
                run_id="direct-" + planned["run_id"])
     os.makedirs(a.out, exist_ok=True)
     path = os.path.join(a.out, out["run_id"] + ".json")
