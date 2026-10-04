@@ -139,13 +139,50 @@ hardware profile, every receipt above as observations, QLoRA at seq 2048 × micr
 
 None of these is a family-name branch.
 
+## 6. FP1: a measured 30B receipt replaces the extrapolated overheads
+
+**The run.** Rented through the shared launcher: experts4bit-qlora lane FP1, work item #1064, run `fp1-5090-1`.
+- One RTX 5090, driver 595.84.
+- **$0.848**, teardown complete; the receipt is in the private store at `a4866167`.
+- Three arms, seq 512 × micro-batch 2, 12 steps, QLoRASetup defaults.
+- Raw arm receipts: `evidence/2026-10-04-fp1-rtx5090/raw/`. Planner observations from `bench/import_fp1.py`.
+
+| arm | estimate (allocator) | measured | reserve slack | context | driver peak | s/step |
+|---|---|---|---|---|---|---|
+| OLMoE-1B-7B resident | 5.26 | 5.47 (+4.0%) | 15.0% | 0.62 | 6.90 | 0.22 |
+| Qwen3-30B-A3B resident | 22.09 | 21.91 (−0.8%) | 8.3% | 0.62 | 24.34 | 0.70 |
+| Qwen3-30B-A3B host-offload | 7.22 | 6.71 (−7.1%) | 31.2% | 0.62 | 9.41 | 2.00 |
+
+All values GiB. Integrity is clean on every arm.
+
+**What it changed.**
+- **The estimator holds at 30B:** within 1% resident, and −7% under offload.
+- **Reserve slack is not one number.**
+  - It depends on model size: 15.0% for OLMoE against 8.3% for Qwen3-30B on the same card.
+  - It depends on the GPU: OLMoE measured 22.2% on the A2000 and 15.0% on the 5090.
+  - The planner now looks it up in this order: this GPU + setup + model; else the same model and setup measured on
+    another GPU, scaled by an anchor model measured on both (labelled heuristic, arithmetic in the line); else this
+    GPU + setup with another model; else the largest measured on this GPU (conservative).
+- **The CUDA context is stack-specific:** 0.62 GiB on the 5090 / 595.84 against 0.13 GiB on the A2000 / 575.
+
+**Before/after, Qwen3-30B-A3B** (`bench/replan_with_fp1.py`, `evidence/fp1-replan.json`):
+
+| plan | device total before | after | measured (driver peak) |
+|---|---|---|---|
+| RTX 5090, resident | 27.01 (inferred 20% slack, 0.5 context) | **24.54** (measured 8.3%, 0.62) | **24.34** |
+| RTX 5090, host-offload | 9.16; transfer floor 1.04 s (PCIe ceiling) | 10.08; floor **1.58 s** (measured 20.8 GB/s) | 9.41; step **2.00 s** |
+| RTX A2000, resident | 24.08 (Granite-4's 8.3%, same GPU) | 24.96 (Qwen3's 8.3% × anchor 0.222/0.150 = 12.3%) | not run: refused both times, the card has 12 GB |
+
+The 5090 resident prediction moved from 2.7 GiB high to 0.2 GiB of the measured process peak. On the A2000 the
+30B slack is now an explicit transfer rather than another model's figure. It is labelled heuristic, because no A2000
+run of Qwen3 exists.
+
 ## 5. Not measured, said plainly
 
 - **No performance model.** Speed is ordered from evidence, never predicted, apart from the transfer lower bound.
 - **The activation heuristic** is a formula, checked against nine allocator peaks (three here, six in the
   register), not derived.
-- **Qwen3-30B and every model above 8B were planned, not run here.** The A2000 runs are OLMoE, Granite-3.1 and
-  Granite-4.0-h-tiny.
+- **Qwen3-30B ran once, on a rented RTX 5090 (FP1).** Every other model above 8B was planned, not run.
 - **Serving** is represented and refused; see `SERVING-PRESSURE-TEST.md`.
 
 ## Provenance

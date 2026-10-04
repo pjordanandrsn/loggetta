@@ -85,8 +85,8 @@ python -m loggetta train <model> ...  -> plan, then execute, then write a receip
 
 - **No performance model.** Times are not predicted, apart from the transfer lower bound.
 - **The activation term is heuristic.**
-- **Reserve slack is extrapolated** from OLMoE-sized receipts to 30B models.
-- **Every model above 8B was planned, not run.**
+- **Reserve slack** is measured at 30B on an RTX 5090 (FP1). On other GPUs it is transferred through an anchor ratio, stated as heuristic.
+- **Above 8B, only Qwen3-30B-A3B was run** (FP1, RTX 5090, $0.85); the rest were planned, not run.
 - **Serving is represented and refused.**
 - **Multi-GPU is a list in the data model,** nothing more.
 

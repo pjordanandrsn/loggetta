@@ -1,0 +1,111 @@
+{
+ "schema": "replan-comparison/1",
+ "model": "Qwen/Qwen3-30B-A3B",
+ "workload": "seq 512 x mb 2",
+ "rows": [
+  {
+   "hardware": "RTX A2000 (seat)",
+   "residency": "device",
+   "observations": "before",
+   "status": "refused",
+   "device_gib": 24.08,
+   "reserve_gib": 1.83,
+   "reserve_basis": "measured",
+   "reserve_detail": "receipt granite-4.0-h-tiny-device-grouped_nf4-t1024-20261004T183236Z (this GPU and setup, model ibm-granite/granite-4.0-h-tiny) = 0.083",
+   "context_gib": 0.17,
+   "context_basis": "measured",
+   "transfer_bound_s": null
+  },
+  {
+   "hardware": "RTX A2000 (seat)",
+   "residency": "device",
+   "observations": "after",
+   "status": "refused",
+   "device_gib": 24.96,
+   "reserve_gib": 2.71,
+   "reserve_basis": "heuristic",
+   "reserve_detail": "transferred: 0.083 measured for this model on NVIDIA GeForce RTX 5090 (receipt fp1-5090-1/qwen3_device) x anchor allenai/OLMoE-1B-7B-0924 0.222 here / 0.150 there = 0.123",
+   "context_gib": 0.17,
+   "context_basis": "measured",
+   "transfer_bound_s": null
+  },
+  {
+   "hardware": "RTX A2000 (seat)",
+   "residency": "host",
+   "observations": "before",
+   "status": "feasible",
+   "device_gib": 10.16,
+   "reserve_gib": 2.78,
+   "reserve_basis": "measured",
+   "reserve_detail": "receipt OLMoE-1B-7B-0924-host-grouped_nf4-t1024-20261004T182135Z (this GPU and setup, model allenai/OLMoE-1B-7B-0924) = 0.385",
+   "context_gib": 0.17,
+   "context_basis": "measured",
+   "transfer_bound_s": 5.24
+  },
+  {
+   "hardware": "RTX A2000 (seat)",
+   "residency": "host",
+   "observations": "after",
+   "status": "feasible",
+   "device_gib": 10.16,
+   "reserve_gib": 2.78,
+   "reserve_basis": "measured",
+   "reserve_detail": "receipt OLMoE-1B-7B-0924-host-grouped_nf4-t1024-20261004T182135Z (this GPU and setup, model allenai/OLMoE-1B-7B-0924) = 0.385",
+   "context_gib": 0.17,
+   "context_basis": "measured",
+   "transfer_bound_s": 5.24
+  },
+  {
+   "hardware": "RTX 5090 (FP1's box)",
+   "residency": "device",
+   "observations": "before",
+   "status": "feasible",
+   "device_gib": 27.01,
+   "reserve_gib": 4.42,
+   "reserve_basis": "inferred",
+   "reserve_detail": "default 20% of the allocator estimate; no receipt on file measured this GPU + driver",
+   "context_gib": 0.5,
+   "context_basis": "inferred",
+   "transfer_bound_s": null
+  },
+  {
+   "hardware": "RTX 5090 (FP1's box)",
+   "residency": "device",
+   "observations": "after",
+   "status": "feasible",
+   "device_gib": 24.54,
+   "reserve_gib": 1.83,
+   "reserve_basis": "measured",
+   "reserve_detail": "receipt fp1-5090-1/qwen3_device (this GPU, setup and model) = 0.083",
+   "context_gib": 0.62,
+   "context_basis": "measured",
+   "transfer_bound_s": null
+  },
+  {
+   "hardware": "RTX 5090 (FP1's box)",
+   "residency": "host",
+   "observations": "before",
+   "status": "feasible",
+   "device_gib": 9.16,
+   "reserve_gib": 1.44,
+   "reserve_basis": "inferred",
+   "reserve_detail": "default 20% of the allocator estimate; no receipt on file measured this GPU + driver",
+   "context_gib": 0.5,
+   "context_basis": "inferred",
+   "transfer_bound_s": 1.04
+  },
+  {
+   "hardware": "RTX 5090 (FP1's box)",
+   "residency": "host",
+   "observations": "after",
+   "status": "feasible",
+   "device_gib": 10.08,
+   "reserve_gib": 2.25,
+   "reserve_basis": "measured",
+   "reserve_detail": "receipt fp1-5090-1/qwen3_host (this GPU, setup and model) = 0.312",
+   "context_gib": 0.62,
+   "context_basis": "measured",
+   "transfer_bound_s": 1.58
+  }
+ ]
+}

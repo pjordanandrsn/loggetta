@@ -1,0 +1,182 @@
+{
+ "schema": "fp1-arm/1",
+ "args": {
+  "model": "Qwen/Qwen3-30B-A3B",
+  "revision": "ad44e777bcd18fa416d9da3bd8f70d33ebb85d39",
+  "residency": "device",
+  "kernel": "grouped_nf4",
+  "seq": 512,
+  "mb": 2,
+  "steps": 12,
+  "warmup": 2,
+  "seed": 0,
+  "out": "receipts/qwen3_device.json"
+ },
+ "status": "OK",
+ "setup": {
+  "quant_type": "nf4",
+  "blocksize": 64,
+  "r": 8,
+  "alpha": 16,
+  "adapter_dtype": "bf16",
+  "train_experts": true,
+  "train_attention": true,
+  "attn_4bit": false,
+  "expert_residency": "device",
+  "pin": true,
+  "expert_kernel": "grouped_nf4",
+  "dgrad": true,
+  "keep_moe_layers": 0
+ },
+ "topology": "Qwen/Qwen3-30B-A3B (qwen3_moe, qwen2_moe): 48/48 MoE layers, E=128 H=2048 I=768, top-8; 28.99B expert + 1.54B dense params",
+ "estimate": {
+  "items": [
+   {
+    "name": "frozen expert stacks",
+    "where": "device",
+    "bytes": 16307457024,
+    "basis": "derived",
+    "detail": "48 stacks in nf4, blocksize 64 (packed + absmax)"
+   },
+   {
+    "name": "dense weights (bf16)",
+    "where": "device",
+    "bytes": 3082186752,
+    "basis": "derived",
+    "detail": "embeddings, attention, norms, routers, dense/shared MLPs; tied head counted once"
+   },
+   {
+    "name": "expert LoRA adapters",
+    "where": "device",
+    "bytes": 629145600,
+    "basis": "derived",
+    "detail": "ExpertsLoRA r=8, bf16"
+   },
+   {
+    "name": "attention LoRA adapters",
+    "where": "device",
+    "bytes": 13369344,
+    "basis": "derived",
+    "detail": "192 projections, r=8, bf16"
+   },
+   {
+    "name": "adapter gradients",
+    "where": "device",
+    "bytes": 642514944,
+    "basis": "derived",
+    "detail": "one gradient per trainable parameter, in its dtype"
+   },
+   {
+    "name": "optimizer state (adamw)",
+    "where": "device",
+    "bytes": 1285029888,
+    "basis": "derived",
+    "detail": "exp_avg + exp_avg_sq per trainable parameter, in its dtype (torch.optim.AdamW)"
+   },
+   {
+    "name": "activations",
+    "where": "device",
+    "bytes": 1757151232,
+    "basis": "heuristic",
+    "detail": "48 saved layer inputs (T x H bf16) + max(logits and loss in bf16+fp32+fp32 = 1.56 GB, 2 x one layer's recompute = 0.16 GB) at T=1024"
+   }
+  ],
+  "unmodelled": [
+   "CUDA context, cuBLAS/Triton workspaces and allocator fragmentation (the caller's to add)",
+   "load-time transients (the streaming loader's per-tensor quantize; host page cache)"
+  ],
+  "refusals": [],
+  "device_bytes": 23716854784,
+  "host_bytes": 0,
+  "derived_device": 21959703552,
+  "heuristic_device": 1757151232
+ },
+ "device": "NVIDIA GeForce RTX 5090",
+ "capability": [
+  12,
+  0
+ ],
+ "torch": "2.8.0+cu128",
+ "correctness": {
+  "losses": [
+   2.1129634380340576,
+   1.5056357383728027,
+   1.4012058973312378,
+   1.3178889751434326,
+   1.570908784866333,
+   1.3418751955032349,
+   1.4090514183044434,
+   1.5185846090316772,
+   1.434931993484497,
+   1.2304844856262207,
+   1.3180383443832397,
+   0.8932317495346069
+  ],
+  "all_finite": true,
+  "frozen_expert_bytes_unchanged": true,
+  "frozen_expert_digest": {
+   "stack[0]": "feb30fae5b311adf5050c77c3433cccdd5e02c2df16e8a606e72a18c78a6b4b7",
+   "stack[-1]": "07c2ffcb03c846e7dd13c93ff635f089b51012a0a3dcfe1756ad2e9439daab5e"
+  },
+  "adapter_B_norm_before": 0.0,
+  "adapter_B_norm_after": 118.11160554364324
+ },
+ "engaged": {
+  "setup": {
+   "quant_type": "nf4",
+   "blocksize": 64,
+   "r": 8,
+   "alpha": 16,
+   "adapter_dtype": "bf16",
+   "train_experts": true,
+   "train_attention": true,
+   "attn_4bit": false,
+   "expert_residency": "device",
+   "pin": true,
+   "expert_kernel": "grouped_nf4",
+   "dgrad": true,
+   "keep_moe_layers": 0
+  },
+  "commit": "ad44e777bcd18fa416d9da3bd8f70d33ebb85d39",
+  "attention_lora_projections": 192,
+  "env_moe_keep_layers": null,
+  "fused_expert_modules": 48,
+  "dgrad": true,
+  "fused_rope": true,
+  "fused_rmsnorm": true,
+  "train_gemm_route": "fused",
+  "trainable_numel": 321257472
+ },
+ "measured": {
+  "host_baseline_bytes": 1069150208,
+  "link_h2d_gbps": 20.753079262951047,
+  "load_seconds": 24.816938638687134,
+  "load_device_peak_bytes": 21341090816,
+  "host_anon_after_load_bytes": 1336246272,
+  "device_peak_bytes": 23522828800,
+  "device_reserved_peak_bytes": 25474105344,
+  "step_seconds": [
+   9.09523344039917,
+   0.6912415027618408,
+   0.7084596157073975,
+   0.69685959815979,
+   0.9093766212463379,
+   0.7073972225189209,
+   0.7024633884429932,
+   0.6995575428009033,
+   0.7005019187927246,
+   0.7030150890350342,
+   0.714463472366333,
+   0.6969454288482666
+  ],
+  "s_per_step_median": 0.7027392387390137,
+  "tokens_per_s": 1457.1550065105978,
+  "driver_process_peak_bytes": 26134708224,
+  "driver_samples": 139,
+  "host_required_peak_bytes": 4088582144,
+  "host_file_peak_bytes": 60686598144,
+  "host_peak_bytes": 64070352896,
+  "cuda_context_bytes": 660602880,
+  "reserve_slack_fraction": 0.08295246122779254
+ }
+}

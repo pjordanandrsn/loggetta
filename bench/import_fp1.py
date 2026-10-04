@@ -19,6 +19,8 @@ def main():
     a = ap.parse_args()
     forensics = open(os.path.join(a.fetched, "forensics.txt")).read().splitlines()[0].split(",")
     gpu = {"name": forensics[0].strip(), "driver": forensics[2].strip(), "memory_total": forensics[1].strip()}
+    launcher = os.path.join(os.path.dirname(os.path.abspath(a.fetched)), "receipt.json")
+    started = json.load(open(launcher)).get("started_at", "") if os.path.exists(launcher) else ""
     os.makedirs(a.out, exist_ok=True)
     for f in sorted(glob.glob(os.path.join(a.fetched, "receipts", "*.json"))):
         r = json.load(open(f))
@@ -42,7 +44,8 @@ def main():
                 "s_per_step_median", "tokens_per_s", "load_seconds")},
             "estimate": r["estimate"],
             "correctness": r.get("correctness"),
-            "provenance": {"started_at": r.get("started_at") or "", "imported_from": os.path.abspath(f)},
+            "provenance": {"started_at": started, "imported_from": os.path.abspath(f),
+                           "launcher_receipt": launcher if started else None},
         }
         with open(os.path.join(a.out, f"{a.run_id}-{arm}.json"), "w") as fh:
             json.dump(obs, fh, indent=1)

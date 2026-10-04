@@ -1,0 +1,157 @@
+{
+ "schema": "execution-receipt/1",
+ "run_id": "fp1-5090-1/qwen3_host",
+ "status": "OK",
+ "source": "experts4bit-qlora lane FP1 (fp1-5090-1), arm qwen3_host",
+ "model": {
+  "model": "Qwen/Qwen3-30B-A3B",
+  "revision": "ad44e777bcd18fa416d9da3bd8f70d33ebb85d39"
+ },
+ "workload": {
+  "seq_len": 512,
+  "micro_batch": 2,
+  "steps": 12,
+  "tokens_per_microbatch": 1024
+ },
+ "setup": {
+  "quant_type": "nf4",
+  "blocksize": 64,
+  "r": 8,
+  "alpha": 16,
+  "adapter_dtype": "bf16",
+  "train_experts": true,
+  "train_attention": true,
+  "attn_4bit": false,
+  "expert_residency": "host",
+  "pin": true,
+  "expert_kernel": "grouped_nf4",
+  "dgrad": true,
+  "keep_moe_layers": 0
+ },
+ "hardware": {
+  "gpu": {
+   "name": "NVIDIA GeForce RTX 5090",
+   "driver": "595.84",
+   "memory_total": "32607 MiB"
+  }
+ },
+ "measured": {
+  "device_peak_bytes": 7200219136,
+  "device_reserved_peak_bytes": 9447669760,
+  "driver_process_peak_bytes": 10108272640,
+  "cuda_context_bytes": 660602880,
+  "host_baseline_bytes": 1069518848,
+  "host_anon_after_load_bytes": 1471356928,
+  "host_required_peak_bytes": 25509765120,
+  "link_h2d_gbps": 20.707753430035492,
+  "s_per_step_median": 2.002971887588501,
+  "tokens_per_s": 511.24032561078803,
+  "load_seconds": 52.09747862815857
+ },
+ "estimate": {
+  "items": [
+   {
+    "name": "frozen expert stacks, one layer staged",
+    "where": "device",
+    "bytes": 339738688,
+    "basis": "derived",
+    "detail": "offload streams one layer's stack to the GPU at a time"
+   },
+   {
+    "name": "frozen expert stacks, host homes (pinned)",
+    "where": "host",
+    "bytes": 21743271936,
+    "basis": "derived",
+    "detail": "16.31 GB of nf4, blocksize 64, each pinned tensor rounded up to a power of two"
+   },
+   {
+    "name": "expert staging, host to device per micro-batch",
+    "where": "link",
+    "bytes": 32614914048,
+    "basis": "derived",
+    "detail": "each layer's stack is copied once for its forward and once for the checkpoint recompute (engines/offload.py)"
+   },
+   {
+    "name": "dense weights (bf16)",
+    "where": "device",
+    "bytes": 3082186752,
+    "basis": "derived",
+    "detail": "embeddings, attention, norms, routers, dense/shared MLPs; tied head counted once"
+   },
+   {
+    "name": "expert LoRA adapters",
+    "where": "device",
+    "bytes": 629145600,
+    "basis": "derived",
+    "detail": "ExpertsLoRA r=8, bf16"
+   },
+   {
+    "name": "attention LoRA adapters",
+    "where": "device",
+    "bytes": 13369344,
+    "basis": "derived",
+    "detail": "192 projections, r=8, bf16"
+   },
+   {
+    "name": "adapter gradients",
+    "where": "device",
+    "bytes": 642514944,
+    "basis": "derived",
+    "detail": "one gradient per trainable parameter, in its dtype"
+   },
+   {
+    "name": "optimizer state (adamw)",
+    "where": "device",
+    "bytes": 1285029888,
+    "basis": "derived",
+    "detail": "exp_avg + exp_avg_sq per trainable parameter, in its dtype (torch.optim.AdamW)"
+   },
+   {
+    "name": "activations",
+    "where": "device",
+    "bytes": 1757151232,
+    "basis": "heuristic",
+    "detail": "48 saved layer inputs (T x H bf16) + max(logits and loss in bf16+fp32+fp32 = 1.56 GB, 2 x one layer's recompute = 0.16 GB) at T=1024"
+   }
+  ],
+  "unmodelled": [
+   "offload staging transient on the fused kernel path (unmeasured)",
+   "CUDA context, cuBLAS/Triton workspaces and allocator fragmentation (the caller's to add)",
+   "load-time transients (the streaming loader's per-tensor quantize; host page cache)"
+  ],
+  "refusals": [],
+  "device_bytes": 7749136448,
+  "host_bytes": 21743271936,
+  "derived_device": 5991985216,
+  "heuristic_device": 1757151232
+ },
+ "correctness": {
+  "losses": [
+   2.1129634380340576,
+   1.5066890716552734,
+   1.4004974365234375,
+   1.319674015045166,
+   1.57175612449646,
+   1.3441261053085327,
+   1.4083925485610962,
+   1.5180494785308838,
+   1.437018871307373,
+   1.2291295528411865,
+   1.321751594543457,
+   0.8970415592193604
+  ],
+  "all_finite": true,
+  "frozen_expert_bytes_unchanged": true,
+  "frozen_expert_digest": {
+   "stack[0]": "feb30fae5b311adf5050c77c3433cccdd5e02c2df16e8a606e72a18c78a6b4b7",
+   "stack[-1]": "07c2ffcb03c846e7dd13c93ff635f089b51012a0a3dcfe1756ad2e9439daab5e"
+  },
+  "adapter_B_norm_before": 0.0,
+  "adapter_B_norm_after": 118.03404175117612
+ },
+ "provenance": {
+  "started_at": "2026-10-04T20:40:46Z",
+  "imported_from": "/home/node/work/loggetta-ws/runs/fp1-5090-1/tc1/receipts/qwen3_host.json",
+  "launcher_receipt": "/home/node/work/loggetta-ws/runs/fp1-5090-1/receipt.json"
+ }
+}

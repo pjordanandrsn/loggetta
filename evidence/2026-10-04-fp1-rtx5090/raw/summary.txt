@@ -1,0 +1,7 @@
+fp1 tripwire OK 0.45.0 0.38.0 2.8.0+cu128 NVIDIA GeForce RTX 5090
+olmoe: fetched 13G
+olmoe_device rc=0 {"status": "OK", "alloc_gib": 5.469486236572266, "est_alloc_gib": 5.258305549621582, "slack": 0.14984520080653208}
+qwen3: fetched 57G
+qwen3_device rc=0 {"status": "OK", "alloc_gib": 21.907341480255127, "est_alloc_gib": 22.08804225921631, "slack": 0.08295246122779254}
+qwen3_host rc=0 {"status": "OK", "alloc_gib": 6.705726623535156, "est_alloc_gib": 7.216945707798004, "slack": 0.31213641995464947}
+FP1 done: 3 arm receipts
