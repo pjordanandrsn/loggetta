@@ -139,7 +139,7 @@ hardware profile, every receipt above as observations, QLoRA at seq 2048 × micr
 
 None of these is a family-name branch.
 
-## 6. FP1: a measured 30B receipt replaces the extrapolated overheads
+## 5. FP1: a measured 30B receipt replaces the extrapolated overheads
 
 **The run.** Rented through the shared launcher: experts4bit-qlora lane FP1, work item #1064, run `fp1-5090-1`.
 - One RTX 5090, driver 595.84.
@@ -177,7 +177,7 @@ The 5090 resident prediction moved from 2.7 GiB high to 0.2 GiB of the measured 
 30B slack is now an explicit transfer rather than another model's figure. It is labelled heuristic, because no A2000
 run of Qwen3 exists.
 
-## 5. Not measured, said plainly
+## 6. Not measured, said plainly
 
 - **No performance model.** Speed is ordered from evidence, never predicted, apart from the transfer lower bound.
 - **The activation heuristic** is a formula, checked against nine allocator peaks (three here, six in the
