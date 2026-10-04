@@ -151,7 +151,9 @@ def train_loop(model, trainable, model_id, w, smi, meas, *, revision=None, seed=
         meas["cuda_context_bytes"] = smi.peak - meas["device_reserved_peak_bytes"]
     meas["host_peak_bytes"] = proc_status().get("VmHWM")
     meas["host_anon_peak_bytes"] = smi.anon_peak or None
+    meas["host_shmem_peak_bytes"] = smi.shmem_peak or None
     meas["host_file_peak_bytes"] = smi.file_peak or None
+    meas["host_required_peak_bytes"] = smi.required_peak or None
     timed = step_s[warmup:] or step_s
     meas.update(step_seconds=step_s, s_per_step_median=statistics.median(timed),
                 tokens_per_s=w.tokens_per_microbatch * w.grad_accum / statistics.median(timed),

@@ -40,10 +40,12 @@ def compare(plan: ExecutionPlan, measured: dict) -> dict:
            "device_driver": {"estimated": plan.selected.device_bytes, "measured": measured.get("driver_process_peak_bytes"),
                              "what": "driver-reported process peak vs the full device estimate"},
            "host": {"estimated": plan.selected.host_bytes,
-                    "measured": measured.get("host_anon_peak_bytes") or measured.get("host_peak_bytes"),
-                    "what": ("peak anonymous RSS (file-backed checkpoint pages excluded; load transients included) "
-                             "vs the host estimate") if measured.get("host_anon_peak_bytes") else
-                            "peak resident set (VmHWM: includes mapped checkpoint pages and load transients)"}}
+                    "measured": (measured.get("host_required_peak_bytes") or measured.get("host_anon_peak_bytes")
+                                 or measured.get("host_peak_bytes")),
+                    "what": ("peak of anonymous + shared RSS (pinned memory included, mapped checkpoint pages "
+                             "excluded; load transients included) vs the host estimate")
+                            if measured.get("host_required_peak_bytes") else
+                            "peak RSS (an older receipt: see measured.* for which kind)"}}
     for v in out.values():
         if v["measured"] is not None:
             v["residual"] = v["measured"] - v["estimated"]

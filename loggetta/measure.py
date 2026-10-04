@@ -19,11 +19,13 @@ import time
 class DriverMemorySampler:
     """Peak driver-reported device memory of THIS process, and its peak anonymous / file-backed host RSS, sampled
     every ``interval`` seconds. VmHWM alone overstates what a run NEEDS from the host: memory-mapped checkpoint shards
-    count in it as file-backed pages the kernel can reclaim; ``RssAnon`` is the part that cannot be."""
+    count in it as file-backed pages the kernel can reclaim. What cannot be reclaimed is ``RssAnon`` plus ``RssShmem``,
+    which is where pinned (cudaHostAlloc) memory is accounted -- measured: a 512 MiB pinned tensor adds 511 MiB of
+    RssShmem and nothing to RssAnon."""
 
     def __init__(self, interval: float = 0.25):
         self.interval, self.peak, self.samples = interval, 0, 0
-        self.anon_peak, self.file_peak = 0, 0
+        self.anon_peak, self.file_peak, self.shmem_peak, self.required_peak = 0, 0, 0, 0
         self._stop = threading.Event()
         self._smi = shutil.which("nvidia-smi")
         self._t = threading.Thread(target=self._run, daemon=True)
@@ -49,6 +51,9 @@ class DriverMemorySampler:
             st = proc_status()
             self.anon_peak = max(self.anon_peak, st.get("RssAnon", 0))
             self.file_peak = max(self.file_peak, st.get("RssFile", 0))
+            self.shmem_peak = max(self.shmem_peak, st.get("RssShmem", 0))
+            # pinned host memory (cudaHostAlloc) is accounted as RssShmem; mapped checkpoint shards as RssFile
+            self.required_peak = max(self.required_peak, st.get("RssAnon", 0) + st.get("RssShmem", 0))
             self._stop.wait(self.interval)
 
     def __enter__(self):
@@ -67,7 +72,7 @@ def proc_status() -> dict:
         with open("/proc/self/status") as f:
             for line in f:
                 k, _, v = line.partition(":")
-                if k in ("VmHWM", "VmRSS", "RssAnon", "RssFile"):
+                if k in ("VmHWM", "VmRSS", "RssAnon", "RssFile", "RssShmem"):
                     out[k] = int(v.split()[0]) * 1024
     except OSError:
         pass
