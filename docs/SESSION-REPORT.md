@@ -21,7 +21,7 @@ the kernel route were all added to the packages that own them.
 | | owns | added this session |
 |---|---|---|
 | **grouped-nf4-gemm** | kernels, packed layouts, kernel dispatch, host/NVMe residency primitives, pinned-memory costing | `nf4_route.route_for(capability, *, has_grouped_mm, requested, n_groups)`, the training-route decision as a pure function, with `MIN_CAPABILITY` / `GROUPED_MM_CAPABILITY` as data |
-| **experts4bit-qlora** | model families, loading, adapters, the training/serving runtime, residency integration, what its own mechanisms cost | `describe_moe` (topology from config + meta tree), `QLoRASetup`, `estimate_qlora_footprint` (itemized, derived vs heuristic, including link traffic), `setup_refusals`, `prepare_qlora_training`; `loader.check_admission` / `admission_refusal`; one routed-top-k alias list |
+| **experts4bit-qlora** | model families, loading, adapters, the training/serving runtime, residency integration, what its own mechanisms cost | `describe_moe` (topology from config + meta tree), `QLoRASetup`, `estimate_qlora_footprint` (itemized, derived vs heuristic, including link traffic), `setup_refusals`, `prepare_qlora_training`; `estimate_serve_footprint` / `ServeSetup` / `paged_kv_pool_bytes` (the paged server, e4b#1080); `loader.check_admission` / `admission_refusal`; one routed-top-k alias list |
 | **planner layer** (this repo) | hardware inventory with provenance; budgets, headroom and runtime overheads (learned from receipts); candidate ordering by objective with cited evidence; refusal and computed suggestions; plan and receipt formats; execution harness; CLI | everything here |
 
 ## Interfaces between the layers (the complete list)
@@ -87,7 +87,8 @@ python -m loggetta train <model> ...  -> plan, then execute, then write a receip
 - **The activation term is heuristic.**
 - **Reserve slack** is measured at 30B on an RTX 5090 (FP1). On other GPUs it is transferred through an anchor ratio, stated as heuristic.
 - **Above 8B, only Qwen3-30B-A3B was run** (FP1, RTX 5090, $0.85); the rest were planned, not run.
-- **Serving is represented and refused.**
+- **Serving is planned for one placement only** (all-VRAM, context × concurrency, e4b#1080). The KV pool is the
+  server's own arithmetic; no serve receipt has checked the total yet. Tiered placements are refused in words.
 - **Multi-GPU is a list in the data model,** nothing more.
 
 ## Architectural risks
@@ -127,8 +128,9 @@ repository name.
 6. **It is useful already.** It says what fits on this card, why, and what to change. It caught a would-be crash
    (MLA attention in `add_attention_lora`) and a silent no-op (out_proj-only attention, before #1048 taught the
    detector). After #1048 it picked up LFM2's attention with no planner change.
-7. **Serving can grow into it without a rewrite.** Yes, with traffic made a first-class line. The pressure-test
-   doc names what is missing.
+7. **Serving can grow into it without a rewrite.** Yes: the all-VRAM placement was added as a second workload
+   kind with no planner rewrite (backend candidates, estimate, label and explanation; a serve suggestion search).
+   The pressure-test doc names what is still missing.
 8. **Families can grow into it without special cases.** Yes, demonstrated on ten with no family branches.
 9. **Performance claims are measured and reproducible.** Every number comes from a receipt with commits.
    Provenance defects found during the session are stated and fixed.

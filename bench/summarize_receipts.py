@@ -30,7 +30,6 @@ def main(d):
         s, m, c = r["setup"], r["measured"], r["correctness"]
         label = (f"{s['expert_residency']}, {s['expert_kernel']}" + (", NF4 attn" if s.get("attn_4bit") else "")
                  + ("" if s.get("pin", True) or s["expert_residency"] == "device" else ", pageable"))
-        name = ("direct (no planner) " if r in direct else "") + r["run_id"].split("-t")[0].split("-0924-")[0]
         print(f"| `{r['run_id'][:60]}` | {label} | {m['s_per_step_median']:.2f} | {m['tokens_per_s']:.0f} | "
               f"{c['losses'][0]:.4f} -> {c['losses'][-1]:.4f} | {c['frozen_expert_bytes_unchanged']} | "
               f"{c['adapters_moved']} | {m.get('load_seconds', 0):.0f} |")

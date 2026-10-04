@@ -129,9 +129,65 @@ def test_objectives_order_differently(topo):
     assert lean.selected.setup["expert_residency"] == "host"
 
 
-def test_serving_is_refused_as_a_capability_not_a_crash(topo):
-    p = plan(topo, hw(), Workload(kind="serve", context_len=4096, concurrency=1, phase="decode"))
-    assert p.status == "refused" and "no installed backend plans 'serve'" in p.refusal["reasons"][0]
+def _serve(topo, ctx, seqs, constraints=Constraints(), **hwkw):
+    pytest.importorskip("experts4bit_qlora.serve_recipe")
+    pytest.importorskip("fp8_paged_attn", reason="needs grouped-nf4-gemm")
+    return plan(topo, hw(**hwkw), Workload(kind="serve", context_len=ctx, concurrency=seqs), constraints)
+
+
+def test_serving_plans_the_paged_server_with_its_kv_pool(topo):
+    p = _serve(topo, 4096, 8)
+    assert p.status == "feasible", p.render()
+    s = p.selected.setup
+    assert (s["placement"], s["max_seqs"], s["max_tokens_per_seq"], s["graphs"]) == ("all-vram", 8, 4096, True)
+    kv = next(ln for ln in p.selected.lines if ln.name == "FP8 paged KV pool")
+    assert kv.basis == "derived" and kv.where == "device"
+    assert any("KV pool" in r for r in p.reasons) and not any("grouped_nf4" in r for r in p.reasons)
+    assert "serve all-vram" in p.selected.label()
+    assert "4096 tokens per sequence x 8 sequences" in p.render()
+    assert any("E4B_PAGED_MAX_SEQS=8" in r and "E4B_PAGED_MAX_TOKENS_PER_SEQ=4096" in r for r in p.reasons)
+    again = ExecutionPlan.from_dict(json.loads(p.to_json()))
+    assert again.to_json() == p.to_json() == _serve(topo, 4096, 8).to_json()
+    from loggetta.runtime import PlanNotExecutable, execute
+    with pytest.raises(PlanNotExecutable, match="planned only"):
+        execute(p)
+
+
+def test_serving_too_much_kv_is_refused_with_a_context_and_a_concurrency_that_fit(topo):
+    p = _serve(topo, 131072, 64)
+    assert p.status == "refused"
+    sugg = p.refusal["suggestions"]
+    ctx = next(s for s in sugg if s.startswith("context "))
+    seqs = next(s for s in sugg if s.startswith("concurrency "))
+    fit_ctx, fit_seqs = int(ctx.split()[1]), int(seqs.split()[1])
+    assert fit_ctx < 131072 and fit_ctx % 16 == 0 and fit_seqs < 64
+    assert _serve(topo, fit_ctx, 64).status == "feasible"           # the suggestions are plans, not guesses
+    assert _serve(topo, fit_ctx + 16, 64).status == "refused"        # and the largest ones at block granularity
+    assert _serve(topo, 131072, fit_seqs).status == "feasible"
+
+
+def test_serving_tiered_placement_is_refused_in_words(topo):
+    p = _serve(topo, 4096, 1, Constraints(expert_residency=("host",)))
+    assert p.status == "refused" and any("not priced yet" in r for r in p.refusal["reasons"])
+
+
+def test_serving_does_not_borrow_training_slack(topo):
+    pytest.importorskip("fp8_paged_attn", reason="needs grouped-nf4-gemm")
+    rec = {"run_id": "train-1", "status": "OK", "model": {"model": topo.model}, "workload": {"tokens_per_microbatch": 512},
+           "setup": {"expert_residency": "device", "expert_kernel": "grouped_nf4"},
+           "hardware": {"gpu": {"name": "Test GPU", "driver": "575.64.05"}},
+           "measured": {"cuda_context_bytes": 300 << 20, "device_peak_bytes": 4 * GiB,
+                        "device_reserved_peak_bytes": 6 * GiB}}          # 50% slack: a trainer's churn
+    p = plan(topo, hw(), Workload(kind="serve", context_len=4096, concurrency=1), observations=[rec])
+    res = next(ln for ln in p.selected.lines if ln.name.startswith("allocator reserve"))
+    ctx = next(ln for ln in p.selected.lines if ln.name.startswith("CUDA context"))
+    assert res.basis == "inferred" and "no serve receipt" in res.detail
+    assert ctx.basis == "measured" and ctx.bytes == 300 << 20          # the context is the GPU's, not the workload's
+
+
+def test_training_plans_do_not_mention_serving_kernels(topo):
+    p = plan(topo, hw(), Workload(seq_len=512))
+    assert not any("paged_fp8" in r for r in p.reasons)
 
 
 def test_a_model_the_loader_refuses_is_refused_with_its_reason():

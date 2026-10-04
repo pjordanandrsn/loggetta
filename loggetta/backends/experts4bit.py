@@ -15,7 +15,10 @@ import itertools
 from dataclasses import dataclass, field
 
 NAME = "experts4bit"
-WORKLOADS = ("train",)
+WORKLOADS = ("train", "serve")
+#: which probed kernels each workload uses: the planner reports only those as unusable
+KERNELS_FOR = {"train": ("grouped_nf4", "reference"), "serve": ("paged_fp8",)}
+GiB = 1 << 30
 
 #: The order a speed objective tries setups in, and the evidence for each step of it. Not a performance model:
 #: no time is predicted, only which of two otherwise-valid setups the measurements say is faster.
@@ -75,11 +78,28 @@ def probe(gpu) -> BackendStatus:
     else:
         route, why = route_for(cap, has_grouped_mm=hasattr(torch, "_grouped_mm"))
         kernels["grouped_nf4"] = (route is not None, f"training route {route!r}: {why}" if route else why)
+    try:
+        import fp8_kv  # noqa: F401
+        import fp8_paged_attn  # noqa: F401
+        from experts4bit_qlora.serve_recipe import estimate_serve_footprint  # noqa: F401
+        from nf4_route import MIN_CAPABILITY
+    except ImportError as e:
+        kernels["paged_fp8"] = (False, f"the paged server's estimate or grouped-nf4-gemm's paged FP8 kernels are not "
+                                       f"importable ({e})")
+    else:
+        if cap is None or tuple(cap) < tuple(MIN_CAPABILITY):
+            kernels["paged_fp8"] = (False, f"grouped-nf4-gemm's floor is sm_{MIN_CAPABILITY[0]}{MIN_CAPABILITY[1]}")
+        else:
+            kernels["paged_fp8"] = (True, "paged FP8 KV pool + attention, " + (
+                "fp8 compute" if tuple(cap) >= (8, 9) else "f32 compute (fp8 compute needs sm_89+, "
+                                                            "fp8_paged_attn.fp8_compute_unsupported)"))
     return BackendStatus(True, "", versions, kernels)
 
 
 def candidates(topology, workload, constraints, status: BackendStatus) -> list:
     """Setups worth estimating, as dicts of ``QLoRASetup`` fields. Fields in ``constraints.fixed`` are not varied."""
+    if workload.kind == "serve":
+        return _serve_candidates(workload, constraints, status)
     from experts4bit_qlora.recipe import QLoRASetup
 
     fixed = dict(constraints.fixed)
@@ -109,6 +129,67 @@ def candidates(topology, workload, constraints, status: BackendStatus) -> list:
     return out
 
 
+SERVE_EVIDENCE = {
+    "graphs": "decode graphs before eager decode: serve_paged's own default for all-VRAM placement on CUDA "
+              "(_graphs_env); the graph pools are listed as not modelled",
+}
+
+
+def label(setup: dict) -> str:
+    if "max_seqs" in setup:
+        return (f"serve {setup['placement']}, fp8 paged KV, {setup['max_seqs']} seqs x {setup['max_tokens_per_seq']} "
+                f"tokens{', decode graphs' if setup.get('graphs') else ''}")
+    s = setup
+    return (f"experts on {s.get('expert_residency')}, {s.get('expert_kernel')} kernel"
+            + (", NF4 attention" if s.get("attn_4bit") else "")
+            + (", pageable" if s.get("expert_residency") == "host" and not s.get("pin", True) else "")
+            + (f", keep {s['keep_moe_layers']} MoE layers" if s.get("keep_moe_layers") else ""))
+
+
+def explain(sel, feasible, infeasible, budget, status, constraints, workload) -> list:
+    """Why this candidate, in words: the backend knows its own setup fields; the planner does not read them."""
+    s, out = sel.setup, []
+    if workload.kind == "serve":
+        out.append(f"all experts resident (placement all-vram): {sel.device_bytes / GiB:.2f} GiB estimated + "
+                   f"{budget['headroom'] / GiB:.2f} GiB headroom fits the {budget['device'] / GiB:.2f} GiB budget")
+        kv = next((ln for ln in sel.lines if ln.name == "FP8 paged KV pool"), None)
+        if kv:
+            out.append(f"KV pool {kv.bytes / GiB:.2f} GiB for {s['max_seqs']} sequences x {s['max_tokens_per_seq']} "
+                       "tokens; it scales linearly in both")
+        out.append(f"kernels: {status.kernels.get('paged_fp8', (None, ''))[1]}; grouped NF4 / int4 decode routes as "
+                   "serve_paged resolves them (reported at /health)")
+        if constraints.objective == "speed":
+            out += [f"ordering, {k}: {v}" for k, v in SERVE_EVIDENCE.items()]
+        out.append("not planned yet: the solver's VRAM/DRAM/NVMe tiers, int4 expert stores, decode speed")
+        from experts4bit_qlora.serve_recipe import ServeSetup
+
+        env = " ".join(f"{k}={v}" for k, v in sorted(ServeSetup(**s).to_env().items()))
+        out.append(f"to serve it: {env} python -m experts4bit_qlora.serve_paged (with the model's arena and calibration)")
+        return out
+    resident = [c for c in feasible + infeasible if c.setup.get("expert_residency") == "device"
+                and not any("cannot" in r or "refus" in r for r in c.rejected)]
+    if s["expert_residency"] == "device":
+        out.append(f"experts resident on the device: {sel.device_bytes / GiB:.2f} GiB estimated + "
+                   f"{budget['headroom'] / GiB:.2f} GiB headroom fits the {budget['device'] / GiB:.2f} GiB budget")
+    else:
+        need = min((c.device_bytes for c in resident), default=None)
+        out.append("experts host-backed (pinned, streamed one layer at a time): "
+                   + (f"the cheapest resident setup needs {need / GiB:.2f} GiB + headroom, over the "
+                      f"{budget['device'] / GiB:.2f} GiB budget" if need is not None and constraints.objective == "speed"
+                      else f"chosen by objective {constraints.objective}"))
+    out.append(f"expert kernel {s['expert_kernel']}: {describe_kernel(s, status)}")
+    if constraints.objective == "speed":
+        out += [f"ordering, {axis}: {ev}" for axis, ev in SPEED_EVIDENCE.items()]
+    if s["attn_4bit"]:
+        out.append("attention stored in NF4 because no bf16-attention setup fit")
+    if constraints.fixed:
+        out.append(f"fixed by the caller: {constraints.fixed}")
+    out.append("activation policy: every decoder layer checkpointed (recomputed in backward); "
+               + (f"MoE activations kept in {s['keep_moe_layers']} layers" if s.get("keep_moe_layers")
+                  else "no MoE activations kept (keep_moe_layers is a dial the planner does not choose yet)"))
+    return out
+
+
 def policy_notes(topology, constraints) -> list:
     """Choices this backend's candidate policy made on the caller's behalf, in words."""
     attn = topology.attention
@@ -118,8 +199,30 @@ def policy_notes(topology, constraints) -> list:
     return []
 
 
+def _serve_candidates(workload, constraints, status):
+    from experts4bit_qlora.serve_recipe import ServeSetup
+
+    fixed = dict(constraints.fixed)
+    unknown = set(fixed) - set(ServeSetup.__dataclass_fields__)
+    if unknown:
+        raise ValueError(f"unknown serve setup fields fixed by the caller: {sorted(unknown)}")
+    if not status.kernels.get("paged_fp8", (False,))[0]:
+        return []
+    base = {**ServeSetup().to_dict(), "max_seqs": workload.concurrency or 1,
+            "max_tokens_per_seq": workload.context_len or 4096}
+    if constraints.expert_residency is not None and "device" not in constraints.expert_residency:
+        base["placement"] = "solver"               # the tiered placement, which the estimate refuses in words
+    graphs = [fixed["graphs"]] if "graphs" in fixed else [True, False]
+    return [{**base, **fixed, "graphs": g} for g in graphs]
+
+
 def estimate(topology, setup: dict, workload):
     """``(lines, unmodelled, refusals)`` for one setup; ``lines`` are ``(name, where, bytes, basis, detail)`` tuples."""
+    if workload.kind == "serve":
+        from experts4bit_qlora.serve_recipe import ServeSetup, estimate_serve_footprint
+
+        fp = estimate_serve_footprint(topology, ServeSetup(**setup))
+        return [(i.name, i.where, i.bytes, i.basis, i.detail) for i in fp.items], fp.unmodelled, fp.refusals
     from experts4bit_qlora.recipe import QLoRASetup, estimate_qlora_footprint
 
     fp = estimate_qlora_footprint(topology, QLoRASetup(**setup), tokens_per_microbatch=workload.tokens_per_microbatch,
@@ -129,6 +232,8 @@ def estimate(topology, setup: dict, workload):
 
 
 def speed_rank(setup: dict) -> tuple:
+    if "max_seqs" in setup:                     # serve: graphs replay the decode step instead of launching it
+        return (0 if setup.get("graphs") else 1,)
     return ((0 if setup["expert_residency"] == "device" else 1),
             (0 if setup["expert_kernel"] == "grouped_nf4" else 1),
             (1 if setup["attn_4bit"] else 0),

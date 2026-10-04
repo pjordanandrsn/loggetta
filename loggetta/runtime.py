@@ -22,7 +22,10 @@ class PlanNotExecutable(RuntimeError):
     pass
 
 
-def _executor(backend: str):
+def _executor(backend: str, kind: str = "train"):
+    if kind != "train":
+        raise PlanNotExecutable(f"{kind!r} plans are planned only: no executor runs them yet (start the server with "
+                                "the plan's setup by hand)")
     if backend == "experts4bit":
         from .backends import experts4bit_train
 
@@ -66,7 +69,7 @@ def execute(plan: ExecutionPlan, *, out_dir: str | None = None, seed: int = 0, l
         raise PlanNotExecutable("refused plan: " + "; ".join(plan.refusal.get("reasons", ())))
     prov = prov or {**provenance(), "taken": "at execute(), after import"}
     t0 = time.time()
-    result = _executor(plan.selected.backend)(plan, seed=seed, log=log)
+    result = _executor(plan.selected.backend, plan.workload.kind)(plan, seed=seed, log=log)
     model_short = plan.model["model"].rstrip("/").split("/")[-1]
     s = plan.selected.setup
     run_id = (f"{model_short}-{s['expert_residency']}-{s['expert_kernel']}{'-attn4' if s['attn_4bit'] else ''}"

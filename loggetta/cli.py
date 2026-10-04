@@ -31,6 +31,8 @@ def _common(p):
     p.add_argument("--micro-batch", type=int, default=1)
     p.add_argument("--grad-accum", type=int, default=1)
     p.add_argument("--steps", type=int, default=20)
+    p.add_argument("--context", type=int, help="serve: tokens per sequence, prompt + output (default 4096)")
+    p.add_argument("--concurrency", type=int, help="serve: sequences decoded together (default 1)")
     p.add_argument("--optimizer", default="adamw", choices=("adamw", "adamw_8bit"))
     p.add_argument("--device", type=int, default=0)
     p.add_argument("--vram", help="device budget in GiB (default: free now)")
@@ -61,7 +63,8 @@ def _plan(a):
     else:
         hw = probe()
     w = Workload(kind=a.workload, seq_len=a.seq, micro_batch=a.micro_batch, grad_accum=a.grad_accum, steps=a.steps,
-                 optimizer=a.optimizer)
+                 optimizer=a.optimizer, context_len=a.context or (4096 if a.workload == "serve" else None),
+                 concurrency=a.concurrency or (1 if a.workload == "serve" else None))
     c = Constraints(device=a.device, vram_budget=_gib(a.vram), ram_budget=_gib(a.ram), headroom=_gib(a.headroom),
                     expert_residency=None if a.experts == "any" else (a.experts,), fixed=_parse_fixed(a.fix),
                     objective=a.objective, target_s_per_step=a.target_s_per_step)

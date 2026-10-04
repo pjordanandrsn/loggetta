@@ -80,6 +80,7 @@ the ownership split and the dependency direction (`experts4bit-qlora -> grouped-
 | whether a config is loadable at all | e4b `loader.check_admission` / `admission_refusal` | the loader's own gates, now callable before loading |
 | bytes of a frozen NF4 stack, adapter counts, optimizer state | e4b `recipe.estimate_qlora_footprint` | sized by constructing e4b's own `Experts4bit`/`ExpertsLoRA` on meta, so the arithmetic cannot drift from the classes |
 | which setups are invalid for a model (biased experts, non-NF4 with the grouped kernel, …) | e4b `recipe.setup_refusals` | structural facts about e4b's mechanisms |
+| bytes the paged server holds (expert stacks, dense weights, the FP8 paged KV pool) and the env that builds it | e4b `serve_recipe.estimate_serve_footprint`, `paged_kv_pool_bytes`, `ServeSetup.to_env` | the pool size is `Fp8PagedKV`'s own arithmetic (tested equal to a constructed pool); the KV geometry is read by the server's own `_kv_geometry` / `kv_layers` |
 | building exactly the priced setup | e4b `recipe.prepare_qlora_training` | one call for the documented fast path, asserting every engine engaged |
 | which training kernel route a device gets; the sm_80 floor | gnf4 `nf4_route.route_for`, `MIN_CAPABILITY` | the kernel package's own dispatch rule, now a pure function |
 | pinned host-memory cost | gnf4 `pinned_request_cost` (#71) | the allocator rounding is measured there; e4b's estimate applies the same rule |
@@ -107,11 +108,14 @@ describe_moe(model, *, revision=None, trust_remote_code=False) -> MoETopology   
 setup_refusals(topology, QLoRASetup) -> tuple[str]                             # words, not exceptions
 estimate_qlora_footprint(topology, QLoRASetup, *, tokens_per_microbatch, optimizer) -> Footprint
 prepare_qlora_training(model_id, QLoRASetup, *, device, revision) -> PreparedQLoRA
+estimate_serve_footprint(topology, ServeSetup) -> Footprint                    # paged server, all-VRAM only (e4b#1080)
+ServeSetup.to_env() -> {"E4B_PAGED_*": str}                                    # what serve_paged reads back
 ```
 
-**Backend contract inside the planner** (`backends/experts4bit.py`): `probe(gpu)`, `candidates(...)`,
-`estimate(...)`, `speed_rank(setup)`, `describe_kernel(...)`, plus an executor (`experts4bit_train.run`). A
-second backend implements the same five functions; generalize into a protocol only then.
+**Backend contract inside the planner** (`backends/experts4bit.py`): `WORKLOADS`, `KERNELS_FOR`, `probe(gpu)`,
+`candidates(...)`, `estimate(...)`, `speed_rank(setup)`, `label(setup)`, `explain(...)`, `policy_notes(...)`,
+`describe_kernel(...)`, plus an executor for training (`experts4bit_train.run`; serve plans are planned only). A
+second backend implements the same functions; generalize into a protocol only then.
 
 ## 5. The plan
 

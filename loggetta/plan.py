@@ -19,7 +19,7 @@ GiB = 1 << 30
 
 @dataclass(frozen=True)
 class Workload:
-    """What to run. Training is planned today; serving is represented and refused until a backend plans it."""
+    """What to run: QLoRA training (``seq_len`` x ``micro_batch``) or paged serving (``context_len`` x ``concurrency``)."""
 
     kind: str = "train"                 # "train" | "serve"
     seq_len: int = 512
@@ -28,7 +28,7 @@ class Workload:
     steps: int = 20
     #: "adamw" (torch) or "adamw_8bit" (bitsandbytes): its state is part of the footprint
     optimizer: str = "adamw"
-    # serving shape -- accepted so a serving plan has somewhere to live; not planned yet
+    # serving shape: tokens per sequence (prompt + output) and sequences decoded together
     context_len: int | None = None
     concurrency: int | None = None
     phase: str | None = None            # "prefill" | "decode" | None (both)
@@ -84,8 +84,12 @@ class Candidate:
     rank_note: str = ""
     #: lower bounds that follow from the estimate and a bandwidth (each with its basis); empty when none apply
     bounds: dict = field(default_factory=dict)
+    #: the backend's one-line description of this setup (the planner never reads setup fields itself)
+    label_text: str = ""
 
     def label(self) -> str:
+        if self.label_text:
+            return self.label_text
         s = self.setup
         return (f"experts on {s.get('expert_residency')}, {s.get('expert_kernel')} kernel"
                 + (", NF4 attention" if s.get("attn_4bit") else "")
@@ -134,9 +138,11 @@ class ExecutionPlan:
     def render(self, verbose: bool = False) -> str:
         gb = lambda n: f"{n / GiB:6.2f} GiB"  # noqa: E731
         m, w = self.model, self.workload
+        shape = (f"{w.context_len} tokens per sequence x {w.concurrency} sequences" if w.kind == "serve" else
+                 f"seq {w.seq_len} x micro-batch {w.micro_batch} (= {w.tokens_per_microbatch} tokens/forward), "
+                 f"grad-accum {w.grad_accum}, {w.steps} steps")
         out = [f"Model     {m.get('model')}  ({m.get('model_type')}; {m.get('summary', '')})",
-               f"Workload  {w.kind}: seq {w.seq_len} x micro-batch {w.micro_batch} "
-               f"(= {w.tokens_per_microbatch} tokens/forward), grad-accum {w.grad_accum}, {w.steps} steps",
+               f"Workload  {w.kind}: {shape}",
                f"Budget    device {gb(self.budget['device'])} [{self.budget['device_source']}]   "
                f"host {gb(self.budget['host'])} [{self.budget['host_source']}]   "
                f"headroom {gb(self.budget['headroom'])} [policy]"]

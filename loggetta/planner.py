@@ -61,7 +61,7 @@ def _overheads(hardware, gpu, observations):
 PCIE_LANE_GBPS = {1: 0.25, 2: 0.5, 3: 0.985, 4: 1.969, 5: 3.938, 6: 7.563}
 
 
-def reserve_fraction(gpu, setup, observations, default, model=None):
+def reserve_fraction(gpu, setup, observations, default, model=None, kind="train"):
     """Allocator reserve slack (reserved peak / allocated peak - 1) for one candidate, from receipts. Returns
     (fraction, basis, source).
 
@@ -75,6 +75,9 @@ def reserve_fraction(gpu, setup, observations, default, model=None):
     4. the largest slack measured on this GPU, conservative (a smaller borrowed figure would make the unmeasured
        candidate look cheaper than the measured one);
     5. ``default``.
+
+    Only receipts of the same workload ``kind`` count: a server allocates its pools once, a trainer churns activations
+    every step, so one's slack says nothing about the other's. Receipts without a kind are training receipts.
     """
     def frac(o):
         m = o["measured"]
@@ -88,7 +91,8 @@ def reserve_fraction(gpu, setup, observations, default, model=None):
 
     key = ("expert_residency", "expert_kernel")
     usable = [o for o in observations if o.get("status") in ("OK", None) and o.get("measured", {}).get("device_peak_bytes")
-              and o.get("measured", {}).get("device_reserved_peak_bytes")]
+              and o.get("measured", {}).get("device_reserved_peak_bytes")
+              and o.get("workload", {}).get("kind", "train") == kind]
     same_setup = [o for o in usable if {k: o.get("setup", {}).get(k) for k in key} == {k: setup.get(k) for k in key}]
     here = [o for o in same_setup if gname(o) == gpu.name]
     exact = [o for o in here if model and mname(o) == model]
@@ -220,14 +224,19 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
             reasons.append(f"backend {b.NAME} unavailable: {st.reason}")
             continue
         reasons += b.policy_notes(topology, constraints)
+        wanted = getattr(b, "KERNELS_FOR", {}).get(workload.kind)
         for k, (ok, why) in sorted(st.kernels.items()):
-            if not ok:
+            if not ok and (wanted is None or k in wanted):
                 reasons.append(f"{b.NAME}: kernel {k} not usable here: {why}")
         for setup in b.candidates(topology, workload, constraints, st):
             raw, unmodelled, refusals = b.estimate(topology, setup, workload)
             alloc = sum(r[2] for r in raw if r[1] == "device")
-            frac, fbasis, fsrc = reserve_fraction(gpu, setup, observations, (reserve_frac, *reserve_meta),
-                                                  model=topology.model)
+            default = (reserve_frac, *reserve_meta)
+            if workload.kind != "train":
+                default = (DEFAULT_RESERVE_FRAC, "inferred", f"default {DEFAULT_RESERVE_FRAC:.0%} of the allocator "
+                           f"estimate; no {workload.kind} receipt on file measured this GPU")
+            frac, fbasis, fsrc = reserve_fraction(gpu, setup, observations, default, model=topology.model,
+                                                  kind=workload.kind)
             reserve = MemoryLine("allocator reserve (cached, unallocated blocks)", "device", int(frac * alloc),
                                  fbasis, fsrc)
             lines = tuple(MemoryLine(*r) for r in raw) + (reserve,) + tuple(dev_over) + tuple(host_over)
@@ -258,6 +267,7 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
             # the planner charges the context, allocator reserve and process baseline itself: drop the backend's note
             unmodelled = tuple(u for u in unmodelled if not u.startswith("CUDA context"))
             cands.append(Candidate(backend=b.NAME, setup=setup, lines=lines, device_bytes=dev, host_bytes=host,
+                                   label_text=b.label(setup),
                                    feasible=not rejected, rejected=tuple(rejected), unmodelled=tuple(unmodelled),
                                    rank=rank, rank_note=note, bounds=bounds))
     if not cands:
@@ -286,8 +296,8 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
     sel = feasible[0]
     st = statuses[sel.backend]
     b = next(x for x in usable if x.NAME == sel.backend)
-    reasons += _explain(sel, feasible, infeasible, budget, st, b, constraints)
-    if sel.setup["expert_residency"] == "host" and gpu.pcie_width_current.value and gpu.pcie_width_max.value and \
+    reasons += b.explain(sel, feasible, infeasible, budget, st, constraints, workload)
+    if sel.setup.get("expert_residency") == "host" and gpu.pcie_width_current.value and gpu.pcie_width_max.value and \
             gpu.pcie_width_current.value < gpu.pcie_width_max.value:
         warnings.append(f"host-resident experts stream over PCIe, and the driver reports the link at "
                         f"x{gpu.pcie_width_current.value} of x{gpu.pcie_width_max.value} right now")
@@ -296,35 +306,10 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
                          provenance={"backend_versions": st.versions}, **common)
 
 
-def _explain(sel, feasible, infeasible, budget, status, backend, constraints):
-    s, out = sel.setup, []
-    resident = [c for c in feasible + infeasible if c.setup["expert_residency"] == "device"
-                and not any("cannot" in r or "refus" in r for r in c.rejected)]
-    if s["expert_residency"] == "device":
-        out.append(f"experts resident on the device: {sel.device_bytes / GiB:.2f} GiB estimated + "
-                   f"{budget['headroom'] / GiB:.2f} GiB headroom fits the {budget['device'] / GiB:.2f} GiB budget")
-    else:
-        need = min((c.device_bytes for c in resident), default=None)
-        out.append("experts host-backed (pinned, streamed one layer at a time): "
-                   + (f"the cheapest resident setup needs {need / GiB:.2f} GiB + headroom, over the "
-                      f"{budget['device'] / GiB:.2f} GiB budget" if need is not None and constraints.objective == "speed"
-                      else f"chosen by objective {constraints.objective}"))
-    out.append(f"expert kernel {s['expert_kernel']}: {backend.describe_kernel(s, status)}")
-    if constraints.objective == "speed":
-        for axis, ev in backend.SPEED_EVIDENCE.items():
-            out.append(f"ordering, {axis}: {ev}")
-    if s["attn_4bit"]:
-        out.append("attention stored in NF4 because no bf16-attention setup fit")
-    if constraints.fixed:
-        out.append(f"fixed by the caller: {constraints.fixed}")
-    out.append("activation policy: every decoder layer checkpointed (recomputed in backward); "
-               + (f"MoE activations kept in {s['keep_moe_layers']} layers" if s.get("keep_moe_layers")
-                  else "no MoE activations kept (keep_moe_layers is a dial the planner does not choose yet)"))
-    return out
-
-
 def _suggest(topology, workload, constraints, budget, closest, backends, statuses, dev_over, host_over,
              reserve_frac=DEFAULT_RESERVE_FRAC):
+    if workload.kind == "serve":
+        return _suggest_serve(topology, workload, budget, closest, backends, dev_over, reserve_frac)
     out = []
     dev_short = closest.device_bytes + budget["headroom"] - budget["device"]
     if dev_short > 0:
@@ -336,7 +321,7 @@ def _suggest(topology, workload, constraints, budget, closest, backends, statuse
         relaxed = Constraints(**{**constraints.__dict__, "expert_residency": None})
         for b in backends:
             for setup in b.candidates(topology, workload, relaxed, statuses[b.NAME]):
-                if setup["expert_residency"] != "host":
+                if setup.get("expert_residency") != "host":
                     continue
                 raw, _, refusals = b.estimate(topology, setup, workload)
                 dev = int((1 + reserve_frac) * sum(r[2] for r in raw if r[1] == "device")) + sum(x.bytes for x in dev_over)
@@ -361,4 +346,37 @@ def _suggest(topology, workload, constraints, budget, closest, backends, statuse
                 break
         else:
             out.append("no token count makes the closest setup fit: its fixed weights alone exceed the budget")
+    return out
+
+
+def _suggest_serve(topology, workload, budget, closest, backends, dev_over, reserve_frac):
+    """The largest context (per sequence) and the largest concurrency that fit with the closest setup, by search."""
+    out = []
+    b = next((x for x in backends if x.NAME == closest.backend), None)
+    short = closest.device_bytes + budget["headroom"] - budget["device"]
+    if short > 0:
+        out.append(f"{short / GiB:.2f} GiB more device memory (a larger --vram budget, or free what other processes hold)")
+    if b is None:
+        return out
+
+    def fits(ctx, seqs):
+        w = Workload(**{**workload.__dict__, "context_len": ctx, "concurrency": seqs})
+        raw, _, refusals = b.estimate(topology, {**closest.setup, "max_tokens_per_seq": ctx, "max_seqs": seqs}, w)
+        dev = int((1 + reserve_frac) * sum(r[2] for r in raw if r[1] == "device")) + sum(x.bytes for x in dev_over)
+        return not refusals and dev + budget["headroom"] <= budget["device"]
+
+    ctx, seqs = closest.setup["max_tokens_per_seq"], closest.setup["max_seqs"]
+    lo, hi = 0, -(-ctx // 16)                  # in 16-token KV blocks: the pool's granularity
+    while hi - lo > 1:
+        mid = (lo + hi) // 2
+        lo, hi = (mid, hi) if fits(16 * mid, seqs) else (lo, mid)
+    if lo >= 1 and 16 * lo < ctx:
+        out.append(f"context {16 * lo} tokens per sequence at concurrency {seqs} (requested {ctx})")
+    n = seqs
+    while n > 1 and not fits(ctx, n):
+        n //= 2
+    if n >= 1 and fits(ctx, n) and n < seqs:
+        out.append(f"concurrency {n} at context {ctx} (requested {seqs})")
+    if not fits(16, 1):
+        out.append("the weights alone exceed the budget: no context or concurrency fits")
     return out

@@ -17,7 +17,7 @@ import os
 import platform
 import shutil
 import subprocess
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, replace
 
 GiB = 1 << 30
 
