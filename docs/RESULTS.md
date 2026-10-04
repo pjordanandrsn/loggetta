@@ -138,10 +138,19 @@ None of these is a family-name branch.
 
 ## Provenance
 
-- Every receipt records the git commit and dirty flag of each imported source tree, distribution versions, argv
-  and the whole plan.
-- R1's planner source was recorded against the enclosing `/home/node/work` repository: the planner was not yet a
-  git repository, and `git_commit` did not check that the file was tracked. That was fixed before R1b; later
-  receipts are clean.
-- experts4bit-qlora's base moved during the session (main was merging, including #1048). R1–R4 ran on the branch
-  rebased over `5c74564e`/`2631d3d7`, R5 onward over `520b0b5d`; the receipts say which.
+- Every receipt records the git commit and dirty flag of each source tree, distribution versions, argv and the
+  whole plan.
+- **Two provenance defects, found from the receipts themselves and fixed.**
+  1. R1's planner source was recorded against the enclosing `/home/node/work` repository. The planner was not yet
+     a git repository, and `git_commit` did not check that the file was tracked. Fixed before R1b.
+  2. R1–R5 and R3b read commits when `execute()` began, minutes after the process had imported the code. I was
+     committing planner changes during the queue, so a receipt could name newer code than the code that ran. R5
+     provably does: its receipt names planner `fd76c308`, but its plan applies the host run's 38.6% reserve slack
+     to a resident setup, which is the pre-`fd76c308` lookup.
+  - Fixed in `30b63b5`: provenance is taken at process start, before the measured code is imported, and
+    `changed_during_run` lists any tree that moved.
+  - For R1–R5 and R3b, the experts4bit-qlora and grouped-nf4-gemm commits are reliable: their branches only
+    rebased; the code did not change. The planner commit is approximate.
+- experts4bit-qlora's base moved during the session while main was merging, including #1048. R1–R5 ran on the
+  branch over `2631d3d7` (`fa324db3`, or `65ddf4a6` for R2's same code over `5c74564e`); R3b onward over
+  `520b0b5d` (`f0af2b3d`).
