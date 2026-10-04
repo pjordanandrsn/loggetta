@@ -23,7 +23,8 @@ python -m loggetta train allenai/OLMoE-1B-7B-0924 --seq 512 --micro-batch 2 --st
   - Directed: `--vram`, `--ram`, `--experts device|host`, `--objective`.
   - Expert: `--fix FIELD=VALUE` pins any backend setup field.
 
-Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for what lives where and what is measured versus speculative.
+Read [`docs/SESSION-REPORT.md`](docs/SESSION-REPORT.md) first (short answers), then [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md),
+[`docs/RESULTS.md`](docs/RESULTS.md) and [`docs/SERVING-PRESSURE-TEST.md`](docs/SERVING-PRESSURE-TEST.md).
 
 ## Status
 
@@ -31,13 +32,16 @@ Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for what lives where and wha
 - **The name is a label.** Nothing serialized carries it; schemas are `execution-plan/1` and
   `execution-receipt/1`. `tests/test_renameable.py` enforces this.
 - **Needs unreleased lower-layer changes**:
-  - experts4bit-qlora branch `feat/config-only-footprint` (`describe_moe`, `recipe`);
-  - grouped-nf4-gemm branch `feat/route-decision-without-device` (`nf4_route.route_for`).
+  - experts4bit-qlora [#1055](https://github.com/pjordanandrsn/experts4bit-qlora/pull/1055) (`describe_moe`, `recipe`);
+  - grouped-nf4-gemm [#464](https://github.com/pjordanandrsn/grouped-nf4-gemm/pull/464) (`nf4_route.route_for`).
+  Until they merge, put their branches on `PYTHONPATH`, as the receipts record.
 
 ## Tests
 
 ```
 pytest tests/                         # fast; CPU; tiny configs through the real model-family layer
-pytest tests/ -m gpu                  # (none yet) GPU integration lives in the lower packages' suites
-python bench/direct_baseline.py ...   # the hand-composed comparison arm for a planned run
+python bench/direct_baseline.py --receipt R.json   # the hand-composed comparison arm for a planned run (GPU)
+python bench/validate_register.py                  # price recipes the register measured; compare (no GPU)
+python bench/family_sweep.py --hardware hw.json    # plan ten MoE families; per-family code stays zero
+python bench/summarize_receipts.py runs/receipts   # the tables in docs/RESULTS.md
 ```
