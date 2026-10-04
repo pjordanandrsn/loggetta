@@ -61,24 +61,52 @@ def _overheads(hardware, gpu, observations):
 PCIE_LANE_GBPS = {1: 0.25, 2: 0.5, 3: 0.985, 4: 1.969, 5: 3.938, 6: 7.563}
 
 
-def reserve_fraction(gpu, setup, observations, default):
-    """Allocator reserve slack (reserved peak / allocated peak - 1) for a candidate.
+def reserve_fraction(gpu, setup, observations, default, model=None):
+    """Allocator reserve slack (reserved peak / allocated peak - 1) for one candidate, from receipts. Returns
+    (fraction, basis, source).
 
-    From a receipt on this GPU with the same expert residency and kernel when one exists: slack depends on the allocation
-    pattern (offload's per-layer staging leaves more cached blocks). A candidate without one gets the LARGEST slack
-    measured on this GPU, labelled conservative. Borrowing a smaller figure from another setup would make the unmeasured
-    candidate look cheaper than the measured one and bias the choice toward whatever has not been run yet. With no receipt
-    on this GPU, ``default``. Returns (fraction, basis, source)."""
+    Slack depends on the allocation pattern (offload's per-layer staging leaves more cached blocks), on the model and on
+    the GPU: OLMoE's resident slack measured 0.222 on an RTX A2000 and 0.150 on an RTX 5090. In order:
+
+    1. a receipt for this GPU, this residency + kernel and this model: measured;
+    2. this model + setup measured on ANOTHER GPU, scaled by an anchor model measured with the same setup on both GPUs
+       (slack(model, here) = slack(model, there) x slack(anchor, here) / slack(anchor, there)): a stated transfer;
+    3. this GPU + setup, another model: measured, but for a different model;
+    4. the largest slack measured on this GPU, conservative (a smaller borrowed figure would make the unmeasured
+       candidate look cheaper than the measured one);
+    5. ``default``.
+    """
     def frac(o):
         m = o["measured"]
         return m["device_reserved_peak_bytes"] / m["device_peak_bytes"] - 1
 
-    same_gpu = [o for o in observations if o.get("hardware", {}).get("gpu", {}).get("name") == gpu.name
-                and o.get("measured", {}).get("device_peak_bytes") and o.get("measured", {}).get("device_reserved_peak_bytes")]
+    def gname(o):
+        return o.get("hardware", {}).get("gpu", {}).get("name")
+
+    def mname(o):
+        return o.get("model", {}).get("model")
+
     key = ("expert_residency", "expert_kernel")
-    match = [o for o in same_gpu if {k: o.get("setup", {}).get(k) for k in key} == {k: setup.get(k) for k in key}]
-    if match:
-        return frac(match[0]), "measured", f"receipt {match[0].get('run_id')} (same residency and kernel): reserved / allocated peak - 1 = {frac(match[0]):.3f}"
+    usable = [o for o in observations if o.get("status") in ("OK", None) and o.get("measured", {}).get("device_peak_bytes")
+              and o.get("measured", {}).get("device_reserved_peak_bytes")]
+    same_setup = [o for o in usable if {k: o.get("setup", {}).get(k) for k in key} == {k: setup.get(k) for k in key}]
+    here = [o for o in same_setup if gname(o) == gpu.name]
+    exact = [o for o in here if model and mname(o) == model]
+    if exact:
+        return frac(exact[0]), "measured", f"receipt {exact[0].get('run_id')} (this GPU, setup and model) = {frac(exact[0]):.3f}"
+    if model:
+        for there in (o for o in same_setup if mname(o) == model and gname(o) != gpu.name):
+            for anchor_here in here:
+                anchor_there = next((o for o in same_setup if gname(o) == gname(there) and mname(o) == mname(anchor_here)), None)
+                if anchor_there and frac(anchor_there) > 0:
+                    f = frac(there) * frac(anchor_here) / frac(anchor_there)
+                    return f, "heuristic", (f"transferred: {frac(there):.3f} measured for this model on {gname(there)} "
+                                            f"(receipt {there.get('run_id')}) x anchor {mname(anchor_here)} "
+                                            f"{frac(anchor_here):.3f} here / {frac(anchor_there):.3f} there = {f:.3f}")
+    if here:
+        return frac(here[0]), "measured", (f"receipt {here[0].get('run_id')} (this GPU and setup, model "
+                                           f"{mname(here[0])}) = {frac(here[0]):.3f}")
+    same_gpu = [o for o in usable if gname(o) == gpu.name]
     if same_gpu:
         worst = max(same_gpu, key=frac)
         return frac(worst), "measured", (f"no receipt for this setup; the largest slack measured on this GPU, receipt "
@@ -198,7 +226,8 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
         for setup in b.candidates(topology, workload, constraints, st):
             raw, unmodelled, refusals = b.estimate(topology, setup, workload)
             alloc = sum(r[2] for r in raw if r[1] == "device")
-            frac, fbasis, fsrc = reserve_fraction(gpu, setup, observations, (reserve_frac, *reserve_meta))
+            frac, fbasis, fsrc = reserve_fraction(gpu, setup, observations, (reserve_frac, *reserve_meta),
+                                                  model=topology.model)
             reserve = MemoryLine("allocator reserve (cached, unallocated blocks)", "device", int(frac * alloc),
                                  fbasis, fsrc)
             lines = tuple(MemoryLine(*r) for r in raw) + (reserve,) + tuple(dev_over) + tuple(host_over)

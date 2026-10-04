@@ -215,3 +215,22 @@ def test_an_unmeasured_setup_gets_the_conservative_slack(topo):
     p = plan(topo, hw(), Workload(seq_len=512), Constraints(fixed={"expert_kernel": "reference"}), observations=obs)
     line = next(ln for ln in p.selected.lines if ln.name.startswith("allocator reserve"))
     assert "conservative" in line.detail and "host-run" in line.detail
+
+
+def test_slack_for_an_unmeasured_gpu_transfers_through_an_anchor(topo):
+    def rec(rid, gpu_name, model, alloc, reserved):
+        return {"schema": "execution-receipt/1", "run_id": rid, "status": "OK", "model": {"model": model},
+                "hardware": {"gpu": {"name": gpu_name, "driver": "x"}},
+                "setup": {"expert_residency": "device", "expert_kernel": "grouped_nf4"},
+                "measured": {"device_peak_bytes": alloc, "device_reserved_peak_bytes": reserved}}
+    model = topo.model
+    obs = [rec("big-on-5090", "RTX 5090", model, 100, 110),           # this model, measured elsewhere: 0.10
+           rec("anchor-on-5090", "RTX 5090", "anchor", 100, 115),      # anchor there: 0.15
+           rec("anchor-here", "Test GPU", "anchor", 100, 130)]         # anchor here: 0.30 -> transferred 0.10 x 0.30 / 0.15
+    p = plan(topo, hw(), Workload(seq_len=512), Constraints(fixed={"expert_kernel": "grouped_nf4", "attn_4bit": False},
+                                                            expert_residency=("device",)), observations=obs)
+    line = next(ln for ln in p.selected.lines if ln.name.startswith("allocator reserve"))
+    alloc = sum(ln.bytes for ln in p.selected.lines if ln.where == "device" and ln.basis in ("derived", "heuristic")
+                and not ln.name.startswith("allocator reserve"))
+    assert line.basis == "heuristic" and "transferred" in line.detail and "big-on-5090" in line.detail
+    assert abs(line.bytes / alloc - 0.20) < 1e-3
