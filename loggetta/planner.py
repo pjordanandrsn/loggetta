@@ -61,6 +61,22 @@ def _overheads(hardware, gpu, observations):
 PCIE_LANE_GBPS = {1: 0.25, 2: 0.5, 3: 0.985, 4: 1.969, 5: 3.938, 6: 7.563}
 
 
+def reserve_fraction(gpu, setup, observations, default):
+    """Allocator reserve slack (reserved peak / allocated peak - 1) for a candidate: from a receipt on this GPU with the
+    same expert residency and kernel if one exists (slack depends on the allocation pattern: offload's per-layer staging
+    leaves more cached blocks), else any receipt on this GPU, else ``default``. Returns (fraction, basis, source)."""
+    same_gpu = [o for o in observations if o.get("hardware", {}).get("gpu", {}).get("name") == gpu.name
+                and o.get("measured", {}).get("device_peak_bytes") and o.get("measured", {}).get("device_reserved_peak_bytes")]
+    for pool, how in (([o for o in same_gpu if {k: o.get("setup", {}).get(k) for k in ("expert_residency", "expert_kernel")}
+                        == {k: setup.get(k) for k in ("expert_residency", "expert_kernel")}], "same residency and kernel"),
+                      (same_gpu, "same GPU, different setup")):
+        if pool:
+            m = pool[0]["measured"]
+            frac = m["device_reserved_peak_bytes"] / m["device_peak_bytes"] - 1
+            return frac, "measured", f"receipt {pool[0].get('run_id')} ({how}): reserved / allocated peak - 1 = {frac:.3f}"
+    return default[0], default[1], default[2]
+
+
 def link_bandwidth(gpu, observations):
     """(GB/s, basis, source) for host-to-device copies: a receipt's measurement for this GPU, else the PCIe ceiling."""
     for obs in observations:
@@ -173,8 +189,9 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
         for setup in b.candidates(topology, workload, constraints, st):
             raw, unmodelled, refusals = b.estimate(topology, setup, workload)
             alloc = sum(r[2] for r in raw if r[1] == "device")
-            reserve = MemoryLine("allocator reserve (cached, unallocated blocks)", "device", int(reserve_frac * alloc),
-                                 reserve_meta[0], reserve_meta[1])
+            frac, fbasis, fsrc = reserve_fraction(gpu, setup, observations, (reserve_frac, *reserve_meta))
+            reserve = MemoryLine("allocator reserve (cached, unallocated blocks)", "device", int(frac * alloc),
+                                 fbasis, fsrc)
             lines = tuple(MemoryLine(*r) for r in raw) + (reserve,) + tuple(dev_over) + tuple(host_over)
             dev = sum(ln.bytes for ln in lines if ln.where == "device")
             host = sum(ln.bytes for ln in lines if ln.where == "host")
