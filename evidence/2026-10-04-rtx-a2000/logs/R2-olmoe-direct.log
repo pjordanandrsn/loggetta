@@ -1,0 +1,30 @@
+[17:40:27]   checkpoint: allenai/OLMoE-1B-7B-0924 @ 6d84c48581ece794365f2b8e9cfb043c68ade9c5 (requested main, unpinned)
+[17:40:27]   fusing + quantizing experts (up to 16x64) to nf4 (streaming)...
+[17:46:11]   quantized experts on 16/16 MoE layers (64 experts each)
+[17:46:11]   loading non-expert weights (attention/embeddings/router/norms/dense-mlp)...
+Using the latest cached version of the dataset since tatsu-lab/alpaca couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'default' at /home/node/.cache/huggingface/datasets/tatsu-lab___alpaca/default/0.0.0/dce01c9b08f87459cf36a430d809084718273017 (last modified on Fri Jul  3 14:24:07 2026).
+  step 1/12  loss 1.8590  73.51s  peak 5.16 GiB
+  step 5/12  loss 1.5061  1.99s  peak 5.42 GiB
+  step 10/12  loss 1.1619  2.30s  peak 5.43 GiB
+  step 12/12  loss 1.2203  2.18s  peak 5.47 GiB
+{
+ "status": "OK",
+ "s_per_step_median": 2.1555941104888916,
+ "device_peak_gib": 5.470625400543213,
+ "losses": [
+  1.8589688539505005,
+  1.269298791885376,
+  1.5279985666275024,
+  1.2712092399597168,
+  1.5060629844665527,
+  1.4233577251434326,
+  1.3013802766799927,
+  1.532228708267212,
+  1.479211449623108,
+  1.1619127988815308,
+  1.2264701128005981,
+  1.2202726602554321
+ ]
+}
+receipt: /home/node/work/loggetta-ws/runs/receipts/direct-OLMoE-1B-7B-0924-device-grouped_nf4-t1024-20261004T173932Z.json

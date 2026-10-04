@@ -1,0 +1,82 @@
+{
+ "gpus": [
+  {
+   "index": 0,
+   "vendor": "nvidia",
+   "name": "NVIDIA RTX A2000 12GB",
+   "uuid": "GPU-01aa94f1-4004-9932-0b37-2051081a2a9d",
+   "compute_capability": {
+    "value": [
+     8,
+     6
+    ],
+    "source": "reported",
+    "note": "nvidia-smi compute_cap"
+   },
+   "memory_total": {
+    "value": 12878610432,
+    "source": "reported",
+    "note": "nvidia-smi"
+   },
+   "memory_free": {
+    "value": 11437867008,
+    "source": "reported",
+    "note": "nvidia-smi, at probe time"
+   },
+   "driver": {
+    "value": "575.64.05",
+    "source": "reported",
+    "note": ""
+   },
+   "pcie_gen_max": {
+    "value": 3,
+    "source": "reported",
+    "note": ""
+   },
+   "pcie_width_max": {
+    "value": 16,
+    "source": "reported",
+    "note": ""
+   },
+   "pcie_gen_current": {
+    "value": 1,
+    "source": "reported",
+    "note": "the current link can train down at idle; read it under load before trusting it"
+   },
+   "pcie_width_current": {
+    "value": 8,
+    "source": "reported",
+    "note": "the current link can train down at idle; read it under load before trusting it"
+   }
+  }
+ ],
+ "host": {
+  "cpu_model": {
+   "value": "Intel(R) Xeon(R) W-1250 CPU @ 3.30GHz",
+   "source": "reported",
+   "note": ""
+  },
+  "cpus": {
+   "value": 2.0,
+   "source": "reported",
+   "note": "cgroup CPU quota 2 (visible cores 12)"
+  },
+  "memory_total": {
+   "value": 134919548928,
+   "source": "reported",
+   "note": "/proc/meminfo (the host's, not the container's)"
+  },
+  "memory_available": {
+   "value": 23480074240,
+   "source": "reported",
+   "note": "cgroup v1: limit - usage + reclaimable page cache (17.2 GiB of it is page cache)"
+  },
+  "memory_limit": {
+   "value": 30064771072,
+   "source": "reported",
+   "note": "cgroup v1 memory limit"
+  }
+ },
+ "platform": "Linux x86_64",
+ "notes": []
+}

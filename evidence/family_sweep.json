@@ -1,0 +1,267 @@
+{
+ "schema": "family-sweep/1",
+ "hardware": "/home/paulj/lw/seat-hw.json",
+ "seq": 2048,
+ "per_family_code_added": [],
+ "rows": [
+  {
+   "model": "allenai/OLMoE-1B-7B-0924",
+   "model_type": "olmoe",
+   "convention": "qwen2_moe",
+   "summary": "allenai/OLMoE-1B-7B-0924 (olmoe, qwen2_moe): 16/16 MoE layers, E=64 H=2048 I=1024, top-8; 6.44B expert + 0.48B dense params",
+   "moe_layers": 16,
+   "n_layers": 16,
+   "attention_layers": 16,
+   "expert_bias": [],
+   "loader_refusal": null,
+   "status": "feasible",
+   "seconds": 6.65,
+   "selected": {
+    "quant_type": "nf4",
+    "blocksize": 64,
+    "r": 8,
+    "alpha": 16,
+    "adapter_dtype": "bf16",
+    "train_experts": true,
+    "train_attention": true,
+    "attn_4bit": false,
+    "expert_residency": "device",
+    "pin": true,
+    "expert_kernel": "grouped_nf4",
+    "dgrad": true,
+    "keep_moe_layers": 0
+   },
+   "device_gib": 6.45,
+   "host_gib": 0.71
+  },
+  {
+   "model": "Qwen/Qwen3-30B-A3B",
+   "model_type": "qwen3_moe",
+   "convention": "qwen2_moe",
+   "summary": "Qwen/Qwen3-30B-A3B (qwen3_moe, qwen2_moe): 48/48 MoE layers, E=128 H=2048 I=768, top-8; 28.99B expert + 1.54B dense params",
+   "moe_layers": 48,
+   "n_layers": 48,
+   "attention_layers": 48,
+   "expert_bias": [],
+   "loader_refusal": null,
+   "status": "refused",
+   "seconds": 24.72,
+   "refusal": [
+    "experts on host, grouped_nf4 kernel, NF4 attention, pageable: device 10.70 + headroom 0.53 GiB > budget 10.65 GiB"
+   ],
+   "suggestions": [
+    "0.58 GiB more device memory (a larger --vram budget, or free what other processes hold)",
+    "reduce tokens per micro-batch to 1024 (seq x micro-batch) with the same setup"
+   ]
+  },
+  {
+   "model": "Qwen/Qwen3.6-35B-A3B",
+   "model_type": "qwen3_5_moe",
+   "convention": "qwen3_5_moe",
+   "summary": "Qwen/Qwen3.6-35B-A3B (qwen3_5_moe, qwen3_5_moe): 40/40 MoE layers, E=256 H=2048 I=512, top-8; 32.21B expert + 2.45B dense params",
+   "moe_layers": 40,
+   "n_layers": 40,
+   "attention_layers": 10,
+   "expert_bias": [],
+   "loader_refusal": null,
+   "status": "refused",
+   "seconds": 43.23,
+   "refusal": [
+    "experts on host, grouped_nf4 kernel, NF4 attention: device 18.32 + headroom 0.53 GiB > budget 10.65 GiB"
+   ],
+   "suggestions": [
+    "8.20 GiB more device memory (a larger --vram budget, or free what other processes hold)",
+    "reduce tokens per micro-batch to 256 (seq x micro-batch) with the same setup"
+   ]
+  },
+  {
+   "model": "ibm-granite/granite-3.1-3b-a800m-instruct",
+   "model_type": "granitemoe",
+   "convention": "granitemoe",
+   "summary": "ibm-granite/granite-3.1-3b-a800m-instruct (granitemoe, granitemoe): 32/32 MoE layers, E=40 H=1536 I=512, top-8; 3.02B expert + 0.28B dense params",
+   "moe_layers": 32,
+   "n_layers": 32,
+   "attention_layers": 32,
+   "expert_bias": [],
+   "loader_refusal": null,
+   "status": "feasible",
+   "seconds": 3.64,
+   "selected": {
+    "quant_type": "nf4",
+    "blocksize": 64,
+    "r": 8,
+    "alpha": 16,
+    "adapter_dtype": "bf16",
+    "train_experts": true,
+    "train_attention": true,
+    "attn_4bit": false,
+    "expert_residency": "device",
+    "pin": true,
+    "expert_kernel": "grouped_nf4",
+    "dgrad": true,
+    "keep_moe_layers": 0
+   },
+   "device_gib": 4.06,
+   "host_gib": 0.71
+  },
+  {
+   "model": "ibm-granite/granite-4.0-h-tiny",
+   "model_type": "granitemoehybrid",
+   "convention": "granitemoe",
+   "summary": "ibm-granite/granite-4.0-h-tiny (granitemoehybrid, granitemoe): 40/40 MoE layers, E=64 H=1536 I=512, top-6; 6.04B expert + 0.90B dense params",
+   "moe_layers": 40,
+   "n_layers": 40,
+   "attention_layers": 4,
+   "expert_bias": [],
+   "loader_refusal": null,
+   "status": "feasible",
+   "seconds": 7.12,
+   "selected": {
+    "quant_type": "nf4",
+    "blocksize": 64,
+    "r": 8,
+    "alpha": 16,
+    "adapter_dtype": "bf16",
+    "train_experts": true,
+    "train_attention": true,
+    "attn_4bit": false,
+    "expert_residency": "device",
+    "pin": true,
+    "expert_kernel": "grouped_nf4",
+    "dgrad": true,
+    "keep_moe_layers": 0
+   },
+   "device_gib": 8.5,
+   "host_gib": 0.71
+  },
+  {
+   "model": "LiquidAI/LFM2-8B-A1B",
+   "model_type": "lfm2_moe",
+   "convention": "lfm2_moe",
+   "summary": "LiquidAI/LFM2-8B-A1B (lfm2_moe, lfm2_moe): 22/24 MoE layers, E=32 H=2048 I=1792, top-4; 7.75B expert + 0.59B dense params",
+   "moe_layers": 22,
+   "n_layers": 24,
+   "attention_layers": 6,
+   "expert_bias": [],
+   "loader_refusal": null,
+   "status": "feasible",
+   "seconds": 3.71,
+   "selected": {
+    "quant_type": "nf4",
+    "blocksize": 64,
+    "r": 8,
+    "alpha": 16,
+    "adapter_dtype": "bf16",
+    "train_experts": true,
+    "train_attention": true,
+    "attn_4bit": false,
+    "expert_residency": "device",
+    "pin": true,
+    "expert_kernel": "grouped_nf4",
+    "dgrad": true,
+    "keep_moe_layers": 0
+   },
+   "device_gib": 7.74,
+   "host_gib": 0.71
+  },
+  {
+   "model": "mistralai/Mixtral-8x7B-Instruct-v0.1",
+   "model_type": "mixtral",
+   "convention": "mixtral",
+   "summary": "mistralai/Mixtral-8x7B-Instruct-v0.1 (mixtral, mixtral): 32/32 MoE layers, E=8 H=4096 I=14336, top-2; 45.10B expert + 1.61B dense params",
+   "moe_layers": 32,
+   "n_layers": 32,
+   "attention_layers": 32,
+   "expert_bias": [],
+   "loader_refusal": null,
+   "status": "refused",
+   "seconds": 6.39,
+   "refusal": [
+    "experts on host, grouped_nf4 kernel, NF4 attention, pageable: host 24.34 GiB > budget 21.87 GiB"
+   ],
+   "suggestions": [
+    "2.47 GiB more host memory"
+   ]
+  },
+  {
+   "model": "baidu/ERNIE-4.5-21B-A3B-PT",
+   "model_type": "ernie4_5_moe",
+   "convention": "qwen2_moe",
+   "summary": "baidu/ERNIE-4.5-21B-A3B-PT (ernie4_5_moe, qwen2_moe): 27/28 MoE layers, E=64 H=2560 I=1536, top-6; 20.38B expert + 1.44B dense params",
+   "moe_layers": 27,
+   "n_layers": 28,
+   "attention_layers": 28,
+   "expert_bias": [],
+   "loader_refusal": null,
+   "status": "feasible",
+   "seconds": 9.44,
+   "selected": {
+    "quant_type": "nf4",
+    "blocksize": 64,
+    "r": 8,
+    "alpha": 16,
+    "adapter_dtype": "bf16",
+    "train_experts": true,
+    "train_attention": true,
+    "attn_4bit": false,
+    "expert_residency": "host",
+    "pin": true,
+    "expert_kernel": "grouped_nf4",
+    "dgrad": true,
+    "keep_moe_layers": 0
+   },
+   "device_gib": 8.97,
+   "host_gib": 12.1
+  },
+  {
+   "model": "deepseek-ai/DeepSeek-V2-Lite",
+   "model_type": "deepseek_v2",
+   "convention": "qwen2_moe",
+   "summary": "deepseek-ai/DeepSeek-V2-Lite (deepseek_v2, qwen2_moe): 26/27 MoE layers, E=64 H=2048 I=1408, top-6; 14.39B expert + 1.31B dense params",
+   "moe_layers": 26,
+   "n_layers": 27,
+   "attention_layers": null,
+   "expert_bias": [],
+   "loader_refusal": null,
+   "status": "feasible",
+   "seconds": 3.95,
+   "selected": {
+    "quant_type": "nf4",
+    "blocksize": 64,
+    "r": 8,
+    "alpha": 16,
+    "adapter_dtype": "bf16",
+    "train_experts": true,
+    "train_attention": false,
+    "attn_4bit": false,
+    "expert_residency": "host",
+    "pin": true,
+    "expert_kernel": "grouped_nf4",
+    "dgrad": true,
+    "keep_moe_layers": 0
+   },
+   "device_gib": 8.09,
+   "host_gib": 11.68
+  },
+  {
+   "model": "openai/gpt-oss-20b",
+   "model_type": "gpt_oss",
+   "convention": "gptoss",
+   "summary": "openai/gpt-oss-20b (gpt_oss, gptoss): 24/24 MoE layers, E=32 H=2880 I=2880, top-4; 19.11B expert + 1.80B dense params",
+   "moe_layers": 24,
+   "n_layers": 24,
+   "attention_layers": 24,
+   "expert_bias": [
+    "down_proj_bias",
+    "gate_up_proj_bias"
+   ],
+   "loader_refusal": null,
+   "status": "refused",
+   "seconds": 0.13,
+   "refusal": [
+    "train_experts: the expert stacks carry ['down_proj_bias', 'gate_up_proj_bias'], an epilogue ExpertsLoRA cannot represent (assert_stock_epilogue); the loader builds them bare"
+   ],
+   "suggestions": []
+  }
+ ]
+}

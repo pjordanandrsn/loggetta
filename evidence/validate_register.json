@@ -1,0 +1,385 @@
+{
+ "schema": "estimate-validation/1",
+ "rows": [
+  {
+   "claim": "e4b.train.h2h.unsloth.olmoe.5090.2026-09-19.arm.e4b.fused_attn4",
+   "model": "allenai/OLMoE-1B-7B-0924",
+   "setup": {
+    "r": 16,
+    "alpha": 16,
+    "adapter_dtype": "fp32",
+    "attn_4bit": true,
+    "expert_kernel": "grouped_nf4",
+    "dgrad": true
+   },
+   "tokens_per_microbatch": 1110,
+   "optimizer": "adamw_8bit",
+   "note": "tp4 field recipe, RTX 5090, mb 2 (T assumed)",
+   "estimated_gb": 6.03,
+   "measured_gb": 6.419,
+   "residual_gb": 0.389,
+   "ratio": 1.0645,
+   "derived_gb": 5.399,
+   "heuristic_gb": 0.631,
+   "items": [
+    {
+     "name": "frozen expert stacks",
+     "gb": 3.624,
+     "basis": "derived"
+    },
+    {
+     "name": "attention projections (NF4)",
+     "gb": 0.138,
+     "basis": "derived"
+    },
+    {
+     "name": "dense weights (bf16)",
+     "gb": 0.417,
+     "basis": "derived"
+    },
+    {
+     "name": "expert LoRA adapters",
+     "gb": 0.47,
+     "basis": "derived"
+    },
+    {
+     "name": "attention LoRA adapters",
+     "gb": 0.017,
+     "basis": "derived"
+    },
+    {
+     "name": "adapter gradients",
+     "gb": 0.487,
+     "basis": "derived"
+    },
+    {
+     "name": "optimizer state (adamw_8bit)",
+     "gb": 0.247,
+     "basis": "derived"
+    },
+    {
+     "name": "activations",
+     "gb": 0.631,
+     "basis": "heuristic"
+    }
+   ]
+  },
+  {
+   "claim": "e4b.train.h2h.unsloth.olmoe.5090.2026-09-19.arm.e4b.reference_attn4",
+   "model": "allenai/OLMoE-1B-7B-0924",
+   "setup": {
+    "r": 16,
+    "alpha": 16,
+    "adapter_dtype": "fp32",
+    "attn_4bit": true,
+    "expert_kernel": "reference",
+    "dgrad": true
+   },
+   "tokens_per_microbatch": 1110,
+   "optimizer": "adamw_8bit",
+   "note": "tp4 field recipe, reference loop (T assumed)",
+   "estimated_gb": 6.03,
+   "measured_gb": 5.866,
+   "residual_gb": -0.164,
+   "ratio": 0.9728,
+   "derived_gb": 5.399,
+   "heuristic_gb": 0.631,
+   "items": [
+    {
+     "name": "frozen expert stacks",
+     "gb": 3.624,
+     "basis": "derived"
+    },
+    {
+     "name": "attention projections (NF4)",
+     "gb": 0.138,
+     "basis": "derived"
+    },
+    {
+     "name": "dense weights (bf16)",
+     "gb": 0.417,
+     "basis": "derived"
+    },
+    {
+     "name": "expert LoRA adapters",
+     "gb": 0.47,
+     "basis": "derived"
+    },
+    {
+     "name": "attention LoRA adapters",
+     "gb": 0.017,
+     "basis": "derived"
+    },
+    {
+     "name": "adapter gradients",
+     "gb": 0.487,
+     "basis": "derived"
+    },
+    {
+     "name": "optimizer state (adamw_8bit)",
+     "gb": 0.247,
+     "basis": "derived"
+    },
+    {
+     "name": "activations",
+     "gb": 0.631,
+     "basis": "heuristic"
+    }
+   ]
+  },
+  {
+   "claim": "e4b.train.h2h.unsloth.granite.5090.2026-09-19.arm.e4b.fused_attn4",
+   "model": "ibm-granite/granite-3.1-3b-a800m-instruct",
+   "setup": {
+    "r": 16,
+    "alpha": 16,
+    "adapter_dtype": "fp32",
+    "attn_4bit": true,
+    "expert_kernel": "grouped_nf4",
+    "dgrad": true
+   },
+   "tokens_per_microbatch": 1110,
+   "optimizer": "adamw_8bit",
+   "note": "tp4 field recipe, RTX 5090, mb 2 (T assumed)",
+   "estimated_gb": 3.612,
+   "measured_gb": 3.782,
+   "residual_gb": 0.17,
+   "ratio": 1.0472,
+   "derived_gb": 2.957,
+   "heuristic_gb": 0.655,
+   "items": [
+    {
+     "name": "frozen expert stacks",
+     "gb": 1.699,
+     "basis": "derived"
+    },
+    {
+     "name": "attention projections (NF4)",
+     "gb": 0.104,
+     "basis": "derived"
+    },
+    {
+     "name": "dense weights (bf16)",
+     "gb": 0.155,
+     "basis": "derived"
+    },
+    {
+     "name": "expert LoRA adapters",
+     "gb": 0.377,
+     "basis": "derived"
+    },
+    {
+     "name": "attention LoRA adapters",
+     "gb": 0.021,
+     "basis": "derived"
+    },
+    {
+     "name": "adapter gradients",
+     "gb": 0.398,
+     "basis": "derived"
+    },
+    {
+     "name": "optimizer state (adamw_8bit)",
+     "gb": 0.202,
+     "basis": "derived"
+    },
+    {
+     "name": "activations",
+     "gb": 0.655,
+     "basis": "heuristic"
+    }
+   ]
+  },
+  {
+   "claim": "e4b.train.h2h.unsloth.qwen3.5090.2026-09-19.arm.e4b.fused_attn4",
+   "model": "Qwen/Qwen3-30B-A3B",
+   "setup": {
+    "r": 16,
+    "alpha": 16,
+    "adapter_dtype": "fp32",
+    "attn_4bit": true,
+    "expert_kernel": "grouped_nf4",
+    "dgrad": true
+   },
+   "tokens_per_microbatch": 1110,
+   "optimizer": "adamw_8bit",
+   "note": "tp4 field recipe, RTX 5090, resident, mb 2 (T assumed)",
+   "estimated_gb": 26.395,
+   "measured_gb": 24.581,
+   "residual_gb": -1.814,
+   "ratio": 0.9313,
+   "derived_gb": 24.49,
+   "heuristic_gb": 1.905,
+   "items": [
+    {
+     "name": "frozen expert stacks",
+     "gb": 16.307,
+     "basis": "derived"
+    },
+    {
+     "name": "attention projections (NF4)",
+     "gb": 0.467,
+     "basis": "derived"
+    },
+    {
+     "name": "dense weights (bf16)",
+     "gb": 1.27,
+     "basis": "derived"
+    },
+    {
+     "name": "expert LoRA adapters",
+     "gb": 2.517,
+     "basis": "derived"
+    },
+    {
+     "name": "attention LoRA adapters",
+     "gb": 0.053,
+     "basis": "derived"
+    },
+    {
+     "name": "adapter gradients",
+     "gb": 2.57,
+     "basis": "derived"
+    },
+    {
+     "name": "optimizer state (adamw_8bit)",
+     "gb": 1.305,
+     "basis": "derived"
+    },
+    {
+     "name": "activations",
+     "gb": 1.905,
+     "basis": "heuristic"
+    }
+   ]
+  },
+  {
+   "claim": "e4b.train.frontier.qwen3.a2000-12gb.2026-10-02",
+   "model": "Qwen/Qwen3-30B-A3B",
+   "setup": {
+    "r": 16,
+    "alpha": 16,
+    "adapter_dtype": "fp32",
+    "attn_4bit": true,
+    "expert_kernel": "grouped_nf4",
+    "dgrad": true,
+    "expert_residency": "host"
+   },
+   "tokens_per_microbatch": 555,
+   "optimizer": "adamw_8bit",
+   "note": "TC3, RTX A2000 12 GB, offload, mb 1 (T from the receipt: max padded row 555)",
+   "estimated_gb": 9.475,
+   "measured_gb": 10.463,
+   "residual_gb": 0.988,
+   "ratio": 1.1043,
+   "derived_gb": 8.523,
+   "heuristic_gb": 0.952,
+   "items": [
+    {
+     "name": "frozen expert stacks, one layer staged",
+     "gb": 0.34,
+     "basis": "derived"
+    },
+    {
+     "name": "attention projections (NF4)",
+     "gb": 0.467,
+     "basis": "derived"
+    },
+    {
+     "name": "dense weights (bf16)",
+     "gb": 1.27,
+     "basis": "derived"
+    },
+    {
+     "name": "expert LoRA adapters",
+     "gb": 2.517,
+     "basis": "derived"
+    },
+    {
+     "name": "attention LoRA adapters",
+     "gb": 0.053,
+     "basis": "derived"
+    },
+    {
+     "name": "adapter gradients",
+     "gb": 2.57,
+     "basis": "derived"
+    },
+    {
+     "name": "optimizer state (adamw_8bit)",
+     "gb": 1.305,
+     "basis": "derived"
+    },
+    {
+     "name": "activations",
+     "gb": 0.952,
+     "basis": "heuristic"
+    }
+   ]
+  },
+  {
+   "claim": "e4b.train.frontier.qwen3.4090-24gb.2026-10-02",
+   "model": "Qwen/Qwen3-30B-A3B",
+   "setup": {
+    "r": 16,
+    "alpha": 16,
+    "adapter_dtype": "fp32",
+    "attn_4bit": true,
+    "expert_kernel": "grouped_nf4",
+    "dgrad": true,
+    "expert_residency": "host"
+   },
+   "tokens_per_microbatch": 1110,
+   "optimizer": "adamw_8bit",
+   "note": "TC3, RTX 4090 24 GB, offload, mb 2 (T from the receipt tc3-4090-8: 2 x 555)",
+   "estimated_gb": 10.427,
+   "measured_gb": 11.881,
+   "residual_gb": 1.454,
+   "ratio": 1.1394,
+   "derived_gb": 8.523,
+   "heuristic_gb": 1.905,
+   "items": [
+    {
+     "name": "frozen expert stacks, one layer staged",
+     "gb": 0.34,
+     "basis": "derived"
+    },
+    {
+     "name": "attention projections (NF4)",
+     "gb": 0.467,
+     "basis": "derived"
+    },
+    {
+     "name": "dense weights (bf16)",
+     "gb": 1.27,
+     "basis": "derived"
+    },
+    {
+     "name": "expert LoRA adapters",
+     "gb": 2.517,
+     "basis": "derived"
+    },
+    {
+     "name": "attention LoRA adapters",
+     "gb": 0.053,
+     "basis": "derived"
+    },
+    {
+     "name": "adapter gradients",
+     "gb": 2.57,
+     "basis": "derived"
+    },
+    {
+     "name": "optimizer state (adamw_8bit)",
+     "gb": 1.305,
+     "basis": "derived"
+    },
+    {
+     "name": "activations",
+     "gb": 1.905,
+     "basis": "heuristic"
+    }
+   ]
+  }
+ ]
+}
