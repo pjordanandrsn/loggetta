@@ -2,51 +2,60 @@
 
 # Loggetta
 
-### Plan first. Load later.
+### Plan first. Execute through the backend.
 
-**Decide how a workload should run on this machine, explain why, and refuse impossible plans before loading weights.**
+**Loggetta turns a workload, a machine, and constraints into an inspectable execution plan.**
+
+It selects a supported configuration, explains why it won, records why alternatives lost, and refuses impossible plans before loading weights.
 
 <p>
   <img src="https://img.shields.io/badge/Python-%E2%89%A53.10-3776AB?logo=python&logoColor=white" alt="Python >=3.10">
   <img src="https://img.shields.io/badge/status-pre--1.0-F59E0B" alt="pre-1.0">
   <img src="https://img.shields.io/badge/scope-single--GPU%20MoE-6F42C1" alt="single-GPU MoE">
-  <img src="https://img.shields.io/badge/output-plan%20%2B%20receipt-2EA44F" alt="plan + receipt">
+  <img src="https://img.shields.io/badge/artifacts-ExecutionPlan%20%2B%20ExecutionReceipt-2EA44F" alt="ExecutionPlan + ExecutionReceipt">
 </p>
 
 </div>
 
 ---
 
-Loggetta is a planning and policy layer above
-[experts4bit-qlora](https://github.com/pjordanandrsn/experts4bit-qlora) and
-[grouped-nf4-gemm](https://github.com/pjordanandrsn/grouped-nf4-gemm). Its current focus is single-GPU MoE
-training and serving: inventory the machine, price candidate configurations, choose among them under explicit
-budgets and objectives, and say **why** a plan won or **why nothing fits**.
-
 > [!NOTE]
-> The lower layers own mechanism. **Loggetta owns policy.**
+> **Loggetta decides what should execute. The backend knows how to execute it.**
 
-| Plan before loading | Explain every choice | Learn from measurements |
+Loggetta owns the **Planner**, the **ExecutionPlan**, and the **ExecutionReceipt**. Its current focus is single-GPU
+MoE training and serving through [experts4bit-qlora](https://github.com/pjordanandrsn/experts4bit-qlora), with
+[grouped-nf4-gemm](https://github.com/pjordanandrsn/grouped-nf4-gemm) providing the packed low-bit kernel and
+residency primitives beneath that runtime.
+
+| Planner | ExecutionPlan | ExecutionReceipt |
 | :--- | :--- | :--- |
-| Price candidate configurations before touching model weights. | Keep the winning setup, rejected alternatives, and refusal reasons inspectable. | Write receipts that put estimates beside measured memory, timing, correctness, and provenance. |
+| Turns hardware, workload, constraints, objectives, and evidence into a decision. | Captures the selected backend/setup, budgets, estimates, rejected alternatives, refusal reasons, warnings, and evidence quality. | Records what actually happened: memory, timing, correctness, engagement, provenance, and estimate-vs-measured deltas. |
 
-## How it fits together
+## The loop
 
 ```mermaid
 flowchart LR
-    H["Machine inventory<br/>VRAM · RAM · PCIe"] --> L["Loggetta<br/>policy + planning"]
-    L --> P["ExecutionPlan<br/>winner + rejected alternatives"]
-    P --> E["experts4bit-qlora<br/>model + QLoRA mechanisms"]
-    E --> G["grouped-nf4-gemm<br/>packed low-bit kernels"]
-    E --> R["ExecutionReceipt<br/>estimate ↔ measurement"]
-    R -. "measured feedback" .-> L
+    I["Workload + machine<br/>constraints + evidence"] --> P["Loggetta Planner"]
+    P --> X["ExecutionPlan<br/>what should run + why"]
+    X --> E["experts4bit-qlora<br/>executes the plan"]
+    E --> G["grouped-nf4-gemm<br/>kernels + primitives"]
+    E --> R["ExecutionReceipt<br/>what actually happened"]
+    R -. "measured feedback" .-> P
 ```
 
-The dependency direction stays intentionally simple:
+The ownership split is deliberate:
+
+| Layer | Owns | Does **not** own |
+| :--- | :--- | :--- |
+| **Loggetta** | Hardware inventory/provenance, budgets, objectives, constraints, candidate ordering, refusal policy, `ExecutionPlan`, `ExecutionReceipt`, thin execution orchestration | Model loaders, QLoRA machinery, serving engines, residency engines, kernels |
+| **experts4bit-qlora** | Model topology/conventions, admission, footprint primitives tied to its runtime, loading, adapters, QLoRA preparation, training, serving, residency/offload mechanisms | Cross-backend planning policy |
+| **grouped-nf4-gemm** | Packed low-bit kernels, routing/capability facts, and low-level residency primitives | Model/runtime policy or planner decisions |
 
 ```text
-planner -> experts4bit-qlora -> grouped-nf4-gemm
+Loggetta -> experts4bit-qlora -> grouped-nf4-gemm
 ```
+
+No cycles. No duplicated topology. No plugin framework until a second backend actually earns one.
 
 ## Quick start
 
@@ -54,13 +63,13 @@ planner -> experts4bit-qlora -> grouped-nf4-gemm
 # What machine am I actually on?
 python -m loggetta inspect
 
-# What should run here?
+# Produce the artifact Loggetta exists to produce
 python -m loggetta plan Qwen/Qwen3-30B-A3B --seq 2048
 
-# Constrain the search deliberately
+# Constrain the planner deliberately
 python -m loggetta plan allenai/OLMoE-1B-7B-0924 --experts device --vram 6
 
-# Execute a supported plan and write the receipt
+# Execute a supported plan through the backend and write the receipt
 python -m loggetta train allenai/OLMoE-1B-7B-0924 --seq 512 --micro-batch 2 --steps 12 --out receipts/
 ```
 
@@ -68,17 +77,21 @@ python -m loggetta train allenai/OLMoE-1B-7B-0924 --seq 512 --micro-batch 2 --st
 
 | Mode | Example | What it means |
 | :--- | :--- | :--- |
-| **Automatic** | `plan MODEL` | Let policy choose among supported candidates. |
-| **Directed** | `--vram`, `--ram`, `--experts`, `--objective` | State the budget or goal without hand-building the backend setup. |
+| **Automatic** | `plan MODEL` | Let the planner choose among supported candidates. |
+| **Directed** | `--vram`, `--ram`, `--experts`, `--objective` | State the budget or goal without hand-building a backend setup. |
 | **Expert** | `--fix FIELD=VALUE` | Pin a backend setup field and make the remaining search work around it. |
 
-`plan()` returns a deterministic, serializable `ExecutionPlan`. It includes the alternatives that lost and why.
-`execute(plan)` runs a supported plan and writes an `ExecutionReceipt` with the estimate and measurement side by side.
+`plan()` is pure policy: for the same inputs it returns the same serializable `ExecutionPlan`, without loading
+weights or touching the device. The plan includes the winner, every relevant loser and why it lost, budget
+sources, evidence labels, warnings, and explicit “not modeled” items.
+
+`execute(plan)` is intentionally thin. It validates the plan, delegates execution to the selected backend, and
+constructs an `ExecutionReceipt` from the backend result. It does **not** reimplement the runtime.
 
 ## Evidence, not vibes
 
 Loggetta is deliberately **not** a performance oracle. It records what it knows, labels heuristics, refuses plans
-it cannot support, and learns memory overheads from receipts.
+it cannot support, and feeds measured receipts back into future planning.
 
 Current checks from [`docs/RESULTS.md`](docs/RESULTS.md):
 
@@ -90,8 +103,12 @@ Current checks from [`docs/RESULTS.md`](docs/RESULTS.md):
 | **Host offload** | Transfer time is treated as a **lower bound**, not a fabricated step-time prediction. |
 
 > [!IMPORTANT]
-> A receipt carries provenance, allocator / reserved / driver peaks, correctness checks, engagement evidence,
-> and estimate-vs-measured deltas. A heuristic stays labelled as a heuristic.
+> Evidence has a type. Measured facts stay measured; derived values stay derived; inferred values and heuristics
+> stay labelled. Unknowns do not quietly become numbers.
+
+An `ExecutionReceipt` carries provenance, allocator / reserved / driver peaks, correctness checks, engagement
+evidence, timing, and estimate-vs-measured deltas. That receipt is the measured counterpart to the plan that
+produced it.
 
 ## Current scope
 
@@ -104,8 +121,9 @@ Current checks from [`docs/RESULTS.md`](docs/RESULTS.md):
 <td valign="top">
 
 - ✅ Single-GPU MoE planning
-- ✅ QLoRA training planning and supported execution through `experts4bit-qlora`
-- ✅ Serving placement across device, host, and storage tiers
+- ✅ First-class `ExecutionPlan` and `ExecutionReceipt` artifacts
+- ✅ QLoRA planning with execution delegated to `experts4bit-qlora`
+- ✅ Serving placement planning across device, host, and storage tiers
 - ✅ Measured-memory feedback through receipts
 - ✅ Deterministic, inspectable plans and refusals
 - ✅ Explicit constraints instead of hidden “magic” defaults
@@ -143,27 +161,30 @@ The required lower-layer APIs are present in:
 No development branches or `PYTHONPATH` overrides are required for those interfaces.
 
 > [!TIP]
-> PyPI `0.0.1` is reserved for a metadata-only preview that establishes the project name. Functional releases
-> will supersede it.
+> PyPI `0.0.1` is the metadata-only preview used to establish the project name. Functional releases will
+> supersede it.
 
 ## Why a separate planner?
 
-Kernel selection belongs with kernels. Model topology and QLoRA mechanisms belong with the training backend.
-The decision **which combination should run on this machine, under this budget, for this objective** is a different concern.
+Kernel selection belongs with kernels. Model topology and QLoRA mechanisms belong with the runtime. The decision
+**which combination should run on this machine, under this budget, for this objective** is a separate concern,
+and the `ExecutionPlan` is the durable artifact of that decision.
 
-Keeping policy separate means:
+Keeping that boundary clean means:
 
 - backend packages remain independently useful;
-- planner decisions can be deterministic and inspectable;
-- measured receipts can improve policy without contaminating kernel or model code;
-- a second backend can earn a general abstraction instead of forcing a plugin framework prematurely.
+- planning stays deterministic and inspectable;
+- the plan can explain both selection and refusal before weight loading;
+- the runtime can evolve without absorbing cross-machine policy;
+- receipts can improve future policy without contaminating kernel or model code;
+- a second backend can earn a general abstraction instead of forcing one prematurely.
 
 ## Documentation
 
 | Read this | For |
 | :--- | :--- |
 | [`SESSION-REPORT.md`](docs/SESSION-REPORT.md) | Short answers and current state |
-| [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Boundaries, dependency direction, plan / receipt model |
+| [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Ownership boundaries and the Planner → Plan → Backend → Receipt model |
 | [`RESULTS.md`](docs/RESULTS.md) | Measurements, estimator error, receipts, and what changed because of them |
 | [`SERVING-PRESSURE-TEST.md`](docs/SERVING-PRESSURE-TEST.md) | Serving placement and pressure-test evidence |
 
@@ -187,6 +208,6 @@ do not silently become hardware-dependent.
 
 <div align="center">
 
-**Measure the machine. Price the options. Explain the choice. Refuse the impossible.**
+**Plan first. Execute through the backend. Measure. Feed the receipt back.**
 
 </div>
