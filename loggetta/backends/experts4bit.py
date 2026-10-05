@@ -18,7 +18,10 @@ NAME = "experts4bit"
 WORKLOADS = ("train", "serve")
 #: setup fields that separate allocator-slack regimes, per workload (measured: training offload vs resident; serving
 #: solver tiers 15% vs all-VRAM 1-2% on the A2000)
-SLACK_KEYS = {"train": ("expert_residency", "expert_kernel"), "serve": ("placement", "graphs", "prefill_graph")}
+SLACK_KEYS = {"train": ("expert_residency", "expert_kernel"),
+              "serve": ("placement", "graphs", "prefill_graph", "exp_int4", "attn_int4")}
+#: what a receipt that predates a key field ran with (the server's defaults: the int4 levers off)
+SLACK_DEFAULTS = {"serve": {"exp_int4": False, "attn_int4": False}}
 #: which probed kernels each workload uses: the planner reports only those as unusable
 KERNELS_FOR = {"train": ("grouped_nf4", "reference"), "serve": ("paged_fp8", "paged_graphs", "cpu_tier")}
 GiB = 1 << 30
@@ -160,7 +163,8 @@ def label(setup: dict) -> str:
                  if setup.get("placement") == "solver" else "")
         return (f"serve {setup['placement']}, fp8 paged KV, {setup['max_seqs']} seqs x {setup['max_tokens_per_seq']} "
                 f"tokens{', decode graphs' if setup.get('graphs') else ''}{tiers}"
-                f"{', prefill graph ' + str(setup['prefill_graph']) if setup.get('prefill_graph') not in (None, '0') else ''}")
+                f"{', prefill graph ' + str(setup['prefill_graph']) if setup.get('prefill_graph') not in (None, '0') else ''}"
+                f"{', int4 experts' if setup.get('exp_int4') else ''}{', int4 attention' if setup.get('attn_int4') else ''}")
     s = setup
     return (f"experts on {s.get('expert_residency')}, {s.get('expert_kernel')} kernel"
             + (", NF4 attention" if s.get("attn_4bit") else "")
@@ -205,7 +209,24 @@ def explain(sel, feasible, infeasible, budget, status, constraints, workload) ->
             out.append("first-chunk prefill graph off (the server's default is auto): its private pool is not priced "
                        "(SC2b measured +3.3 GiB at Qwen3-30B), so the plan's memory would not bound the process; fix "
                        "prefill_graph=auto to let the server engage it when that much is free")
-        out.append("not planned yet: a measured routing profile for the solver, int4 expert stores, decode speed")
+        by = {ln.name: ln for ln in sel.lines}
+        if s.get("exp_int4"):
+            rd = by.get("int4 repack: one layer's experts in fp32 (load)")
+            out.append("experts on the int4-b32 grid (exp_int4, round-to-nearest): repacked at load from the source "
+                       "checkpoint, which must be on local disk and is read whole"
+                       + (f"; the repack holds {rd.bytes / GiB:.2f} GiB of host memory at its peak, one layer in fp32 "
+                          "at a time, and the process keeps most of it after load" if rd else ""))
+        if s.get("attn_int4"):
+            # the kept bf16 copy is exactly bf16 attention's bytes, so the grid and the workspaces are the extra
+            extra = sum(by[n].bytes for n in ("attention projections on the int4-b32 grid", "int4 attention workspaces")
+                        if n in by)
+            out.append(f"attention on the int4-b32 grid (attn_int4): {extra / GiB:+.2f} GiB against bf16 attention once a "
+                       "prompt is served, because each projection keeps a bf16 copy for calls over 16 rows; a "
+                       "decode-speed lever, not a memory one")
+        if not (s.get("exp_int4") or s.get("attn_int4")) and not {"exp_int4", "attn_int4"} & set(constraints.fixed):
+            out.append("int4 levers off: exp_int4 and attn_int4 change the served weights (round-to-nearest int4), so "
+                       "the planner prices them only when fixed")
+        out.append("not planned yet: a measured routing profile for the solver, decode speed")
         from experts4bit_qlora.serve_recipe import ServeSetup
 
         env = " ".join(f"{k}={v}" for k, v in sorted(_serve_setup(ServeSetup, s).to_env().items()))
@@ -281,8 +302,9 @@ def _serve_setup(cls, setup: dict):
     if "buckets" in vals:
         vals["buckets"] = tuple(int(b) for b in (vals["buckets"].split(",") if isinstance(vals["buckets"], str)
                                                  else vals["buckets"]))
-    if isinstance(vals.get("graphs"), str):
-        vals["graphs"] = vals["graphs"] not in ("0", "false", "False")
+    for k in ("graphs", "exp_int4", "attn_int4"):
+        if isinstance(vals.get(k), str):
+            vals[k] = vals[k] not in ("0", "false", "False")
     return cls(**vals)
 
 

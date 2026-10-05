@@ -454,3 +454,66 @@ def test_serve_slack_is_borrowed_across_cards_only_for_serving(topo):
         "expert_residency": "device", "expert_kernel": "grouped_nf4"})])
     tres = next(ln for ln in trained.selected.lines if ln.name.startswith("allocator reserve"))
     assert tres.basis == "inferred"
+
+
+def _has_int4_levers():
+    try:
+        from experts4bit_qlora.serve_recipe import ServeSetup
+    except ImportError:
+        return False
+    return "exp_int4" in ServeSetup.__dataclass_fields__
+
+
+def test_the_int4_levers_are_planned_only_when_fixed(topo):
+    if not _has_int4_levers():
+        pytest.skip("the experts4bit-qlora under test does not price the int4 serve levers")
+    base = _serve(topo, 4096, 4, cap=(12, 0))
+    assert not base.selected.setup["exp_int4"] and not base.selected.setup["attn_int4"]
+    assert any("int4 levers off" in r for r in base.reasons)
+    p = _serve(topo, 4096, 4, Constraints(fixed={"exp_int4": True, "attn_int4": True}), cap=(12, 0))
+    assert p.status == "feasible", p.render()
+    names = {ln.name for ln in p.selected.lines}
+    assert "int4 expert stores (all VRAM; the NF4 stacks freed)" in names and not any(
+        n.startswith("frozen expert stacks") for n in names)
+    assert "attention projections' bf16 copy (kept from the first prefill)" in names
+    assert "int4 experts" in p.selected.label() and "int4 attention" in p.selected.label()
+    assert any("source checkpoint" in r for r in p.reasons) and any("not a memory one" in r for r in p.reasons)
+    assert any("E4B_SERVE_EXP_INT4=1" in r and "E4B_SERVE_ATTN_INT4=1" in r for r in p.reasons)
+    assert p.selected.host_bytes > base.selected.host_bytes            # the repack's fp32 layer read
+    assert all(c.setup.get("placement") == "all-vram" for c in [p.selected])
+
+
+def test_receipts_from_before_the_int4_levers_match_the_levers_off(topo):
+    if not _has_int4_levers():
+        pytest.skip("the experts4bit-qlora under test does not price the int4 serve levers")
+    setup = _serve(topo, 4096, 1, cap=(12, 0)).selected.setup
+    old = {k: v for k, v in setup.items() if k not in ("exp_int4", "attn_int4")}   # written before the fields existed
+    rec = {"run_id": "before-int4", "status": "OK", "model": {"model": topo.model}, "workload": {"kind": "serve"},
+           "setup": {**old, "buckets": list(old["buckets"])}, "hardware": {"gpu": {"name": "Test GPU", "driver": "1"}},
+           "measured": {"device_peak_bytes": 4 * GiB, "device_reserved_peak_bytes": int(4.04 * GiB)}}
+    p = plan(topo, hw(cap=(12, 0)), Workload(kind="serve", context_len=4096, concurrency=1),
+             Constraints(fixed={"graphs": setup["graphs"]}), observations=[rec])
+    res = next(ln for ln in p.selected.lines if ln.name.startswith("allocator reserve"))
+    assert res.basis == "measured" and "before-int4" in res.detail and "this GPU, setup and model" in res.detail
+    q = plan(topo, hw(cap=(12, 0)), Workload(kind="serve", context_len=4096, concurrency=1),
+             Constraints(fixed={"graphs": setup["graphs"], "exp_int4": True}), observations=[rec])
+    qres = next(ln for ln in q.selected.lines if ln.name.startswith("allocator reserve"))
+    assert "this GPU, setup and model" not in qres.detail             # an NF4 receipt is not the int4 setup's
+
+
+def test_host_growth_is_serving_s_own_peak_where_the_receipt_has_one(topo):
+    """A load can peak above everything after it (the int4 repack hands its host buffers back before serving): growth
+    while serving is measured from the serving phase's own peak when the receipt records one."""
+    first = _serve(topo, 4096, 1, cap=(12, 0))
+    setup = first.selected.setup
+    rec = {"run_id": "load-peaked", "status": "OK", "model": {"model": topo.model}, "workload": {"kind": "serve"},
+           "setup": {**setup, "buckets": list(setup["buckets"])}, "hardware": {"gpu": {"name": "Other GPU", "driver": "1"}},
+           "measured": {"device_peak_bytes": 1, "device_reserved_peak_bytes": 1, "host_anon_after_load_bytes": GiB,
+                        "host_anon_peak_bytes": 7 * GiB, "host_anon_serving_peak_bytes": GiB + (300 << 20)}}
+    p = plan(topo, hw(cap=(12, 0)), Workload(kind="serve", context_len=4096, concurrency=1),
+             Constraints(fixed={"graphs": setup["graphs"]}), observations=[rec])
+    assert next(ln for ln in p.selected.lines if ln.name == "host growth while serving").bytes == 300 << 20
+    old = {**rec, "measured": {k: v for k, v in rec["measured"].items() if k != "host_anon_serving_peak_bytes"}}
+    q = plan(topo, hw(cap=(12, 0)), Workload(kind="serve", context_len=4096, concurrency=1),
+             Constraints(fixed={"graphs": setup["graphs"]}), observations=[old])
+    assert next(ln for ln in q.selected.lines if ln.name == "host growth while serving").bytes == 6 * GiB

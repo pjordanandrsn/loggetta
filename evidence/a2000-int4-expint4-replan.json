@@ -1,0 +1,69 @@
+{
+ "schema": "replan-comparison/1",
+ "receipt": "a2000-olmoe-4x4096-expint4",
+ "model": "allenai/OLMoE-1B-7B-0924",
+ "gpu": "NVIDIA RTX A2000 12GB",
+ "workload": {
+  "kind": "serve",
+  "context_len": 4096,
+  "concurrency": 4,
+  "prompt_tokens": 1024,
+  "new_tokens": 64
+ },
+ "setup": {
+  "placement": "all-vram",
+  "max_seqs": 4,
+  "max_tokens_per_seq": 4096,
+  "chunk_tokens": 512,
+  "graphs": false,
+  "buckets": [
+   1,
+   2,
+   4,
+   8,
+   16
+  ],
+  "kv_groups": "auto",
+  "prefill_graph": "0",
+  "vram_gb": 1.2,
+  "dram_gb": 6.0,
+  "hot_rows": 64,
+  "exp_int4": true,
+  "attn_int4": false,
+  "torch_threads": "2"
+ },
+ "rows": [
+  {
+   "observations": "before",
+   "status": "feasible",
+   "allocator_estimate_gib": 5.983,
+   "plan_host_total_gib": 5.661,
+   "nvme_gib": 0.0,
+   "reserve_gib": 0.893,
+   "reserve_basis": "measured",
+   "reserve_detail": "no receipt for this setup; the largest slack measured on this GPU, receipt solver-olmoe-v1.2-d1.5-h64 = 0.149 (conservative)",
+   "context_gib": 0.123,
+   "context_detail": "receipt longprompt-olmoe-2x4096-p4000: driver-reported process peak minus allocator reserved peak",
+   "plan_device_total_gib": 6.999
+  },
+  {
+   "observations": "after",
+   "status": "feasible",
+   "allocator_estimate_gib": 5.983,
+   "plan_host_total_gib": 6.32,
+   "nvme_gib": 0.0,
+   "reserve_gib": 0.087,
+   "reserve_basis": "measured",
+   "reserve_detail": "receipt a2000-olmoe-4x4096-expint4 (this GPU, setup and model; largest of 1) = 0.015",
+   "context_gib": 0.123,
+   "context_detail": "receipt longprompt-olmoe-2x4096-p4000: driver-reported process peak minus allocator reserved peak",
+   "plan_device_total_gib": 6.193
+  }
+ ],
+ "measured": {
+  "allocator_peak_gib": 5.579,
+  "host_required_peak_gib": 4.816,
+  "reserved_peak_gib": 5.66,
+  "driver_peak_gib": 5.783
+ }
+}

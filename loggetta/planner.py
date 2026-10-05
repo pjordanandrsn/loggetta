@@ -175,9 +175,11 @@ def learned_serve_overheads(backend, topology, setup, observations, key):
                     best = (r, o.get("run_id"))
                 if all(str(rs.get(k)) == str(setup.get(k)) for k in key) and (best_key is None or r > best_key[0]):
                     best_key = (r, o.get("run_id"))          # same placement / graphs / prefill graph: their pools too
-        if m.get("host_anon_peak_bytes") and m.get("host_anon_after_load_bytes") and \
-                all(rs.get(k) == setup.get(k) for k in key):
-            g = m["host_anon_peak_bytes"] - m["host_anon_after_load_bytes"]
+        # serving's own peak where the receipt has one: a load can peak above everything after it (the int4 repack's
+        # host buffers, handed back before serving), and that is the load's to price, not growth while serving
+        peak = m.get("host_anon_serving_peak_bytes") or m.get("host_anon_peak_bytes")
+        if peak and m.get("host_anon_after_load_bytes") and all(rs.get(k) == setup.get(k) for k in key):
+            g = peak - m["host_anon_after_load_bytes"]
             if grow is None or g > grow[0]:
                 grow = (g, o.get("run_id"))
     if best_key is not None:
@@ -309,6 +311,11 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
             if not ok and (wanted is None or k in wanted):
                 reasons.append(f"{b.NAME}: kernel {k} not usable here: {why}")
         slack_key = getattr(b, "SLACK_KEYS", {}).get(workload.kind, ("expert_residency", "expert_kernel"))
+        # a receipt written before the backend grew a setup field ran with that field's default: read it so, or a
+        # key that names the field would never match the receipts that predate it
+        key_defaults = getattr(b, "SLACK_DEFAULTS", {}).get(workload.kind, {})
+        b_obs = [{**o, "setup": {**key_defaults, **o["setup"]}} if key_defaults and isinstance(o.get("setup"), dict)
+                 and o.get("workload", {}).get("kind", "train") == workload.kind else o for o in observations]
         learned_cache = {}
 
         def price(setup):
@@ -318,7 +325,7 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
             if workload.kind != "train":
                 default = (DEFAULT_RESERVE_FRAC, "inferred", f"default {DEFAULT_RESERVE_FRAC:.0%} of the allocator "
                            f"estimate; no {workload.kind} receipt on file measured this GPU")
-            frac, fbasis, fsrc = reserve_fraction(gpu, setup, observations, default, model=topology.model,
+            frac, fbasis, fsrc = reserve_fraction(gpu, setup, b_obs, default, model=topology.model,
                                                   kind=workload.kind, key=slack_key)
             reserve = MemoryLine("allocator reserve (cached, unallocated blocks)", "device", int(frac * alloc),
                                  fbasis, fsrc)
@@ -326,7 +333,7 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
             if workload.kind == "serve":
                 ck = (setup.get("placement"), tuple(setup.get(k) for k in slack_key))
                 if ck not in learned_cache:
-                    learned_cache[ck] = learned_serve_overheads(b, topology, setup, observations, slack_key)
+                    learned_cache[ck] = learned_serve_overheads(b, topology, setup, b_obs, slack_key)
                 learned = tuple(MemoryLine(*x) for x in learned_cache[ck])
             lines = tuple(MemoryLine(*r) for r in raw) + (reserve,) + learned + tuple(dev_over) + tuple(host_over)
             dev = sum(ln.bytes for ln in lines if ln.where == "device")

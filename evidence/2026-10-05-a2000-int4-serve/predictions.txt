@@ -1,0 +1,41 @@
+attention linears 64 numel 268435456 lora census 268435456
+--- nf4: device 5.959 GiB host 0.461 GiB refusals ()
+   device    3456.0 MiB  derived   frozen expert stacks (all VRAM)
+   host       256.0 MiB  derived   cold tier landing (pinned)
+   host       216.0 MiB  derived   setup tier (while the stacks are built)
+   device     909.3 MiB  derived   dense weights (bf16)
+   device    1104.1 MiB  derived   FP8 paged KV pool
+   device     576.0 MiB  derived   prefill staging (bf16 K/V of prompts mid-prefill)
+   device      56.8 MiB  heuristic prefill/decode working set
+--- expint4: device 5.983 GiB host 3.461 GiB refusals ()
+   device    3480.0 MiB  derived   int4 expert stores (all VRAM; the NF4 stacks freed)
+   host       256.0 MiB  derived   cold tier landing (pinned)
+   host       216.0 MiB  derived   setup tier (while the stacks are built)
+   device     909.3 MiB  derived   dense weights (bf16)
+   device    1104.1 MiB  derived   FP8 paged KV pool
+   device     576.0 MiB  derived   prefill staging (bf16 K/V of prompts mid-prefill)
+   device      56.8 MiB  heuristic prefill/decode working set
+   host      3072.0 MiB  heuristic int4 repack: one layer's experts in fp32 (load only)
+--- attnint4: device 6.139 GiB host 0.461 GiB refusals ()
+   device    3456.0 MiB  derived   frozen expert stacks (all VRAM)
+   host       256.0 MiB  derived   cold tier landing (pinned)
+   host       216.0 MiB  derived   setup tier (while the stacks are built)
+   device     397.3 MiB  derived   dense weights (bf16)
+   device     144.0 MiB  derived   attention projections on the int4-b32 grid
+   device     512.0 MiB  derived   attention projections' bf16 copy (kept from the first prefill)
+   device      40.0 MiB  derived   int4 attention workspaces
+   device    1104.1 MiB  derived   FP8 paged KV pool
+   device     576.0 MiB  derived   prefill staging (bf16 K/V of prompts mid-prefill)
+   device      56.8 MiB  heuristic prefill/decode working set
+--- both: device 6.162 GiB host 3.461 GiB refusals ()
+   device    3480.0 MiB  derived   int4 expert stores (all VRAM; the NF4 stacks freed)
+   host       256.0 MiB  derived   cold tier landing (pinned)
+   host       216.0 MiB  derived   setup tier (while the stacks are built)
+   device     397.3 MiB  derived   dense weights (bf16)
+   device     144.0 MiB  derived   attention projections on the int4-b32 grid
+   device     512.0 MiB  derived   attention projections' bf16 copy (kept from the first prefill)
+   device      40.0 MiB  derived   int4 attention workspaces
+   device    1104.1 MiB  derived   FP8 paged KV pool
+   device     576.0 MiB  derived   prefill staging (bf16 K/V of prompts mid-prefill)
+   device      56.8 MiB  heuristic prefill/decode working set
+   host      3072.0 MiB  heuristic int4 repack: one layer's experts in fp32 (load only)

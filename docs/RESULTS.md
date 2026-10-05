@@ -406,6 +406,52 @@ All values GiB unless marked.
   I stopped that fetch after saving the receipts, so the launcher records HARNESS_ERROR; the lane itself
   finished OK. Fixed in #1160.
 
+## 6e. The int4 serving levers, measured on the A2000
+
+experts4bit-qlora#1182 prices `ServeSetup.exp_int4` and `ServeSetup.attn_int4`, the server's int4 levers:
+- **`exp_int4`:** int4-b32 expert stores replace the NF4 stacks, repacked at load from the source checkpoint.
+- **`attn_int4`:** attention projections stored on the int4-b32 grid.
+
+The predictions were written to `evidence/2026-10-05-a2000-int4-serve/predictions.txt` before any arm ran.
+
+**The run.** One RTX A2000, `bench/serve_validate.py`, OLMoE-1B-7B, all-VRAM, eager, 4 sequences × 4,096 tokens,
+1,024-token prompts, one arm per process.
+
+| arm | estimate | allocator peak | vs the NF4 arm, priced / measured | plan total after receipts vs driver peak |
+|---|---|---|---|---|
+| NF4 | 5.959 | 5.571 | — | 6.209 vs 5.775 |
+| `exp_int4` | 5.983 | 5.579 | +24 / +8 MiB (load peak +24 MiB exactly) | 6.193 vs 5.783 |
+| `attn_int4` | 6.139 | 5.751 | +184.1 / +184.1 MiB | 6.311 vs 5.920 |
+| both | 6.162 | 5.758 | +208 / +192 MiB | 6.322 vs 5.916 |
+
+All values GiB unless marked.
+
+- **Every estimate sits about 0.39 GiB above its peak.** That is the prefill-staging ceiling: 4,608 tokens priced,
+  1,536 staged by these prompts. It is the same as SV1's S1.
+- **The int4 attention items are exact.** The expert stores are exact at load. Serving peaks 16 MiB under the
+  price, because the int4 prefill route's transients are smaller than NF4's.
+- **int4 attention costs memory.** Each `Int4Linear` keeps a bf16 copy of its weight for calls over 16 rows (every
+  prefill chunk). So attention costs more than in bf16 once a prompt is served. It is a decode-speed lever, not a
+  memory one, and the plan says so.
+- **The planner plans the levers only when fixed**, since they change the served weights. They are slack keys. Before
+  these receipts, an int4 plan was charged the GPU's largest measured slack (0.89–0.92 GiB, conservative). After,
+  each arm gets its own (0.04–0.09 GiB).
+- **Found on the way: the levers kept their host heap.**
+  - glibc kept the freed 8–16 MiB fp32 host tensors of the repack and the attention swap for the life of the server:
+    +3.6 GB and +2.3 GB of anonymous memory after load.
+  - One `malloc_trim(0)` returned 3.9 GB (`before-heap-fix/trim_probe.log`).
+  - #1182 now trims per layer and per projection and drops each layer's fp32 stacks before the next read.
+  - After load, every arm now sits below the NF4 build (0.57–0.61 GB against 0.70 GB).
+  - The repack's own peak (4.88 GB) is priced at 12 B per parameter of a layer; 10.4–11.2 was measured.
+  - The pre-fix receipts are in `before-heap-fix/`, which is not loaded as observations.
+- **Receipts now record serving's own host peak** (`host_anon_serving_peak_bytes`). A load can peak above serving, as
+  the repack does, so the planner learns host growth from that phase alone. The planner still sums the repack's
+  load-time line with that growth, which over-reserves host memory by the smaller of the two (0.66 GiB here).
+- **Speed is not read from this box.** The seat's two cores were contended. Arms on identical expert routes printed
+  1.5 to 20 tok/s.
+- **The source checkpoint is read whole at load.** That took 34 min cold off the seat volume (~5 MB/s) and ~6 min
+  warm. It is listed as not modelled.
+
 ## 7. Not measured, said plainly
 
 - **No performance model.** Speed is ordered from evidence, never predicted, apart from the transfer lower bound.
@@ -413,8 +459,9 @@ All values GiB unless marked.
   register), not derived.
 - **Qwen3-30B ran once, on a rented RTX 5090 (FP1).** Every other model above 8B was planned, not run.
 - **Serving** is planned at both placements. All-VRAM is checked on two model/card pairs. The solver's tiers are
-  checked on one model and card (OLMoE, A2000) and assume uniform routing, as the server does. int4 stores, a
-  measured routing profile and decode speed are not planned; see `SERVING-PRESSURE-TEST.md`.
+  checked on one model and card (OLMoE, A2000) and assume uniform routing, as the server does. The int4 levers
+  are priced and checked on that same pair only (6e), and planned only when fixed. A measured routing profile and
+  decode speed are not planned; see `SERVING-PRESSURE-TEST.md`.
 
 ## Provenance
 

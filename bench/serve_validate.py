@@ -122,6 +122,7 @@ def main():
         meas.update(load_seconds=round(time.time() - t0, 1), load_device_peak_bytes=torch.cuda.max_memory_allocated(),
                     load_reserved_peak_bytes=torch.cuda.max_memory_reserved(),
                     host_anon_after_load_bytes=proc_status().get("RssAnon"))
+        smi.mark(meas["host_anon_after_load_bytes"] or 0)
         g = torch.Generator().manual_seed(0)
         vocab = int(getattr(parts.tokenizer, "vocab_size", 0) or 32000)
         n_prompt = min(a.prompt_tokens, a.context - a.new_tokens - 1)
@@ -149,7 +150,13 @@ def main():
                               profile_path=None, batch=1, top_k=inf.get("top_k"))
         placement = {"tiers": {k: len(v) for k, v in man["tiers"].items()}, "bytes_per_expert": _bytes_per_expert(cfg.arena),
                      "vram_gb": cfg.vram_gb, "dram_gb": cfg.dram_gb, "hot_rows": cfg.hot_rows, "masses": man["masses"]}
-    meas.update(host_anon_peak_bytes=smi.anon_peak, host_shmem_peak_bytes=smi.shmem_peak, host_file_peak_bytes=smi.file_peak)
+    meas.update(host_anon_peak_bytes=smi.anon_peak, host_shmem_peak_bytes=smi.shmem_peak, host_file_peak_bytes=smi.file_peak,
+                host_anon_serving_peak_bytes=smi.phase_anon_peak)
+    try:                                         # which expert-GEMM route each call took (eager calls and captures)
+        from experts4bit_qlora.engines.hot_residency import ROUTE_SEEN
+        meas["expert_routes_seen"] = dict(ROUTE_SEEN)
+    except ImportError:
+        pass
     gpu = hw.gpu(0)
     est = {ln.name: ln.bytes for ln in cand.lines if ln.where == "device"}
     backend_alloc = sum(b for n, b in est.items() if n not in ("allocator reserve (cached, unallocated blocks)",

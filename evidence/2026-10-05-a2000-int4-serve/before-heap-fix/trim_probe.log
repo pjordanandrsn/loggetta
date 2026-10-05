@@ -1,0 +1,11 @@
+[16:45:02]   checkpoint: allenai/OLMoE-1B-7B-0924 @ 6d84c48581ece794365f2b8e9cfb043c68ade9c5 (requested main, unpinned)
+[16:45:02]   fusing + quantizing experts (up to 16x64) to nf4 (streaming)...
+[16:45:02]   quantized experts on 16/16 MoE layers (64 experts each)
+[16:45:02]   loading non-expert weights (attention/embeddings/router/norms/dense-mlp)...
+[16:45:03]   experts deferred to the arena: 16 module(s), 80 unmaterialized buffer(s) — call nvme_experts.enable_nvme_residency() before running this model
+[16:45:21]   hybrid tier active on 16 module(s): vram/dram/nvme masses 1.00/0.00/0.00
+[serve_paged] INT4EXP enabled: 16 layers (model_type=olmoe)
+[serve_paged] ATTNINT4 rtn: 64 projections (uncalibrated; model_type=olmoe)
+[serve_paged] fusions (fold flags set: none): {'fuse_qkv_n': 0, 'fuse_t1_glue_n': 0, 'fuse_t1_glue_r2_n': [0, 0], 'fuse_router_epilogue_n': 0}
+[serve_paged] ready: {"moe_layers": 16, "experts": 64, "top_k": 8, "model_type": "olmoe", "int4_expert_layers": 16, "int4_store_kinds": ["int4_b32"], "int4_attn_projections": 64, "kv": {"n_kv_heads": 16, "head_dim": 128, "k_groups": "auto", "scratch_slots": 0, "blocks_per_seq": 256}, "graph_status": null, "grouping": {"device_grouping": false, "force_singleton_groups": false}, "prefill_graph": "0", "levers_env": {"E4B_SERVE_EXP_INT4": "1", "E4B_SERVE_ATTN_INT4": "1", "E4B_INT4_KEEP_NF4": "0"}, "exp_int4_layers_enabled": 16, "attn_int4_rtn_projections": 64, "attn_int4_calib_projections": 0, "fuse_qkv_n": 0, "fuse_t1_glue_n": 0, "fuse_t1_glue_r2_n": [0, 0], "fuse_router_epilogue_n": 0}
+{"anon_start": 430342144, "anon_after_build": 4523069440, "malloc_trim_rc": 1, "anon_after_trim": 607608832, "returned_bytes": 3915460608, "build_s": 429.9}

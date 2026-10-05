@@ -114,6 +114,11 @@ python -m loggetta train <model> ...  -> plan, then execute, then write a receip
       graphs;
     - the two unpriced pools measured at NF4: decode graphs +60 MiB, prefill graph +0.24 / +0.57 GiB;
     - learned by graph settings, the Qwen3-30B prefill-graph plan is within 0.6% of its driver peak.
+  - **The int4 levers (RESULTS 6e, A2000, e4b#1182)** are priced:
+    - int4 attention exactly, +184.1 MiB both ways;
+    - int4 experts +24 MiB priced, against +8 MiB at the serving peak and +24 MiB at load.
+    - int4 attention costs device memory (each projection keeps a bf16 copy), so it is a speed lever.
+    - Measuring it found glibc keeping 2.3–3.6 GB of the levers' freed host heap; the fix in #1182 trims it.
   - Serving slack is 0.06–1.5% at all-VRAM and 8–15% under the solver, against training's 8–39%.
 
 ## What remains speculative
@@ -123,9 +128,10 @@ python -m loggetta train <model> ...  -> plan, then execute, then write a receip
 - **Reserve slack** is measured at 30B on an RTX 5090 (FP1). On other GPUs it is transferred through an anchor ratio, stated as heuristic.
 - **Above 8B, only Qwen3-30B-A3B was run** (FP1, RTX 5090, $0.85); the rest were planned, not run.
 - **Serving assumes uniform routing**, as the server does (no profile reaches `solve_placement`). A measured hot
-  set, int4 stores (experts and attention) and decode speed are not planned. The graph pools are learned from
-  receipts, not priced: two points each. The tiered placement is checked on one model and one
-  card.
+  set and decode speed are not planned.
+  - The int4 levers are planned only when fixed, and checked on one model and card.
+  - The graph pools are learned from receipts, not priced: two points each.
+  - The tiered placement is checked on one model and one card.
 - **Ceilings, not expectations.** Prefill staging and the cold-row stack are priced at their worst case, so short
   prompts leave margin unused.
 - **Multi-GPU is a list in the data model,** nothing more.

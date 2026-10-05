@@ -26,6 +26,8 @@ class DriverMemorySampler:
     def __init__(self, interval: float = 0.25):
         self.interval, self.peak, self.samples = interval, 0, 0
         self.anon_peak, self.file_peak, self.shmem_peak, self.required_peak = 0, 0, 0, 0
+        #: the anonymous host peak since the last :meth:`mark` (a phase's own peak, e.g. serving after a load)
+        self.phase_anon_peak = 0
         self._stop = threading.Event()
         self._smi = shutil.which("nvidia-smi")
         self._t = threading.Thread(target=self._run, daemon=True)
@@ -50,11 +52,18 @@ class DriverMemorySampler:
                 self.peak, self.samples = max(self.peak, v), self.samples + 1
             st = proc_status()
             self.anon_peak = max(self.anon_peak, st.get("RssAnon", 0))
+            self.phase_anon_peak = max(self.phase_anon_peak, st.get("RssAnon", 0))
             self.file_peak = max(self.file_peak, st.get("RssFile", 0))
             self.shmem_peak = max(self.shmem_peak, st.get("RssShmem", 0))
             # pinned host memory (cudaHostAlloc) is accounted as RssShmem; mapped checkpoint shards as RssFile
             self.required_peak = max(self.required_peak, st.get("RssAnon", 0) + st.get("RssShmem", 0))
             self._stop.wait(self.interval)
+
+    def mark(self, anon_now: int = 0):
+        """Start a new phase: :attr:`phase_anon_peak` restarts from ``anon_now``. A load can peak higher than the
+        serving that follows it (a repack's host buffers, handed back before serving), so serving's own growth needs
+        its own peak."""
+        self.phase_anon_peak = anon_now
 
     def __enter__(self):
         self._t.start()
