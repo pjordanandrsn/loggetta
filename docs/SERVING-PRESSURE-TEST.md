@@ -1,8 +1,12 @@
 # Serving pressure test
 
-**Status (second pass).** Scenario A is planned now: the paged server's all-VRAM placement, context × concurrency,
-with its FP8 paged KV pool priced by the server's own arithmetic (see "Serving v1" below). Scenarios B–D are still
-refused, in words: the solver's tiered placement is "not priced yet".
+**Status (third pass).**
+- **Scenario A** is planned: the paged server's all-VRAM placement, context × concurrency, with its FP8 paged KV pool
+  priced by the server's own arithmetic.
+- **Scenarios B and C** are planned as the server runs them: the solver's VRAM/DRAM/NVMe tiers with uniform routing
+  (e4b#1115). The planner sizes the tiers to the budgets, and a run on the A2000 matched the planned split exactly
+  (RESULTS 6b).
+- **Not planned:** a measured routing profile (scenario B's real hot set), and throughput (D).
 
 The first pass refused every `kind="serve"` workload and checked only that the concepts in place could represent
 serving without a rewrite. Each scenario is mapped onto three things: the code that already serves in
@@ -32,8 +36,8 @@ mechanisms before loading, and to say why.
 | scenario | workload | placement in the plan | memory lines | traffic / bounds | status |
 |---|---|---|---|---|---|
 | **A. Fully resident, low latency** | `serve, phase=decode, concurrency=1` | experts: device (1.0) | stack bytes (`derived`, the same e4b classes) + dense + KV(context) | none | **planned** (v1): e4b `estimate_serve_footprint`, KV pool from `paged_kv_pool_bytes` over `MoETopology.kv_*` |
-| **B. Partially resident experts** | same, `context_len` set | experts: device k per layer (hot set) + host the rest | device = k/E of the slab + slot rows; host = pinned rest | link bytes per token = E[unique cold experts touched] × bytes per expert (`expected_weight_reads`) | representable. A setup field `hot_per_layer` replaces the training string `expert_residency` |
-| **C. Zero residency, transfer on demand** | same | experts: host (ColdTier / pipelined slots), dense: device | device = slot rows only | link bytes per token = all touched experts; lower bound = bytes ÷ link | **the transfer bound added this session already covers it**; refusal on `target_s_per_step` generalizes to a per-token target |
+| **B. Partially resident experts** | same, `context_len` set | experts: device k per layer (hot set) + host the rest | device = k/E of the slab + slot rows; host = pinned rest | link bytes per token = E[unique cold experts touched] × bytes per expert (`expected_weight_reads`) | **planned** with uniform routing (solver tiers, e4b#1115; `vram_gb`/`dram_gb` sized by the planner); a measured hot set needs a routing profile |
+| **C. Zero residency, transfer on demand** | same | experts: host (ColdTier / pipelined slots), dense: device | device = slot rows only | link bytes per token = all touched experts; lower bound = bytes ÷ link | **memory planned** (`vram_gb=0` puts every expert in DRAM/NVMe); no per-token transfer bound yet |
 | **D. Batched throughput** | `concurrency=B` (continuous batching) | same axes as A–C | KV × B × context dominates | reads per step amortized by `1-(1-p)^B`; throughput bound = link ÷ amortized bytes | representable; the objective becomes `throughput` |
 
 ## What the pressure test changed now

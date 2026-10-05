@@ -30,6 +30,12 @@ def headroom_policy(budget: int) -> int:
 DEFAULT_RESERVE_FRAC = 0.20
 
 
+def host_headroom_policy(budget: int) -> int:
+    """Host memory a serve plan leaves unused: max(1 GiB, 5% of the budget). The server's CPU tier allocates compute
+    buffers no estimate prices (+0.72 GiB measured during generation on OLMoE-1B-7B, RTX A2000 seat, two solver runs)."""
+    return max(GiB, int(HEADROOM_FRAC * budget))
+
+
 def _overheads(hardware, gpu, observations):
     """Runtime costs the backends' estimates exclude, preferring measurements from receipts for this GPU + driver:
     the CUDA context (device), the allocator's reserved-but-unallocated blocks as a fraction of the allocator peak
@@ -63,7 +69,8 @@ def _overheads(hardware, gpu, observations):
 PCIE_LANE_GBPS = {1: 0.25, 2: 0.5, 3: 0.985, 4: 1.969, 5: 3.938, 6: 7.563}
 
 
-def reserve_fraction(gpu, setup, observations, default, model=None, kind="train"):
+def reserve_fraction(gpu, setup, observations, default, model=None, kind="train",
+                     key=("expert_residency", "expert_kernel")):
     """Allocator reserve slack (reserved peak / allocated peak - 1) for one candidate, from receipts. Returns
     (fraction, basis, source).
 
@@ -80,7 +87,9 @@ def reserve_fraction(gpu, setup, observations, default, model=None, kind="train"
     5. ``default``.
 
     Only receipts of the same workload ``kind`` count: a server allocates its pools once, a trainer churns activations
-    every step, so one's slack says nothing about the other's. Receipts without a kind are training receipts.
+    every step, so one's slack says nothing about the other's. Receipts without a kind are training receipts. ``key``
+    names the setup fields that separate allocation patterns (the backend's ``SLACK_KEYS``): measured, a server's
+    tiered placement leaves 15% slack where its all-VRAM placement leaves 1-2%.
     """
     def frac(o):
         m = o["measured"]
@@ -92,7 +101,6 @@ def reserve_fraction(gpu, setup, observations, default, model=None, kind="train"
     def mname(o):
         return o.get("model", {}).get("model")
 
-    key = ("expert_residency", "expert_kernel")
     usable = [o for o in observations if o.get("status") in ("OK", None) and o.get("measured", {}).get("device_peak_bytes")
               and o.get("measured", {}).get("device_reserved_peak_bytes")
               and o.get("workload", {}).get("kind", "train") == kind]
@@ -129,6 +137,49 @@ def reserve_fraction(gpu, setup, observations, default, model=None, kind="train"
         return frac(worst), "measured", (f"no receipt for this setup; the largest slack measured on this GPU, receipt "
                                          f"{worst.get('run_id')} = {frac(worst):.3f} (conservative)")
     return default[0], default[1], default[2]
+
+
+def learned_serve_overheads(backend, topology, setup, observations, key):
+    """Two overheads a serve plan learns from serve receipts of THIS model, when there are any:
+
+    * the allocator residual: a receipt's measured allocator peak minus what the backend estimates today for that
+      receipt's own setup. Measured 0.15-0.21 GiB on every serve run so far (two models, two cards, both placements),
+      a runtime term no item prices. The largest such residual is charged (conservative);
+    * host growth while serving: the anonymous host memory a run gained after load (the CPU tier's compute buffers,
+      +0.72 GiB on OLMoE under the solver), from receipts with the candidate's key fields; the largest is charged.
+
+    Returns MemoryLine-shaped tuples ``(name, where, bytes, basis, detail)``."""
+    from .plan import Workload
+
+    out, best, grow = [], None, None
+    for o in observations:
+        if o.get("workload", {}).get("kind") != "serve" or o.get("status") != "OK" \
+                or o.get("model", {}).get("model") != topology.model:
+            continue
+        m, rs = o.get("measured", {}), o.get("setup", {})
+        if m.get("device_peak_bytes"):
+            try:
+                raw, _, refusals = backend.estimate(topology, rs, Workload(kind="serve"))
+            except (TypeError, ValueError, KeyError):
+                raw, refusals = (), ("not estimable here",)
+            if not refusals:
+                r = m["device_peak_bytes"] - sum(x[2] for x in raw if x[1] == "device")
+                if best is None or r > best[0]:
+                    best = (r, o.get("run_id"))
+        if m.get("host_anon_peak_bytes") and m.get("host_anon_after_load_bytes") and \
+                all(rs.get(k) == setup.get(k) for k in key):
+            g = m["host_anon_peak_bytes"] - m["host_anon_after_load_bytes"]
+            if grow is None or g > grow[0]:
+                grow = (g, o.get("run_id"))
+    if best and best[0] > 0:
+        out.append(("allocator residual (runtime buffers no item prices)", "device", int(best[0]), "measured",
+                    f"receipt {best[1]}: its allocator peak minus today's estimate of its own setup (largest on file "
+                    "for this model)"))
+    if grow and grow[0] > 0:
+        out.append(("host growth while serving", "host", int(grow[0]), "measured",
+                    f"receipt {grow[1]}: anonymous host memory gained after load (largest on file for this model and "
+                    f"{', '.join(key)})"))
+    return out
 
 
 def link_bandwidth(gpu, observations):
@@ -208,8 +259,11 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
         host_budget = hardware.host.memory_available.value or 0
         host_src = f"{hardware.host.memory_available.source}: available now"
     headroom = constraints.headroom if constraints.headroom is not None else headroom_policy(dev_budget)
+    host_headroom = host_headroom_policy(host_budget) if workload.kind == "serve" else 0
     budget = {"device": int(dev_budget), "device_source": dev_src, "host": int(host_budget),
               "host_source": host_src, "headroom": int(headroom)}
+    if host_headroom:
+        budget["host_headroom"] = int(host_headroom)
     common = dict(model=_model_dict(topology), hardware=_hw_dict(hardware, gpu), workload=workload,
                   constraints=constraints, budget=budget)
 
@@ -241,7 +295,10 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
         for k, (ok, why) in sorted(st.kernels.items()):
             if not ok and (wanted is None or k in wanted):
                 reasons.append(f"{b.NAME}: kernel {k} not usable here: {why}")
-        for setup in b.candidates(topology, workload, constraints, st):
+        slack_key = getattr(b, "SLACK_KEYS", {}).get(workload.kind, ("expert_residency", "expert_kernel"))
+        learned_cache = {}
+
+        def price(setup):
             raw, unmodelled, refusals = b.estimate(topology, setup, workload)
             alloc = sum(r[2] for r in raw if r[1] == "device")
             default = (reserve_frac, *reserve_meta)
@@ -249,12 +306,41 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
                 default = (DEFAULT_RESERVE_FRAC, "inferred", f"default {DEFAULT_RESERVE_FRAC:.0%} of the allocator "
                            f"estimate; no {workload.kind} receipt on file measured this GPU")
             frac, fbasis, fsrc = reserve_fraction(gpu, setup, observations, default, model=topology.model,
-                                                  kind=workload.kind)
+                                                  kind=workload.kind, key=slack_key)
             reserve = MemoryLine("allocator reserve (cached, unallocated blocks)", "device", int(frac * alloc),
                                  fbasis, fsrc)
-            lines = tuple(MemoryLine(*r) for r in raw) + (reserve,) + tuple(dev_over) + tuple(host_over)
+            learned = ()
+            if workload.kind == "serve":
+                ck = (setup.get("placement"), tuple(setup.get(k) for k in slack_key))
+                if ck not in learned_cache:
+                    learned_cache[ck] = learned_serve_overheads(b, topology, setup, observations, slack_key)
+                learned = tuple(MemoryLine(*x) for x in learned_cache[ck])
+            lines = tuple(MemoryLine(*r) for r in raw) + (reserve,) + learned + tuple(dev_over) + tuple(host_over)
             dev = sum(ln.bytes for ln in lines if ln.where == "device")
             host = sum(ln.bytes for ln in lines if ln.where == "host")
+            return lines, dev, host, unmodelled, refusals
+
+        def side_fits(setup, side):
+            lines, dev, host, _, refusals = price(setup)
+            if refusals:
+                return False
+            return dev + headroom <= dev_budget if side == "device" else host + host_headroom <= host_budget
+
+        for setup in b.candidates(topology, workload, constraints, st):
+            # knobs a backend asks the planner to size: the largest value its side of the budget allows (policy)
+            for field, side, hi in getattr(b, "fill_knobs", lambda *a: [])(topology, setup, workload):
+                if field in constraints.fixed:
+                    continue
+                lo, top = 0.0, float(hi)
+                if side_fits({**setup, field: top}, side):
+                    lo = top
+                else:
+                    for _ in range(24):
+                        mid = (lo + top) / 2
+                        lo, top = (mid, top) if side_fits({**setup, field: mid}, side) else (lo, mid)
+                setup = {**setup, field: int(lo * 1000) / 1000}
+                reasons.append(f"{b.NAME}: {field} sized to {setup[field]:.3f}, the largest the {side} budget allows")
+            lines, dev, host, unmodelled, refusals = price(setup)
             rejected = list(refusals)
             bounds = {}
             link = sum(ln.bytes for ln in lines if ln.where == "link") * workload.grad_accum
@@ -270,8 +356,9 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
                 if dev + headroom > dev_budget:
                     rejected.append(f"device {dev / GiB:.2f} + headroom {headroom / GiB:.2f} GiB > budget "
                                     f"{dev_budget / GiB:.2f} GiB")
-                if host > host_budget:
-                    rejected.append(f"host {host / GiB:.2f} GiB > budget {host_budget / GiB:.2f} GiB")
+                if host + host_headroom > host_budget:
+                    rejected.append(f"host {host / GiB:.2f}" + (f" + headroom {host_headroom / GiB:.2f}" if host_headroom
+                                                                else "") + f" GiB > budget {host_budget / GiB:.2f} GiB")
             rank, note = _rank(constraints.objective, setup, dev, host, b)
             obs = _observed(observations, topology.model, setup, workload, gpu)
             if obs:

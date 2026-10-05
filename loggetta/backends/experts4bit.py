@@ -16,8 +16,11 @@ from dataclasses import dataclass, field
 
 NAME = "experts4bit"
 WORKLOADS = ("train", "serve")
+#: setup fields that separate allocator-slack regimes, per workload (measured: training offload vs resident; serving
+#: solver tiers 15% vs all-VRAM 1-2% on the A2000)
+SLACK_KEYS = {"train": ("expert_residency", "expert_kernel"), "serve": ("placement", "graphs")}
 #: which probed kernels each workload uses: the planner reports only those as unusable
-KERNELS_FOR = {"train": ("grouped_nf4", "reference"), "serve": ("paged_fp8", "paged_graphs")}
+KERNELS_FOR = {"train": ("grouped_nf4", "reference"), "serve": ("paged_fp8", "paged_graphs", "cpu_tier")}
 GiB = 1 << 30
 
 #: The order a speed objective tries setups in, and the evidence for each step of it. Not a performance model:
@@ -98,6 +101,14 @@ def probe(gpu) -> BackendStatus:
             else:
                 why = fused_append_unsupported(tuple(cap))
                 kernels["paged_graphs"] = (why is None, why or "bucketed decode graphs (fused FP8 KV append)")
+            try:
+                import cpu_grouped
+                cpu_ok = bool(cpu_grouped.cpu_kernels_available())
+            except ImportError:
+                cpu_ok = False
+            kernels["cpu_tier"] = (cpu_ok, "grouped-nf4-gemm's native CPU kernels (the solver's DRAM tier computes on "
+                                           "the CPU)" if cpu_ok else "grouped-nf4-gemm's native CPU kernels are not "
+                                           "built here: the solver's tiered placement cannot engage")
             kernels["paged_fp8"] = (True, "paged FP8 KV pool + attention, " + (
                 "fp8 compute" if tuple(cap) >= (8, 9) else "f32 compute (fp8 compute needs sm_89+, "
                                                             "fp8_paged_attn.fp8_compute_unsupported)"))
@@ -145,8 +156,10 @@ SERVE_EVIDENCE = {
 
 def label(setup: dict) -> str:
     if "max_seqs" in setup:
+        tiers = (f", tiers VRAM {setup['vram_gb']:.2f} / DRAM {setup['dram_gb']:.2f} GiB"
+                 if setup.get("placement") == "solver" else "")
         return (f"serve {setup['placement']}, fp8 paged KV, {setup['max_seqs']} seqs x {setup['max_tokens_per_seq']} "
-                f"tokens{', decode graphs' if setup.get('graphs') else ''}"
+                f"tokens{', decode graphs' if setup.get('graphs') else ''}{tiers}"
                 f"{', prefill graph ' + str(setup['prefill_graph']) if setup.get('prefill_graph') not in (None, '0') else ''}")
     s = setup
     return (f"experts on {s.get('expert_residency')}, {s.get('expert_kernel')} kernel"
@@ -159,24 +172,39 @@ def explain(sel, feasible, infeasible, budget, status, constraints, workload) ->
     """Why this candidate, in words: the backend knows its own setup fields; the planner does not read them."""
     s, out = sel.setup, []
     if workload.kind == "serve":
-        out.append(f"all experts resident (placement all-vram): {sel.device_bytes / GiB:.2f} GiB estimated + "
-                   f"{budget['headroom'] / GiB:.2f} GiB headroom fits the {budget['device'] / GiB:.2f} GiB budget")
+        if s.get("placement") == "solver":
+            by = {ln.name: ln.bytes for ln in sel.lines}
+            tier = lambda key: next((b for n, b in by.items() if n.startswith(key)), 0) / GiB  # noqa: E731
+            allv = [c for c in feasible + infeasible if c.setup.get("placement") == "all-vram"]
+            need = min((c.device_bytes for c in allv), default=None)
+            out.append(f"experts split across tiers (placement solver): {tier('expert stacks, VRAM'):.2f} GiB in VRAM, "
+                       f"{tier('expert stacks, DRAM'):.2f} GiB in DRAM (computed on the CPU), "
+                       f"{tier('expert rows on NVMe'):.2f} GiB on NVMe (streamed through the cold tier)"
+                       + (f"; all-VRAM needs {need / GiB:.2f} GiB + headroom, over the {budget['device'] / GiB:.2f} GiB "
+                          "budget" if need is not None and need + budget["headroom"] > budget["device"] else ""))
+            out.append("tier budgets: VRAM filled to the device budget, then DRAM to the host budget less its headroom "
+                       "(E4B_PAGED_VRAM_GB / E4B_PAGED_DRAM_GB); routing is assumed uniform, as serve_paged runs the "
+                       "solver without a profile")
+            out.append(f"kernels: {status.kernels.get('cpu_tier', (None, ''))[1]}")
+        else:
+            out.append(f"all experts resident (placement all-vram): {sel.device_bytes / GiB:.2f} GiB estimated + "
+                       f"{budget['headroom'] / GiB:.2f} GiB headroom fits the {budget['device'] / GiB:.2f} GiB budget")
         kv = next((ln for ln in sel.lines if ln.name == "FP8 paged KV pool"), None)
         if kv:
             out.append(f"KV pool {kv.bytes / GiB:.2f} GiB for {s['max_seqs']} sequences x {s['max_tokens_per_seq']} "
                        "tokens; it scales linearly in both")
         out.append(f"kernels: {status.kernels.get('paged_fp8', (None, ''))[1]}; grouped NF4 / int4 decode routes as "
                    "serve_paged resolves them (reported at /health)")
-        if constraints.objective == "speed":
+        if constraints.objective == "speed" and any(c.setup.get("graphs") for c in feasible + infeasible):
             out += [f"ordering, {k}: {v}" for k, v in SERVE_EVIDENCE.items()]
         if s.get("prefill_graph") == "0" and "prefill_graph" not in constraints.fixed:
             out.append("first-chunk prefill graph off (the server's default is auto): its private pool is not priced "
                        "(SC2b measured +3.3 GiB at Qwen3-30B), so the plan's memory would not bound the process; fix "
                        "prefill_graph=auto to let the server engage it when that much is free")
-        out.append("not planned yet: the solver's VRAM/DRAM/NVMe tiers, int4 expert stores, decode speed")
+        out.append("not planned yet: a measured routing profile for the solver, int4 expert stores, decode speed")
         from experts4bit_qlora.serve_recipe import ServeSetup
 
-        env = " ".join(f"{k}={v}" for k, v in sorted(ServeSetup(**s).to_env().items()))
+        env = " ".join(f"{k}={v}" for k, v in sorted(_serve_setup(ServeSetup, s).to_env().items()))
         out.append(f"to serve it: {env} python -m experts4bit_qlora.serve_paged (with the model's arena and calibration)")
         return out
     resident = [c for c in feasible + infeasible if c.setup.get("expert_residency") == "device"
@@ -223,13 +251,46 @@ def _serve_candidates(workload, constraints, status):
         return []
     base = {**ServeSetup().to_dict(), "max_seqs": workload.concurrency or 1,
             "max_tokens_per_seq": workload.context_len or 4096}
-    if constraints.expert_residency is not None and "device" not in constraints.expert_residency:
-        base["placement"] = "solver"               # the tiered placement, which the estimate refuses in words
     if "prefill_graph" in base:
         base["prefill_graph"] = "0"                # its pool is not priced: a plan bounds memory by what it priced
-    can_graph = status.kernels.get("paged_graphs", (False,))[0]
-    graphs = [fixed["graphs"]] if "graphs" in fixed else ([True, False] if can_graph else [False])
-    return [{**base, **fixed, "graphs": g} for g in graphs if can_graph or not g]
+    residency = constraints.expert_residency or ("device", "host")
+    out = []
+    if "device" in residency and fixed.get("placement", "all-vram") == "all-vram":
+        can_graph = status.kernels.get("paged_graphs", (False,))[0]
+        graphs = [fixed["graphs"]] if "graphs" in fixed else ([True, False] if can_graph else [False])
+        out += [{**base, **fixed, "placement": "all-vram", "graphs": g} for g in graphs if can_graph or not g]
+    solver_ok = "vram_gb" in ServeSetup.__dataclass_fields__ and status.kernels.get("cpu_tier", (False,))[0]
+    if solver_ok and fixed.get("placement", "solver") == "solver" and ("host" in residency or "placement" in fixed):
+        # the tiers' budgets are filled by the planner (fill_knobs) unless the caller fixed them
+        out.append({**base, "graphs": False, "vram_gb": 0.0, "dram_gb": 0.0, **fixed, "placement": "solver"})
+    return out
+
+
+def _serve_setup(cls, setup: dict):
+    """A ServeSetup from a plan's or a receipt's setup dict: fields it does not carry (a receipt's torch threads) are
+    dropped, and values a receipt recorded from the environment as text are read back as numbers."""
+    kinds = {"vram_gb": float, "dram_gb": float, "hot_rows": int, "max_seqs": int, "max_tokens_per_seq": int,
+             "chunk_tokens": int}
+    known = cls.__dataclass_fields__
+    vals = {k: (kinds[k](v) if k in kinds else v) for k, v in setup.items() if k in known}
+    if "buckets" in vals:
+        vals["buckets"] = tuple(int(b) for b in (vals["buckets"].split(",") if isinstance(vals["buckets"], str)
+                                                 else vals["buckets"]))
+    if isinstance(vals.get("graphs"), str):
+        vals["graphs"] = vals["graphs"] not in ("0", "false", "False")
+    return cls(**vals)
+
+
+def fill_knobs(topology, setup: dict, workload) -> list:
+    """Setup fields the planner should raise to the largest value its budget allows, in order: ``(field, side, upper)``.
+    Under the solver, the VRAM tier fills the device budget and then the DRAM tier fills the host budget; neither can
+    usefully exceed the whole expert slab."""
+    if setup.get("placement") != "solver":
+        return []
+    slab = next((ln[2] for ln in estimate(topology, {**setup, "placement": "all-vram", "graphs": False}, workload)[0]
+                 if ln[0].startswith("frozen expert stacks")), 0)
+    hi = slab / GiB
+    return [(k, side, hi) for k, side in (("vram_gb", "device"), ("dram_gb", "host"))]
 
 
 def estimate(topology, setup: dict, workload):
@@ -237,7 +298,7 @@ def estimate(topology, setup: dict, workload):
     if workload.kind == "serve":
         from experts4bit_qlora.serve_recipe import ServeSetup, estimate_serve_footprint
 
-        fp = estimate_serve_footprint(topology, ServeSetup(**setup))
+        fp = estimate_serve_footprint(topology, _serve_setup(ServeSetup, setup))
         return [(i.name, i.where, i.bytes, i.basis, i.detail) for i in fp.items], fp.unmodelled, fp.refusals
     from experts4bit_qlora.recipe import QLoRASetup, estimate_qlora_footprint
 
@@ -248,8 +309,8 @@ def estimate(topology, setup: dict, workload):
 
 
 def speed_rank(setup: dict) -> tuple:
-    if "max_seqs" in setup:                     # serve: graphs replay the decode step instead of launching it
-        return (0 if setup.get("graphs") else 1,)
+    if "max_seqs" in setup:                     # serve: all experts in VRAM first; graphs replay the decode step
+        return (0 if setup.get("placement") == "all-vram" else 1, 0 if setup.get("graphs") else 1)
     return ((0 if setup["expert_residency"] == "device" else 1),
             (0 if setup["expert_kernel"] == "grouped_nf4" else 1),
             (1 if setup["attn_4bit"] else 0),

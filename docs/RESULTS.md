@@ -266,15 +266,61 @@ Every suggestion is itself planned. The tests check that each one is feasible, a
 largest at 16-token-block granularity. The A2000 sweep ran before any A2000 serve receipt, so it uses the 20% default. The figures in the
 "fits" column carry that over-reserve.
 
+## 6b. Serving with tiers: VRAM, DRAM and NVMe (the solver's placement)
+
+**What is planned.** When all-VRAM does not fit, a serve plan uses `serve_paged`'s solver placement. e4b#1115 prices
+it with `solve_placement` itself: the server passes no routing profile, so VRAM fills first, then DRAM, then NVMe.
+The planner sizes the two tier budgets as policy. The VRAM tier takes the largest value the device budget allows,
+then the DRAM tier the largest the host budget allows less a host headroom, each found by search over the priced
+estimate. The rest of the experts stream from NVMe.
+
+Serve plans also learn two lines from serve receipts of the same model:
+- the **allocator residual**: a receipt's measured peak minus today's estimate of its own setup;
+- **host growth while serving**: anonymous host memory gained after load.
+
+Allocator slack is matched by placement. The backend names the fields that separate slack regimes; measured, it
+is 15% under the solver against 1–2% at all-VRAM.
+
+**Calibration runs** (OLMoE-1B-7B on the A2000, solver budgets set by hand, `evidence/2026-10-05-rtx-a2000-serve/`):
+
+| VRAM / DRAM GiB × hot_rows | tiers (V/D/N) | allocator: e4b estimate vs peak | host shared: items vs peak | anonymous growth while serving |
+|---|---|---|---|---|
+| 1.2 / 1.5 × 64 | 364 / 455 / 205 | 2.176 vs 2.355 | 0.46–0.67 vs 0.50 | 0.73 |
+| 2.0 / 0.8 × 128 | 606 / 242 / 176 | 2.974 vs 3.144 | 1.13 vs 1.21 | 0.72 |
+
+Each run replanned with the other runs' receipts only (leave-one-out, `bench/replan_serve.py`):
+
+| run | device: plan vs driver peak | allocator: plan vs peak | host: plan vs required peak |
+|---|---|---|---|
+| 1.2 / 1.5 | 2.82 vs 2.83 | 2.351 vs 2.355 | 3.60 vs 3.30 |
+| 2.0 / 0.8 | 3.76 vs 3.70 | 3.153 vs 3.144 | 3.37 vs 3.29 |
+
+**End to end: the planner chose the tiers.** OLMoE, 3.0 GiB device budget, 4.5 GiB host budget,
+`receipt planned-tiers-olmoe-v3.0-r4.5`:
+
+| | plan | measured |
+|---|---|---|
+| tiers (V/D/N) | 272 / 421 / 331 | 272 / 421 / 331 (the server's own manifest) |
+| allocator | 2.052 | 2.051 |
+| device total | 2.50 of 3.00 budget | 2.35 driver peak |
+| host total | 3.50 of 4.50 budget | 3.17 required peak |
+
+All values GiB. Both totals err high, the safe direction. The learned 15% slack came from another run; this one
+used 8%. Decode throughput was 0.2 tokens/s, with NVMe plus CPU tiers on a 2-core seat; it is recorded, not claimed.
+
+**The residual.** Every serve run so far missed the e4b estimate by 0.15–0.21 GiB: two models, two cards, both
+placements, P109 included. The planner charges the largest measured for the model being planned, and no prior for
+other models. Attributing it (allocator snapshot) is the obvious next measurement.
+
 ## 7. Not measured, said plainly
 
 - **No performance model.** Speed is ordered from evidence, never predicted, apart from the transfer lower bound.
 - **The activation heuristic** is a formula, checked against nine allocator peaks (three here, six in the
   register), not derived.
 - **Qwen3-30B ran once, on a rented RTX 5090 (FP1).** Every other model above 8B was planned, not run.
-- **Serving** is planned for the all-VRAM placement only. It is checked on two model/card pairs: P109's Qwen3-30B on
-  an RTX 5090, and OLMoE on the seat's A2000 (eager). Tiers, int4 stores and decode speed are not planned; see
-  `SERVING-PRESSURE-TEST.md`.
+- **Serving** is planned at both placements. All-VRAM is checked on two model/card pairs. The solver's tiers are
+  checked on one model and card (OLMoE, A2000) and assume uniform routing, as the server does. int4 stores, a
+  measured routing profile and decode speed are not planned; see `SERVING-PRESSURE-TEST.md`.
 
 ## Provenance
 

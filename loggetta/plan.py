@@ -145,7 +145,8 @@ class ExecutionPlan:
                f"Workload  {w.kind}: {shape}",
                f"Budget    device {gb(self.budget['device'])} [{self.budget['device_source']}]   "
                f"host {gb(self.budget['host'])} [{self.budget['host_source']}]   "
-               f"headroom {gb(self.budget['headroom'])} [policy]"]
+               f"headroom {gb(self.budget['headroom'])} [policy]"
+               + (f"   host headroom {gb(self.budget['host_headroom'])} [policy]" if self.budget.get("host_headroom") else "")]
         if self.status == "refused":
             out += ["", "NOT FEASIBLE under the requested constraints.", ""]
             out += [f"  {r}" for r in self.refusal.get("reasons", ())]

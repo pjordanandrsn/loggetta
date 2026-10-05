@@ -175,9 +175,59 @@ def test_serving_too_much_kv_is_refused_with_a_context_and_a_concurrency_that_fi
     assert _serve(topo, 131072, fit_seqs).status == "feasible"
 
 
-def test_serving_tiered_placement_is_refused_in_words(topo):
+def _can_solve():
+    """Whether the experts4bit-qlora under test prices the solver's tiers, and its CPU tier can run here."""
+    from experts4bit_qlora.serve_recipe import ServeSetup
+    try:
+        import cpu_grouped
+        return "vram_gb" in ServeSetup.__dataclass_fields__ and cpu_grouped.cpu_kernels_available()
+    except ImportError:
+        return False
+
+
+def _tier(p, prefix):
+    return next((ln.bytes for ln in p.selected.lines if ln.name.startswith(prefix)), 0)
+
+
+def test_serving_host_residency_plans_the_solver_tiers(topo):
     p = _serve(topo, 4096, 1, Constraints(expert_residency=("host",)))
-    assert p.status == "refused" and any("not priced yet" in r for r in p.refusal["reasons"])
+    if not _can_solve():
+        assert p.status == "refused"
+        return
+    assert p.status == "feasible" and p.selected.setup["placement"] == "solver"
+    assert all(c.setup["placement"] == "solver" for c in p.alternatives)
+
+
+def test_serving_fills_the_solver_tiers_when_all_vram_does_not_fit(topo):
+    if not _can_solve():
+        pytest.skip("the solver's tiers are not priced or cannot run here")
+    need = _serve(topo, 4096, 1, cap=(12, 0)).selected.device_bytes
+    p = _serve(topo, 4096, 1, cap=(12, 0), free_gib=0.8 * need / GiB)
+    assert p.status == "feasible" and p.selected.setup["placement"] == "solver", p.render()
+    vram, dram, nvme = _tier(p, "expert stacks, VRAM"), _tier(p, "expert stacks, DRAM"), _tier(p, "expert rows on NVMe")
+    assert vram > 0 and dram > 0 and nvme == 0                       # 40 GiB of host takes every other row
+    slack = p.budget["device"] - p.budget["headroom"] - p.selected.device_bytes
+    assert 0 <= slack < 64 << 20                                      # the VRAM tier filled the device budget
+    assert any("experts split across tiers" in r for r in p.reasons)
+    assert any("E4B_PAGED_VRAM_GB=" in r and "E4B_PAGED_PLACEMENT=solver" in r for r in p.reasons)
+    assert any(c.setup["placement"] == "all-vram" and not c.feasible for c in p.alternatives)
+
+
+def test_serving_spills_to_nvme_when_the_host_is_short(topo):
+    if not _can_solve():
+        pytest.skip("the solver's tiers are not priced or cannot run here")
+    need = _serve(topo, 4096, 1, cap=(12, 0)).selected.device_bytes
+    p = _serve(topo, 4096, 1, cap=(12, 0), free_gib=0.8 * need / GiB, ram_gib=4.6)
+    assert p.status == "feasible", p.render()
+    assert _tier(p, "expert rows on NVMe") > 0 and _tier(p, "cold view") > 0
+    assert p.selected.host_bytes + p.budget["host_headroom"] <= p.budget["host"]
+
+
+def test_forcing_device_residency_keeps_the_solver_out(topo):
+    need = _serve(topo, 4096, 1, cap=(12, 0)).selected.device_bytes
+    p = _serve(topo, 4096, 1, Constraints(expert_residency=("device",)), cap=(12, 0), free_gib=0.8 * need / GiB)
+    assert p.status == "refused"
+    assert all(c.setup["placement"] == "all-vram" for c in p.alternatives)
 
 
 def test_serving_does_not_borrow_training_slack(topo):
@@ -324,7 +374,7 @@ def test_serve_slack_prefers_the_receipt_with_the_whole_setup(topo):
     obs = [rec("eager", False, int(4.4 * GiB)), rec("graphs", True, int(5.0 * GiB))]
     p = plan(topo, hw(cap=(12, 0)), Workload(kind="serve", context_len=4096, concurrency=4), observations=obs)
     by = {c.setup["graphs"]: next(ln for ln in c.lines if ln.name.startswith("allocator reserve"))
-          for c in (p.selected,) + p.alternatives}
+          for c in (p.selected,) + p.alternatives if c.setup["placement"] == "all-vram"}
     assert by[True].basis == by[False].basis == "measured"
     assert "receipt graphs" in by[True].detail and "receipt eager" in by[False].detail
 
@@ -340,3 +390,42 @@ def test_serving_plans_the_prefill_graph_off_unless_asked(topo):
     asked = _serve(topo, 4096, 8, Constraints(fixed={"prefill_graph": "auto"}), cap=(12, 0))
     assert asked.selected.setup["prefill_graph"] == "auto" and "prefill graph auto" in asked.selected.label()
     assert any("prefill graph" in u for u in asked.selected.unmodelled)
+
+
+def test_a_solver_receipts_slack_does_not_reach_all_vram_plans(topo):
+    if not _can_solve():
+        pytest.skip("the solver's tiers are not priced or cannot run here")
+    base = _serve(topo, 4096, 1, cap=(12, 0)).selected.setup
+
+    def rec(rid, placement, reserved):
+        return {"run_id": rid, "status": "OK", "model": {"model": topo.model}, "workload": {"kind": "serve"},
+                "setup": {**base, "placement": placement, "graphs": False, "buckets": list(base["buckets"])},
+                "hardware": {"gpu": {"name": "Test GPU", "driver": "575.64.05"}},
+                "measured": {"device_peak_bytes": 4 * GiB, "device_reserved_peak_bytes": reserved}}
+    obs = [rec("tiers", "solver", int(4.6 * GiB)), rec("resident", "all-vram", int(4.04 * GiB))]
+    p = plan(topo, hw(cap=(12, 0)), Workload(kind="serve", context_len=4096, concurrency=1),
+             Constraints(fixed={"graphs": False}), observations=obs)
+    by = {c.setup["placement"]: next(ln for ln in c.lines if ln.name.startswith("allocator reserve"))
+          for c in (p.selected,) + p.alternatives}
+    assert "receipt resident" in by["all-vram"].detail and "receipt tiers" in by["solver"].detail
+
+
+def test_serve_plans_learn_the_residual_and_host_growth_from_this_models_receipts(topo):
+    first = _serve(topo, 4096, 1, cap=(12, 0))
+    setup, est = first.selected.setup, sum(ln.bytes for ln in first.selected.lines if ln.where == "device"
+                                          and ln.name in {"frozen expert stacks (all VRAM)", "dense weights (bf16)",
+                                                          "FP8 paged KV pool", "prefill/decode working set"})
+    rec = {"run_id": "seen", "status": "OK", "model": {"model": topo.model}, "workload": {"kind": "serve"},
+           "setup": {**setup, "buckets": list(setup["buckets"]), "torch_threads": "2"},
+           "hardware": {"gpu": {"name": "Other GPU", "driver": "1"}},
+           "measured": {"device_peak_bytes": est + (200 << 20), "device_reserved_peak_bytes": est + (210 << 20),
+                        "host_anon_after_load_bytes": 2 * GiB, "host_anon_peak_bytes": 2 * GiB + (700 << 20)}}
+    p = plan(topo, hw(cap=(12, 0)), Workload(kind="serve", context_len=4096, concurrency=1),
+             Constraints(fixed={"graphs": setup["graphs"]}), observations=[rec])
+    lines = {ln.name: ln for ln in p.selected.lines}
+    res = lines["allocator residual (runtime buffers no item prices)"]
+    assert res.basis == "measured" and abs(res.bytes - (200 << 20)) < (1 << 20) and "receipt seen" in res.detail
+    assert lines["host growth while serving"].bytes == 700 << 20
+    other = plan(topo, hw(cap=(12, 0)), Workload(kind="serve", context_len=4096, concurrency=1),
+                 observations=[{**rec, "model": {"model": "someone/else"}}])
+    assert not any(ln.name.startswith(("allocator residual", "host growth")) for ln in other.selected.lines)

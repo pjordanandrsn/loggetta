@@ -1,0 +1,381 @@
+{
+ "schema": "execution-receipt/1",
+ "run_id": "solver-olmoe-v1.2-d1.5-h64",
+ "plan": {
+  "alternatives": [
+   {
+    "backend": "experts4bit",
+    "bounds": {},
+    "device_bytes": 178257920,
+    "feasible": false,
+    "host_bytes": 765714432,
+    "label_text": "serve solver, fp8 paged KV, 1 seqs x 512 tokens",
+    "lines": [
+     {
+      "basis": "inferred",
+      "bytes": 0,
+      "detail": "default 20% of the allocator estimate; no serve receipt on file measured this GPU",
+      "name": "allocator reserve (cached, unallocated blocks)",
+      "where": "device"
+     },
+     {
+      "basis": "measured",
+      "bytes": 178257920,
+      "detail": "receipt granite-4.0-h-tiny-device-grouped_nf4-t1024-20261004T183236Z: driver-reported process peak minus allocator reserved peak",
+      "name": "CUDA context + library workspaces",
+      "where": "device"
+     },
+     {
+      "basis": "measured",
+      "bytes": 765714432,
+      "detail": "receipt granite-4.0-h-tiny-device-grouped_nf4-t1024-20261004T183236Z: anonymous RSS after load",
+      "name": "process baseline (torch, CUDA, libraries, model objects)",
+      "where": "host"
+     }
+    ],
+    "rank": [
+     1
+    ],
+    "rank_note": "objective speed: ordered by measured evidence (see Why)",
+    "rejected": [
+     "placement 'solver' is not priced yet (only all-vram); the solver's tiers need measured bandwidths and a routing profile"
+    ],
+    "setup": {
+     "buckets": [
+      1,
+      2,
+      4,
+      8,
+      16
+     ],
+     "chunk_tokens": 512,
+     "graphs": false,
+     "kv_groups": "auto",
+     "max_seqs": 1,
+     "max_tokens_per_seq": 512,
+     "placement": "solver",
+     "prefill_graph": "0"
+    },
+    "unmodelled": []
+   }
+  ],
+  "budget": {
+   "device": 11437867008,
+   "device_source": "reported: free now",
+   "headroom": 571893350,
+   "host": 25337565184,
+   "host_source": "reported: available now"
+  },
+  "constraints": {
+   "device": 0,
+   "expert_residency": null,
+   "fixed": {
+    "placement": "solver"
+   },
+   "headroom": null,
+   "objective": "speed",
+   "ram_budget": null,
+   "target_s_per_step": null,
+   "vram_budget": null
+  },
+  "hardware": {
+   "cpu": "Intel(R) Xeon(R) W-1250 CPU @ 3.30GHz",
+   "cpus": 2.0,
+   "gpu": {
+    "compute_capability": [
+     8,
+     6
+    ],
+    "driver": "575.64.05",
+    "index": 0,
+    "memory_free": 11437867008,
+    "memory_free_source": "reported",
+    "memory_total": 12878610432,
+    "name": "NVIDIA RTX A2000 12GB",
+    "pcie": [
+     1,
+     8,
+     3,
+     16
+    ],
+    "uuid": "GPU-01aa94f1-4004-9932-0b37-2051081a2a9d"
+   },
+   "gpus": 1,
+   "platform": "Linux x86_64",
+   "ram_available": 25337565184,
+   "ram_available_source": "reported",
+   "ram_limit": 30064771072
+  },
+  "model": {
+   "convention": "qwen2_moe",
+   "dense_params": 476710912,
+   "expert_params": 6442450944,
+   "loader_refusal": null,
+   "model": "allenai/OLMoE-1B-7B-0924",
+   "model_type": "olmoe",
+   "moe_layers": 16,
+   "n_experts": 64,
+   "n_layers": 16,
+   "provenance": {
+    "config": "allenai/OLMoE-1B-7B-0924",
+    "kv": "serve_paged._kv_geometry + paged_runner.kv_layers (the paged server's rules)",
+    "structure": "module tree built on meta from the config (no weights read)",
+    "tied_embeddings": "config tie_word_embeddings (the loader's rule when no lm_head.weight ships)",
+    "top_k": "config: first of ROUTED_TOP_K_KEYS present",
+    "transformers": "5.18.0"
+   },
+   "revision": null,
+   "summary": "allenai/OLMoE-1B-7B-0924 (olmoe, qwen2_moe): 16/16 MoE layers, E=64 H=2048 I=1024, top-8; 6.44B expert + 0.48B dense params",
+   "top_k": 8
+  },
+  "performance": {
+   "estimate": null,
+   "statement": "not predicted: no performance model is calibrated for this backend yet; the ordering below rests on measured relative speeds, not on a time estimate"
+  },
+  "provenance": {},
+  "reasons": [
+   "experts4bit: kernel paged_graphs not usable here: the fused FP8 KV append casts to e4m3 in Triton, which needs sm_89+; this device is sm_86"
+  ],
+  "refusal": {
+   "closest": "serve solver, fp8 paged KV, 1 seqs x 512 tokens",
+   "closest_lines": [
+    "device allocator reserve (cached, unallocated blocks)   0.00 GiB [inferred]",
+    "device CUDA context + library workspaces       0.17 GiB [measured]",
+    "host   process baseline (torch, CUDA, libraries, model objects)   0.71 GiB [measured]"
+   ],
+   "reasons": [
+    "placement 'solver' is not priced yet (only all-vram); the solver's tiers need measured bandwidths and a routing profile"
+   ],
+   "suggestions": [
+    "the weights alone exceed the budget: no context or concurrency fits"
+   ]
+  },
+  "schema": "execution-plan/1",
+  "selected": null,
+  "status": "refused",
+  "warnings": [
+   "1.34 GiB of NVIDIA RTX A2000 12GB is already in use by other processes"
+  ],
+  "workload": {
+   "concurrency": 1,
+   "context_len": 512,
+   "grad_accum": 1,
+   "kind": "serve",
+   "micro_batch": 1,
+   "optimizer": "adamw",
+   "phase": null,
+   "seq_len": 512,
+   "steps": 20
+  }
+ },
+ "model": {
+  "model": "allenai/OLMoE-1B-7B-0924",
+  "revision": null
+ },
+ "workload": {
+  "kind": "serve",
+  "context_len": 512,
+  "concurrency": 1,
+  "prompt_tokens": 128,
+  "new_tokens": 16
+ },
+ "provenance": {
+  "argv": [
+   "bench/serve_validate.py",
+   "allenai/OLMoE-1B-7B-0924",
+   "--arena",
+   "../runs/arenas/olmoe-1b-7b-0924.nf4",
+   "--calib",
+   "../runs/serve-validate/calib-p39.json",
+   "--context",
+   "512",
+   "--concurrency",
+   "1",
+   "--prompt-tokens",
+   "128",
+   "--new-tokens",
+   "16",
+   "--fix",
+   "placement=solver",
+   "--env",
+   "E4B_PAGED_VRAM_GB=1.2",
+   "--env",
+   "E4B_PAGED_DRAM_GB=1.5",
+   "--env",
+   "E4B_PAGED_HOT_ROWS=64",
+   "--env",
+   "E4B_PAGED_TORCH_THREADS=2",
+   "--measure-refused",
+   "--observations",
+   "evidence/2026-10-04-rtx-a2000",
+   "--out",
+   "../runs/serve-validate",
+   "--run-id",
+   "solver-olmoe-v1.2-d1.5-h64"
+  ],
+  "python": "3.11.2",
+  "sources": {
+   "experts4bit_qlora": {
+    "file": "/home/node/work/loggetta-ws/e4b/experts4bit_qlora/__init__.py",
+    "commit": "b99ebefd299aa00423fce1bd12a7d01f02604fc5",
+    "branch": "main",
+    "dirty": false
+   },
+   "nf4_grouped": {
+    "file": "/home/node/work/loggetta-ws/gnf4/kernel/nf4_grouped.py",
+    "commit": "23a0153ab452cea3131705ce1815f72462f8bf3f",
+    "branch": "main",
+    "dirty": false
+   },
+   "loggetta": {
+    "file": "/home/node/work/loggetta-ws/loggetta/bench/../loggetta/__init__.py",
+    "commit": "5a4607082d615e93b86a3320ed73cd6daf162c34",
+    "branch": "main",
+    "dirty": true
+   }
+  },
+  "versions": {
+   "torch": "2.8.0+cu128",
+   "triton": "3.4.0",
+   "transformers": "5.18.0",
+   "bitsandbytes": "0.50.2",
+   "accelerate": "1.15.0",
+   "experts4bit-qlora": "0.44.0",
+   "grouped-nf4-gemm": "0.37.0"
+  },
+  "started_at": "2026-10-05T05:08:15Z",
+  "arena": "../runs/arenas/olmoe-1b-7b-0924.nf4",
+  "arena_head_sha256": "23ddec70e1a3e1fe86c832e142b01b408599102f8c8846956f83bbb764da9c49",
+  "calib": "../runs/serve-validate/calib-p39.json",
+  "calib_sha256": "15b79a103958dac240f35d46c2b86efecc100d5d683db925f6158099d007ecc2",
+  "baked": null,
+  "changed_during_run": []
+ },
+ "status": "OK",
+ "setup": {
+  "placement": "solver",
+  "max_seqs": 1,
+  "max_tokens_per_seq": 512,
+  "chunk_tokens": 512,
+  "graphs": false,
+  "buckets": [
+   1,
+   2,
+   4,
+   8,
+   16
+  ],
+  "kv_groups": "auto",
+  "prefill_graph": "0",
+  "vram_gb": "1.2",
+  "dram_gb": "1.5",
+  "hot_rows": "64",
+  "torch_threads": "2"
+ },
+ "env": {
+  "E4B_PAGED_PLACEMENT": "solver",
+  "E4B_PAGED_MAX_SEQS": "1",
+  "E4B_PAGED_MAX_TOKENS_PER_SEQ": "512",
+  "E4B_PAGED_CHUNK_TOKENS": "512",
+  "E4B_PAGED_GRAPHS": "0",
+  "E4B_PAGED_BUCKETS": "1,2,4,8,16",
+  "E4B_PAGED_KV_GROUPS": "auto",
+  "E4B_PAGED_PREFILL_GRAPH": "0",
+  "E4B_PAGED_VRAM_GB": "1.2",
+  "E4B_PAGED_DRAM_GB": "1.5",
+  "E4B_PAGED_HOT_ROWS": "64",
+  "E4B_PAGED_TORCH_THREADS": "2",
+  "E4B_PAGED_MODEL": "allenai/OLMoE-1B-7B-0924",
+  "E4B_PAGED_ARENA": "../runs/arenas/olmoe-1b-7b-0924.nf4",
+  "E4B_PAGED_CALIB": "../runs/serve-validate/calib-p39.json"
+ },
+ "planned": false,
+ "placement": {
+  "tiers": {
+   "vram": 364,
+   "dram": 455,
+   "nvme": 205
+  },
+  "bytes_per_expert": 3538944,
+  "vram_gb": 1.2,
+  "dram_gb": 1.5,
+  "hot_rows": 64,
+  "masses": {
+   "vram_frac": 0.0,
+   "dram_frac": 0.0,
+   "nvme_frac": 0.0,
+   "target_gpu_cpu_ratio": 3.165686432484692,
+   "achieved_gpu_cpu_ratio": null
+  }
+ },
+ "info": {
+  "moe_layers": 16,
+  "experts": 64,
+  "top_k": 8,
+  "model_type": "olmoe",
+  "int4_expert_layers": 0,
+  "int4_store_kinds": [],
+  "int4_attn_projections": 0,
+  "kv": {
+   "n_kv_heads": 16,
+   "head_dim": 128,
+   "k_groups": "auto",
+   "scratch_slots": 0,
+   "blocks_per_seq": 32
+  },
+  "grouping": {
+   "device_grouping": false,
+   "force_singleton_groups": false
+  },
+  "prefill_graph": "0",
+  "levers_env": {},
+  "exp_int4_layers_enabled": 0,
+  "attn_int4_rtn_projections": 0,
+  "attn_int4_calib_projections": 0,
+  "fuse_qkv_n": 0,
+  "fuse_t1_glue_n": 0,
+  "fuse_t1_glue_r2_n": [
+   0,
+   0
+  ],
+  "fuse_router_epilogue_n": 0
+ },
+ "hardware": {
+  "gpu": {
+   "name": "NVIDIA RTX A2000 12GB",
+   "driver": "575.64.05",
+   "memory_total": 12878610432
+  }
+ },
+ "measured": {
+  "host_baseline_bytes": 751124480,
+  "load_seconds": 29.3,
+  "load_device_peak_bytes": 2278858240,
+  "load_reserved_peak_bytes": 2443182080,
+  "host_anon_after_load_bytes": 2222333952,
+  "device_peak_bytes": 2529051648,
+  "device_reserved_peak_bytes": 2906652672,
+  "driver_process_peak_bytes": 3038773248,
+  "driver_samples": 296,
+  "cuda_context_bytes": 132120576,
+  "host_required_peak_bytes": 3541970944,
+  "scheduler_steps": 16,
+  "generate_seconds": 55.75,
+  "tokens_per_s": 0.3,
+  "host_anon_peak_bytes": 3001655296,
+  "host_shmem_peak_bytes": 540315648,
+  "host_file_peak_bytes": 1137049600
+ },
+ "estimate": {
+  "device_lines": {
+   "allocator reserve (cached, unallocated blocks)": 0,
+   "CUDA context + library workspaces": 178257920
+  },
+  "allocator_estimate_bytes": 0,
+  "device_total_bytes": 178257920
+ },
+ "comparison": {
+  "allocator_peak_minus_estimate_gib": 2.355,
+  "driver_peak_minus_plan_total_gib": 2.664
+ }
+}
