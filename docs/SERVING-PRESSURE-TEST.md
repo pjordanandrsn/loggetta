@@ -28,8 +28,8 @@ experts4bit-qlora (e4b), the plan data model, and what is missing.
   - pinned-tier sizing (`nvme_residency.capacity_for_bytes`, `pinned_request_cost`);
   - a time-to-contribution cost model (`cold_deadline.Costs`).
 
-So serving *mechanism* is mature. What is missing is the **policy layer**: a way to choose among those
-mechanisms before loading, and to say why.
+So serving *mechanism* is mature, and it stays in experts4bit-qlora. What was missing is the **planner**: a way to
+choose among those mechanisms before loading, to say why, and to record the choice as an `ExecutionPlan`.
 
 ## The scenarios
 

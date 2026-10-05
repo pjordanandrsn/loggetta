@@ -1,8 +1,14 @@
 """Execute a feasible experts4bit training plan, measuring what the plan estimated.
 
 The model is built by ``experts4bit_qlora.recipe.prepare_qlora_training`` from exactly the setup the plan selected,
-so the run executes what was priced. The loop is deliberately plain (AdamW, gradient accumulation, clip 1.0) on
-fixed-shape packed blocks: fixed shapes make peak memory and step time comparable across runs and with the plan.
+so the run executes what was priced. Everything model-shaped (loading, the 4-bit expert stores, adapters, the fused
+engines, offload, kernels) is experts4bit-qlora's and comes from that one call. What is here is the measurement
+around it: the data, a deliberately plain loop (AdamW, gradient accumulation, clip 1.0) on fixed-shape packed blocks,
+timing, memory sampling, and the integrity checks a receipt records. Fixed shapes make peak memory and step time
+comparable across runs and with the plan.
+
+One check reads experts4bit-qlora's storage directly: ``_expert_digest`` hashes the frozen expert bytes by the
+attribute names of ``ExpertsNbit`` and of the offload handles' host homes.
 """
 from __future__ import annotations
 

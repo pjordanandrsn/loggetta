@@ -28,7 +28,7 @@ def main():
 
     from loggetta import Constraints, Workload, describe_model, plan
     from loggetta.hardware import HardwareProfile
-    from loggetta.runtime import load_observations
+    from loggetta.execution import load_observations
 
     obs = load_observations(a.obs) + load_observations(a.fp1)
     cases = [("allenai/OLMoE-1B-7B-0924", "RTX A2000 (seat)", HardwareProfile.from_dict(json.load(open(a.a2000)),

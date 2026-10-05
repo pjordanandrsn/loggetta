@@ -1,13 +1,18 @@
-"""The experts4bit-qlora backend: QLoRA training of fused-MoE models in 4-bit, optionally with host-resident experts.
+"""The experts4bit-qlora backend: fused-MoE models in 4-bit, for QLoRA training and the paged server.
 
-Everything this module knows about memory, structure or mechanism it ASKS the package that owns it:
+This module is the planner's side of the boundary: how it asks experts4bit-qlora (and, through it, grouped-nf4-gemm)
+what a setup costs, and how it hands a plan back to run. Everything it knows about memory, structure or mechanism it
+ASKS the package that owns it:
 
 * topology and admission -- ``experts4bit_qlora.arch.topology.describe_moe``;
 * setup validity and the itemized footprint -- ``experts4bit_qlora.recipe`` (``setup_refusals``,
-  ``estimate_qlora_footprint``), which prices the same modules ``prepare_qlora_training`` builds;
-* the grouped kernel's training route on a device -- ``grouped-nf4-gemm``'s ``nf4_route.route_for``.
+  ``estimate_qlora_footprint``) and ``serve_recipe`` (``estimate_serve_footprint``, ``min_hot_rows``), which price
+  the same modules ``prepare_qlora_training`` and ``serve_paged`` build;
+* which kernels run on a device -- grouped-nf4-gemm's ``nf4_route.route_for`` / ``MIN_CAPABILITY``, and
+  experts4bit-qlora's ``fused_append_unsupported`` for decode graphs.
 
 What is decided HERE is policy: which setups are worth considering, and in what order a speed objective tries them.
+Running a plan is :func:`executor`: a training plan's setup is built by ``prepare_qlora_training`` itself.
 """
 from __future__ import annotations
 
@@ -170,6 +175,21 @@ def label(setup: dict) -> str:
             + (", NF4 attention" if s.get("attn_4bit") else "")
             + (", pageable" if s.get("expert_residency") == "host" and not s.get("pin", True) else "")
             + (f", keep {s['keep_moe_layers']} MoE layers" if s.get("keep_moe_layers") else ""))
+
+
+def run_tag(setup: dict) -> str:
+    """The setup's part of a receipt's run id, e.g. ``device-grouped_nf4-attn4``."""
+    return f"{setup['expert_residency']}-{setup['expert_kernel']}{'-attn4' if setup['attn_4bit'] else ''}"
+
+
+def executor(kind: str):
+    """What runs a feasible plan of this workload kind through experts4bit-qlora: ``run(plan, *, seed, log)``, or
+    None when the kind is planned only (serve: the plan's Why carries the server's environment)."""
+    if kind == "train":
+        from .experts4bit_train import run
+
+        return run
+    return None
 
 
 def explain(sel, feasible, infeasible, budget, status, constraints, workload) -> list:

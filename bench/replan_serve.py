@@ -25,7 +25,7 @@ def main():
     a = ap.parse_args()
     from loggetta import Constraints, Workload, describe_model, plan
     from loggetta.hardware import HardwareProfile
-    from loggetta.runtime import load_observations
+    from loggetta.execution import load_observations
 
     r = json.load(open(a.receipt))
     m, wl = r["measured"], r["workload"]

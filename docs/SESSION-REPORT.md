@@ -3,9 +3,13 @@
 Short answers. Detail is in [ARCHITECTURE.md](ARCHITECTURE.md), [RESULTS.md](RESULTS.md) and
 [SERVING-PRESSURE-TEST.md](SERVING-PRESSURE-TEST.md).
 
+**What it is, in one sentence.** Loggetta turns a workload, a machine and constraints into an inspectable
+`ExecutionPlan`. It hands that plan to the backend that knows how to run it, and keeps the `ExecutionReceipt` as
+evidence for the next plan. Loggetta decides what should execute; the backend knows how to execute it.
+
 ## Does the layer have a reason to exist?
 
-**Yes, a narrow one: policy.**
+**Yes, a narrow one: deciding what should execute (policy), and recording how that turned out (the receipt).**
 - The two packages already had nearly all the *mechanism* a planner needs: a placement solver, a time-cost model,
   pinned-memory costing, a cgroup-aware RAM reader, capability floors and a measured-claims register.
 - What neither had was a place to decide before loading, to compare alternatives, and to refuse with reasons.
@@ -22,25 +26,25 @@ the kernel route were all added to the packages that own them.
 |---|---|---|
 | **grouped-nf4-gemm** | kernels, packed layouts, kernel dispatch, host/NVMe residency primitives, pinned-memory costing | `nf4_route.route_for(capability, *, has_grouped_mm, requested, n_groups)`, the training-route decision as a pure function, with `MIN_CAPABILITY` / `GROUPED_MM_CAPABILITY` as data |
 | **experts4bit-qlora** | model families, loading, adapters, the training/serving runtime, residency integration, what its own mechanisms cost | `describe_moe` (topology from config + meta tree), `QLoRASetup`, `estimate_qlora_footprint` (itemized, derived vs heuristic, including link traffic), `setup_refusals`, `prepare_qlora_training`; for the paged server `ServeSetup` (+ `to_env`), `estimate_serve_footprint`, `paged_kv_pool_bytes`, `solver_tiers`, `bytes_per_expert`, `min_hot_rows`, prefill staging and the cold-row stack (#1080, #1098, #1115, #1122, #1130, #1139, #1141); `fused_append_unsupported` and the sm_89 decode fix (#1090); `loader.check_admission` / `admission_refusal`; one routed-top-k alias list |
-| **planner layer** (this repo) | hardware inventory with provenance; budgets, headroom and runtime overheads (learned from receipts); candidate ordering by objective with cited evidence; refusal and computed suggestions; plan and receipt formats; execution harness; CLI | everything here |
+| **Loggetta** (this repo) | the Planner, the `ExecutionPlan` and the `ExecutionReceipt`; hardware inventory with provenance; budgets, headroom and runtime overheads (learned from receipts); candidate ordering by objective with cited evidence; refusal and computed suggestions; which measured evidence later plans trust; execution orchestration (dispatch to the backend, the measured loop around e4b's prepared model, the receipt); CLI | everything here |
 
 ## Interfaces between the layers (the complete list)
 
-- **kernel → runtime:** `route_for(...) -> (route | None, reason)`.
-- **runtime → planner:**
+- **grouped-nf4-gemm → experts4bit-qlora:** `route_for(...) -> (route | None, reason)`.
+- **experts4bit-qlora → Loggetta:**
   - training: `describe_moe`, `setup_refusals`, `estimate_qlora_footprint`, `prepare_qlora_training`;
   - serving: `ServeSetup` / `to_env`, `estimate_serve_footprint`, `min_hot_rows`, and `fused_append_unsupported`
     (where decode graphs can run).
 - **inside the planner:** one backend module, a plain tuple rather than a plugin registry, exposing:
-  - `probe`, `candidates`, `estimate`, `speed_rank`, `label`, `explain`, `policy_notes`, `describe_kernel` and an
-    executor;
+  - `probe`, `candidates`, `estimate`, `speed_rank`, `label`, `explain`, `policy_notes`, `describe_kernel`;
+  - the handoff: `executor(kind)` (`None` for kinds planned only) and `run_tag`;
   - for serving, `fill_knobs` (fields the planner sizes to a budget), `resolve` (fields left to the mechanism),
     `SLACK_KEYS` and `KERNELS_FOR`.
 
 ## Dependency direction
 
-`planner → experts4bit-qlora → grouped-nf4-gemm`. No cycles. Neither package knows the planner exists: their
-APIs, docs, changelogs and PR descriptions do not mention it.
+`loggetta → experts4bit-qlora → grouped-nf4-gemm`. No cycles. Neither package imports the planner, and their APIs
+and changelogs do not mention it.
 
 **Correction to the requested diagram.** Serving lives in experts4bit-qlora today, because it needs model
 loading and the expert stores. A future serving backend that skips experts4bit-qlora can still call the kernels
@@ -74,7 +78,8 @@ directly; nothing prevents it.
 python -m loggetta inspect
 python -m loggetta plan  <model> [--vram G --ram G --experts device|host --objective speed|min_vram|min_ram \
                                   --target-s-per-step S --fix FIELD=VALUE --hardware saved.json --observations DIR]
-python -m loggetta train <model> ...  -> plan, then execute, then write a receipt
+python -m loggetta execute plan.json  -> a saved plan (plan --out), through its backend, to a receipt
+python -m loggetta train <model> ...  -> plan and execute in one step
 ```
 
 - **Real QLoRA runs through it on the A2000:**
@@ -87,7 +92,7 @@ python -m loggetta train <model> ...  -> plan, then execute, then write a receip
   - All-VRAM when it fits, else the solver's VRAM/DRAM/NVMe tiers, sized to the budgets.
   - `hot_rows` is planned, and the plan's "Why" carries the server's environment.
   - `bench/serve_validate.py` builds `serve_paged` with exactly that environment and writes a receipt.
-  - Serve plans are not executed by the planner itself.
+  - `execute` refuses serve plans: they are planned only.
 
 ## What was measured (see RESULTS.md)
 
@@ -156,8 +161,8 @@ python -m loggetta train <model> ...  -> plan, then execute, then write a receip
 
 ## Could the project be renamed tomorrow?
 
-**Yes.** A rename touches the package directory, two lines of `pyproject.toml`, the README title and the GitHub
-repository name.
+**Yes.** A rename touches the package directory, two lines of `pyproject.toml`, the README title, the GitHub
+repository name and the reserved PyPI project.
 - No schema, environment variable, protocol string, serialized field or lower-layer API carries the name.
 - `tests/test_renameable.py` fails if any of that changes.
 - The two public packages never mention it.
@@ -169,7 +174,7 @@ repository name.
 
 1. **The existing packages are still healthy independent projects.** Additive APIs; behaviour unchanged; their
    own checks green.
-2. **The new layer has a clear reason to exist.** Yes: policy, as above.
+2. **The new layer has a clear reason to exist.** Yes: the plan (policy) and the receipt (evidence), as above.
 3. **The dependency direction makes sense.** Yes.
 4. **A real workload runs through it.** Yes: six A2000 runs, two families plus a hybrid.
 5. **Decisions are explicit and inspectable.** Every line of every plan carries its basis.
@@ -187,3 +192,22 @@ repository name.
 9. **Performance claims are measured and reproducible.** Every number comes from a receipt with commits.
    Provenance defects found during the session are stated and fixed.
 10. **Renameable.** Yes.
+
+## Boundary check before public release (2026-10-05)
+
+The code already matched *plan here, mechanism below*. The planner is pure, and model building, engines and
+kernels come from experts4bit-qlora through `prepare_qlora_training`. Four concrete leaks were fixed; no schema
+changed.
+- **`runtime.py` → `execution.py`.** The module that dispatches a plan and writes the receipt no longer claims a
+  runtime. The old import path still works.
+- **Dispatch through the selected backend.** `execute` asks the backend module for its executor and its run-id tag,
+  instead of naming the backend and reading its setup fields itself.
+- **A plan runs only on the GPU it was made for.** Before this, `train --hardware other.json` ran here and wrote a
+  receipt naming the other card, which later plans would have learned from.
+- **`execute PLAN.json`.** The saved plan, not a re-plan, is what runs.
+
+**Left as is, deliberately.**
+- The executor's integrity check, `_expert_digest`, reads experts4bit-qlora's storage attributes. Moving it below
+  would need a new public API there.
+- The measured loop stays here. It is the receipt's instrument, and the e4b training engines it drives come from
+  e4b itself.

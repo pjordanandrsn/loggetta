@@ -1,4 +1,6 @@
-"""Command line: ``inspect``, ``plan``, ``train``. The program name is taken from argv, never spelled here."""
+"""Command line: ``inspect`` (the machine), ``plan`` (an ExecutionPlan; loads nothing), ``execute`` (a saved plan,
+through its backend, to an ExecutionReceipt) and ``train`` (plan + execute in one step). The program name is taken
+from argv, never spelled here."""
 from __future__ import annotations
 
 import argparse
@@ -45,14 +47,14 @@ def _common(p):
     p.add_argument("--objective", default="speed", choices=("speed", "min_vram", "min_ram"))
     p.add_argument("--target-s-per-step", type=float,
                    help="refuse setups whose host-to-device traffic alone provably exceeds this step time")
-    p.add_argument("--observations", help="directory of earlier receipts to learn runtime overheads from")
+    p.add_argument("--observations", help="directory of earlier receipts: measured evidence the plan learns from")
     p.add_argument("--trust-remote-code", action="store_true")
     p.add_argument("--hardware", help="plan for a saved hardware profile (inspect --json) instead of probing this machine")
 
 
 def _plan(a):
     from . import Constraints, Workload, describe_model, plan, probe
-    from .runtime import load_observations
+    from .execution import load_observations
 
     topo = describe_model(a.model, revision=a.revision, trust_remote_code=a.trust_remote_code)
     if a.hardware:
@@ -75,17 +77,22 @@ def main(argv=None) -> int:
     from .measure import provenance
 
     prov = {**provenance(), "taken": "at process start, before the measured code was imported"}
-    ap = argparse.ArgumentParser(description="Plan, explain and run MoE workloads on this machine.")
+    ap = argparse.ArgumentParser(description="Turn a workload, this machine and constraints into an inspectable "
+                                             "execution plan; execute it through its backend; keep the receipt.")
     sub = ap.add_subparsers(dest="cmd", required=True)
     pi = sub.add_parser("inspect", help="the hardware inventory, and a model's topology if one is given")
     pi.add_argument("model", nargs="?")
     pi.add_argument("--json", action="store_true")
-    pp = sub.add_parser("plan", help="decide how a workload would run here; loads no weights")
+    pp = sub.add_parser("plan", help="the ExecutionPlan: what should run here, why, and what lost; loads no weights")
     _common(pp)
     pp.add_argument("--json", action="store_true")
     pp.add_argument("--out", help="write the plan as JSON here")
     pp.add_argument("-v", "--verbose", action="store_true")
-    pt = sub.add_parser("train", help="plan, then execute a feasible plan and write a receipt")
+    pe = sub.add_parser("execute", help="run a saved feasible plan (plan --out) through its backend; write a receipt")
+    pe.add_argument("plan", help="a plan written by plan --out")
+    pe.add_argument("--out", default="receipts", help="receipt directory")
+    pe.add_argument("--seed", type=int, default=0)
+    pt = sub.add_parser("train", help="plan, then execute a feasible plan through its backend and write a receipt")
     _common(pt)
     pt.add_argument("--out", default="receipts", help="receipt directory")
     pt.add_argument("--seed", type=int, default=0)
@@ -106,7 +113,13 @@ def main(argv=None) -> int:
             print(json.dumps(t.to_dict(), indent=1, default=str) if a.json else "\nModel\n  " + t.summary())
         return 0
 
-    p = _plan(a)
+    if a.cmd == "execute":
+        from .plan import ExecutionPlan
+
+        with open(a.plan) as f:
+            p = ExecutionPlan.from_dict(json.load(f))
+    else:
+        p = _plan(a)
     if a.cmd == "plan":
         if a.out:
             with open(a.out, "w") as f:
@@ -117,10 +130,14 @@ def main(argv=None) -> int:
     print(p.render())
     if p.status != "feasible":
         return 2
-    from .runtime import execute, summarize
+    from .execution import PlanNotExecutable, execute, summarize
 
-    print("\nExecuting the selected plan...")
-    receipt = execute(p, out_dir=a.out, seed=a.seed, prov=prov)
+    print(f"\nExecuting the selected plan through backend {p.selected.backend}...")
+    try:
+        receipt = execute(p, out_dir=a.out, seed=a.seed, prov=prov)
+    except PlanNotExecutable as e:
+        print(f"not executable: {e}", file=sys.stderr)
+        return 2
     print("\n" + summarize(receipt))
     print(f"\nreceipt: {a.out}/{receipt['run_id']}.json")
     return 0 if receipt["status"] == "OK" else 1

@@ -1,12 +1,13 @@
-"""The execution plan: an inspectable, serializable, deterministic artifact, separate from running anything.
+"""The ExecutionPlan: the planner's product. An inspectable, serializable, deterministic artifact, separate from
+running anything; ``execution.execute`` hands it to the backend it selected.
 
-A plan is computed from (model topology, hardware inventory, workload, constraints, available backends) and
-nothing else. It records the choice AND the alternatives with the reason each lost, the memory estimate line by
-line with the basis of every line, what the estimate leaves out, and -- when nothing fits -- a refusal that says
-why and what would change the answer. Refusal is a plan status, not an exception.
+A plan is computed from (model topology, hardware inventory, workload, constraints, available backends, earlier
+receipts) and nothing else. It records the choice AND the alternatives with the reason each lost, the memory
+estimate line by line with the basis of every line, what the estimate leaves out, and -- when nothing fits -- a
+refusal that says why and what would change the answer. Refusal is a plan status, not an exception.
 
-Schema identifiers are generic (``execution-plan/1``) so the umbrella project can be renamed without migrating
-any serialized plan or receipt.
+Schema identifiers are generic (``execution-plan/1``) so the project can be renamed without migrating any
+serialized plan or receipt.
 """
 from __future__ import annotations
 

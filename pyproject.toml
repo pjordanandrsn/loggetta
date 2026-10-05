@@ -21,11 +21,14 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 
-# The core (hardware inventory, plan types, planner policy) is pure Python. Everything model- or kernel-shaped
-# comes from the backend packages, which stay independently installable and usable on their own.
+# The core (hardware inventory, planner, ExecutionPlan, ExecutionReceipt, execution orchestration) is pure Python.
+# How anything runs (models, adapters, engines, kernels) comes from the backend packages, which stay independently
+# installable and usable on their own.
 dependencies = []
 
 [project.optional-dependencies]
+# experts4bit-qlora 0.48.0 carries `arch.topology`, `recipe` and `serve_recipe`; grouped-nf4-gemm 0.41.0 carries
+# `nf4_route.route_for`. The serve estimate's later items (RESULTS 6b-6e) arrive in experts4bit-qlora's next release.
 experts4bit = [
   "experts4bit-qlora[train,fast]>=0.48.0",
   "grouped-nf4-gemm>=0.41.0",
