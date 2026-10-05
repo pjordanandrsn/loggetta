@@ -249,10 +249,9 @@ Model and setup: OLMoE-1B-7B on the RTX A2000, all-VRAM, 4 × 4096. The arena wa
 | device total | 6.64 before → **5.64** after this receipt (`bench/replan_serve.py`) | 5.78 driver peak |
 
 All values GiB. Decode throughput was 4.9 tokens/s, eager, on a seat at load 20–40. It is recorded, not claimed.
-- **One pattern, two points.** The allocator estimate missed by about the same absolute amount on both models:
-  0.16–0.21 GiB at 30B and 0.17 GiB at 1B. That points to a roughly fixed unmodelled term (workspaces, prefill
-  temporaries) rather than a proportional one, so the small model's miss is larger in percent. Two points make it
-  a hypothesis, and nothing is fitted to it.
+- **One pattern, two points, later explained.** The allocator estimate missed by a similar absolute amount on both
+  models (0.16–0.21 GiB at 30B, 0.17 GiB at 1B). This looked like a fixed term but was not. Section 6b's attribution
+  found it was prefill staging and, under the solver, the cold-row stack. Both are now priced.
 
 **Plan-only sweep** (`bench/serve_plan_sweep.py`, `evidence/serve-plan-sweep.json`; budget = the card's total,
 default slack):
