@@ -1,0 +1,251 @@
+{
+ "schema": "serve-residual/1",
+ "model": "allenai/OLMoE-1B-7B-0924",
+ "setup": {
+  "placement": "solver",
+  "max_seqs": 1,
+  "max_tokens_per_seq": 512,
+  "chunk_tokens": 512,
+  "graphs": false,
+  "buckets": [
+   1,
+   2,
+   4,
+   8,
+   16
+  ],
+  "kv_groups": "auto",
+  "prefill_graph": "0",
+  "vram_gb": 1.2,
+  "dram_gb": 1.5,
+  "hot_rows": 64
+ },
+ "estimate_device": {
+  "expert stacks, VRAM tier": 1288175616,
+  "dense weights (bf16)": 953421824,
+  "FP8 paged KV pool": 36177984,
+  "prefill/decode working set": 58921472
+ },
+ "load_peak_bytes": 2278858240,
+ "run_peak_bytes": 2529051648,
+ "replayed_peak_bytes": 2527977420,
+ "trace_events": 91410,
+ "mark": 546,
+ "groups": [
+  {
+   "frame": "e4b/experts4bit_qlora/engines/nvme_experts.py:207 _build_hot",
+   "bytes": 1288175616,
+   "count": 24
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/loader.py:1418 _read",
+   "bytes": 953421824,
+   "count": 147
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hot_residency.py:1320 _cold_contrib",
+   "bytes": 113246208,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hot_residency.py:1322 _cold_contrib",
+   "bytes": 56623104,
+   "count": 1
+  },
+  {
+   "frame": "gnf4/kernel/row_pool.py:67 __init__",
+   "bytes": 36175872,
+   "count": 2
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hot_residency.py:1337 _cold_contrib",
+   "bytes": 16777216,
+   "count": 2
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hot_residency.py:1321 _cold_contrib",
+   "bytes": 14155776,
+   "count": 1
+  },
+  {
+   "frame": "transformers/models/olmoe/modeling_olmoe.py:113 forward",
+   "bytes": 8519680,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hot_residency.py:1161 forward",
+   "bytes": 8388608,
+   "count": 1
+  },
+  {
+   "frame": "transformers/models/olmoe/modeling_olmoe.py:251 forward",
+   "bytes": 7340032,
+   "count": 14
+  },
+  {
+   "frame": "transformers/models/olmoe/modeling_olmoe.py:166 apply_rotary_pos_emb",
+   "bytes": 7340032,
+   "count": 14
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hot_residency.py:1323 _cold_contrib",
+   "bytes": 7077888,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hot_residency.py:1324 _cold_contrib",
+   "bytes": 4194304,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hot_residency.py:928 _fused_over_stack",
+   "bytes": 4194304,
+   "count": 1
+  },
+  {
+   "frame": "transformers/models/olmoe/modeling_olmoe.py:471 forward",
+   "bytes": 524288,
+   "count": 1
+  },
+  {
+   "frame": "transformers/models/olmoe/modeling_olmoe.py:402 forward",
+   "bytes": 524288,
+   "count": 1
+  },
+  {
+   "frame": "transformers/models/olmoe/modeling_olmoe.py:396 forward",
+   "bytes": 524288,
+   "count": 1
+  },
+  {
+   "frame": "transformers/models/olmoe/modeling_olmoe.py:58 forward",
+   "bytes": 524288,
+   "count": 1
+  },
+  {
+   "frame": "transformers/models/olmoe/modeling_olmoe.py:118 forward",
+   "bytes": 65536,
+   "count": 2
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hot_residency.py:984 _row_index",
+   "bytes": 40960,
+   "count": 5
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hot_residency.py:985 _row_index",
+   "bytes": 40960,
+   "count": 5
+  },
+  {
+   "frame": "transformers/models/olmoe/modeling_olmoe.py:339 forward",
+   "bytes": 16384,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hot_residency.py:1336 _cold_contrib",
+   "bytes": 16384,
+   "count": 2
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hot_residency.py:1124 _finish_ids",
+   "bytes": 8192,
+   "count": 16
+  },
+  {
+   "frame": "transformers/models/olmoe/modeling_olmoe.py:341 forward",
+   "bytes": 8192,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hot_residency.py:1149 forward",
+   "bytes": 8192,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hot_residency.py:1150 forward",
+   "bytes": 8192,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hot_residency.py:1200 forward",
+   "bytes": 8192,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hybrid.py:698 _cold_contrib",
+   "bytes": 8192,
+   "count": 1
+  },
+  {
+   "frame": "gnf4/kernel/nf4_grouped.py:409 stage",
+   "bytes": 4428,
+   "count": 8
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hot_residency.py:1335 _cold_contrib",
+   "bytes": 4096,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/fp8_paged_kv.py:314 __init__",
+   "bytes": 2048,
+   "count": 1
+  },
+  {
+   "frame": "transformers/models/olmoe/modeling_olmoe.py:344 forward",
+   "bytes": 2048,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hot_residency.py:1122 _finish_ids",
+   "bytes": 1024,
+   "count": 16
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hybrid.py:247 __init__",
+   "bytes": 1024,
+   "count": 16
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hybrid.py:250 __init__",
+   "bytes": 1024,
+   "count": 16
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/paged_runner.py:177 run_prefill",
+   "bytes": 1024,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/paged_runner.py:179 run_prefill",
+   "bytes": 1024,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hot_residency.py:1151 forward",
+   "bytes": 1024,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hybrid.py:697 _cold_contrib",
+   "bytes": 1024,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/loader.py:1846 load_moe_4bit_streaming",
+   "bytes": 512,
+   "count": 2
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/fp8_paged_kv.py:316 __init__",
+   "bytes": 64,
+   "count": 1
+  },
+  {
+   "frame": "gnf4/kernel/nf4_grouped.py:1275 _lut",
+   "bytes": 64,
+   "count": 1
+  }
+ ]
+}

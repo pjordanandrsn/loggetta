@@ -334,19 +334,25 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
             return dev + headroom <= dev_budget if side == "device" else host + host_headroom <= host_budget
 
         for setup in b.candidates(topology, workload, constraints, st):
-            # knobs a backend asks the planner to size: the largest value its side of the budget allows (policy)
-            for field, side, hi in getattr(b, "fill_knobs", lambda *a: [])(topology, setup, workload):
-                if field in constraints.fixed:
-                    continue
-                lo, top = 0.0, float(hi)
-                if side_fits({**setup, field: top}, side):
-                    lo = top
-                else:
-                    for _ in range(24):
-                        mid = (lo + top) / 2
-                        lo, top = (mid, top) if side_fits({**setup, field: mid}, side) else (lo, mid)
-                setup = {**setup, field: int(lo * 1000) / 1000}
-                reasons.append(f"{b.NAME}: {field} sized to {setup[field]:.3f}, the largest the {side} budget allows")
+            # knobs a backend asks the planner to size: the largest value its side of the budget allows (policy).
+            # Two passes: a knob sized before a later one is filled sees the later one at zero (the VRAM tier sized
+            # with no DRAM tier also pays for NVMe-only items), so the second pass re-sizes each with the others set.
+            knobs = getattr(b, "fill_knobs", lambda *a: [])(topology, setup, workload)
+            for _pass in range(2 if len(knobs) > 1 else 1):
+                for field, side, hi in knobs:
+                    if field in constraints.fixed:
+                        continue
+                    lo, top = 0.0, float(hi)
+                    if side_fits({**setup, field: top}, side):
+                        lo = top
+                    else:
+                        for _ in range(24):
+                            mid = (lo + top) / 2
+                            lo, top = (mid, top) if side_fits({**setup, field: mid}, side) else (lo, mid)
+                    setup = {**setup, field: int(lo * 1000) / 1000}
+            for field, side, _hi in knobs:
+                if field not in constraints.fixed:
+                    reasons.append(f"{b.NAME}: {field} sized to {setup[field]:.3f}, the largest the {side} budget allows")
             if hasattr(b, "resolve"):              # fields the candidate left to the mechanism, now concrete
                 setup = b.resolve(topology, setup, workload)
             lines, dev, host, unmodelled, refusals = price(setup)

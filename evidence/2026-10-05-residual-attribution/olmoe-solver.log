@@ -1,0 +1,40 @@
+[09:49:42]   checkpoint: allenai/OLMoE-1B-7B-0924 @ 6d84c48581ece794365f2b8e9cfb043c68ade9c5 (requested main, unpinned)
+[09:49:43]   fusing + quantizing experts (up to 16x64) to nf4 (streaming)...
+[09:49:43]   quantized experts on 16/16 MoE layers (64 experts each)
+[09:49:43]   loading non-expert weights (attention/embeddings/router/norms/dense-mlp)...
+[09:49:47]   experts deferred to the arena: 16 module(s), 80 unmaterialized buffer(s) — call nvme_experts.enable_nvme_residency() before running this model
+[09:53:28]   hybrid tier active on 16 module(s): vram/dram/nvme masses 0.00/0.00/0.00
+[serve_paged] fusions (fold flags set: none): {'fuse_qkv_n': 0, 'fuse_t1_glue_n': 0, 'fuse_t1_glue_r2_n': [0, 0], 'fuse_router_epilogue_n': 0}
+[serve_paged] ready: {"moe_layers": 16, "experts": 64, "top_k": 8, "model_type": "olmoe", "int4_expert_layers": 0, "int4_store_kinds": [], "int4_attn_projections": 0, "kv": {"n_kv_heads": 16, "head_dim": 128, "k_groups": "auto", "scratch_slots": 0, "blocks_per_seq": 32}, "graph_status": null, "grouping": {"device_grouping": false, "force_singleton_groups": false}, "prefill_graph": "0", "levers_env": {}, "exp_int4_layers_enabled": 0, "attn_int4_rtn_projections": 0, "attn_int4_calib_projections": 0, "fuse_qkv_n": 0, "fuse_t1_glue_n": 0, "fuse_t1_glue_r2_n": [0, 0], "fuse_router_epilogue_n": 0}
+estimate 2.176 GiB | load peak 2.122 | run peak 2.355 | replayed peak 2.354 | residual 183 MiB | generate 974.3s
+live at the generation peak, by allocating frame:
+     1228.5 MiB  x24    e4b/experts4bit_qlora/engines/nvme_experts.py:207 _build_hot
+      909.3 MiB  x147   e4b/experts4bit_qlora/loader.py:1418 _read
+      108.0 MiB  x1     e4b/experts4bit_qlora/engines/hot_residency.py:1320 _cold_contrib
+       54.0 MiB  x1     e4b/experts4bit_qlora/engines/hot_residency.py:1322 _cold_contrib
+       34.5 MiB  x2     gnf4/kernel/row_pool.py:67 __init__
+       16.0 MiB  x2     e4b/experts4bit_qlora/engines/hot_residency.py:1337 _cold_contrib
+       13.5 MiB  x1     e4b/experts4bit_qlora/engines/hot_residency.py:1321 _cold_contrib
+        8.1 MiB  x1     transformers/models/olmoe/modeling_olmoe.py:113 forward
+        8.0 MiB  x1     e4b/experts4bit_qlora/engines/hot_residency.py:1161 forward
+        7.0 MiB  x14    transformers/models/olmoe/modeling_olmoe.py:251 forward
+        7.0 MiB  x14    transformers/models/olmoe/modeling_olmoe.py:166 apply_rotary_pos_emb
+        6.8 MiB  x1     e4b/experts4bit_qlora/engines/hot_residency.py:1323 _cold_contrib
+        4.0 MiB  x1     e4b/experts4bit_qlora/engines/hot_residency.py:1324 _cold_contrib
+        4.0 MiB  x1     e4b/experts4bit_qlora/engines/hot_residency.py:928 _fused_over_stack
+        0.5 MiB  x1     transformers/models/olmoe/modeling_olmoe.py:471 forward
+        0.5 MiB  x1     transformers/models/olmoe/modeling_olmoe.py:402 forward
+        0.5 MiB  x1     transformers/models/olmoe/modeling_olmoe.py:396 forward
+        0.5 MiB  x1     transformers/models/olmoe/modeling_olmoe.py:58 forward
+        0.1 MiB  x2     transformers/models/olmoe/modeling_olmoe.py:118 forward
+        0.0 MiB  x5     e4b/experts4bit_qlora/engines/hot_residency.py:984 _row_index
+        0.0 MiB  x5     e4b/experts4bit_qlora/engines/hot_residency.py:985 _row_index
+        0.0 MiB  x1     transformers/models/olmoe/modeling_olmoe.py:339 forward
+        0.0 MiB  x2     e4b/experts4bit_qlora/engines/hot_residency.py:1336 _cold_contrib
+        0.0 MiB  x16    e4b/experts4bit_qlora/engines/hot_residency.py:1124 _finish_ids
+        0.0 MiB  x1     transformers/models/olmoe/modeling_olmoe.py:341 forward
+        0.0 MiB  x1     e4b/experts4bit_qlora/engines/hot_residency.py:1149 forward
+        0.0 MiB  x1     e4b/experts4bit_qlora/engines/hot_residency.py:1150 forward
+        0.0 MiB  x1     e4b/experts4bit_qlora/engines/hot_residency.py:1200 forward
+        0.0 MiB  x1     e4b/experts4bit_qlora/engines/hybrid.py:698 _cold_contrib
+        0.0 MiB  x8     gnf4/kernel/nf4_grouped.py:409 stage
