@@ -54,8 +54,8 @@ The current dependency floor is the released lower-layer API surface in:
 
 No development branches or `PYTHONPATH` overrides are required for those interfaces.
 
-The initial PyPI `0.0.1` release is a metadata-only preview used to establish the project name. Functional PyPI
-releases will supersede it.
+The first PyPI release will be `0.0.1`, a metadata-only preview used to establish the project name. Functional
+PyPI releases will supersede it.
 
 ## What is measured
 
