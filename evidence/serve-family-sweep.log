@@ -1,0 +1,90 @@
+allenai/OLMoE-1B-7B-0924: described in 4s (allenai/OLMoE-1B-7B-0924 (olmoe, qwen2_moe): 16/16 MoE layers, E=64 H=2048 I=1024, top-8; 6.44B expert + 0.48B dense params)
+  RTX A2000 12GB (seat, probed)   4096x1  feasible  all-vram  V 3.38 D 0.0 N 0.0 | dev 5.0/11.99 host 1.17/21.87
+  RTX A2000 12GB (seat, probed)   8192x8  feasible  all-vram  V 3.38 D 0.0 N 0.0 | dev 9.1/11.99 host 1.17/21.87
+  RTX 5090 32GB (FP1's box)       4096x1  feasible  all-vram  V 3.38 D 0.0 N 0.0 | dev 5.44/31.84 host 1.46/64.0
+  RTX 5090 32GB (FP1's box)       8192x8  feasible  all-vram  V 3.38 D 0.0 N 0.0 | dev 9.52/31.84 host 1.46/64.0
+  RTX 4090 24GB (stated)          4096x1  feasible  all-vram  V 3.38 D 0.0 N 0.0 | dev 5.32/24.0 host 3.46/64.0
+  RTX 4090 24GB (stated)          8192x8  feasible  all-vram  V 3.38 D 0.0 N 0.0 | dev 9.4/24.0 host 3.46/64.0
+  RTX 3090 24GB (stated)          4096x1  feasible  all-vram  V 3.38 D 0.0 N 0.0 | dev 5.33/24.0 host 3.46/64.0
+  RTX 3090 24GB (stated)          8192x8  feasible  all-vram  V 3.38 D 0.0 N 0.0 | dev 9.44/24.0 host 3.46/64.0
+Qwen/Qwen3-30B-A3B: described in 0s (Qwen/Qwen3-30B-A3B (qwen3_moe, qwen2_moe): 48/48 MoE layers, E=128 H=2048 I=768, top-8; 28.99B expert + 1.54B dense params)
+  RTX A2000 12GB (seat, probed)   4096x1  feasible  solver    V 6.48 D 8.71 N 0.0 | dev 11.39/11.99 host 9.45/21.87
+  RTX A2000 12GB (seat, probed)   8192x8  feasible  solver    V 3.44 D 11.75 N 0.0 | dev 11.39/11.99 host 12.49/21.87
+  RTX 5090 32GB (FP1's box)       4096x1  feasible  all-vram  V 15.19 D 0.0 N 0.0 | dev 19.29/31.84 host 1.4/64.0
+  RTX 5090 32GB (FP1's box)       8192x8  feasible  all-vram  V 15.19 D 0.0 N 0.0 | dev 22.35/31.84 host 1.4/64.0
+  RTX 4090 24GB (stated)          4096x1  feasible  all-vram  V 15.19 D 0.0 N 0.0 | dev 19.17/24.0 host 3.41/64.0
+  RTX 4090 24GB (stated)          8192x8  feasible  all-vram  V 15.19 D 0.0 N 0.0 | dev 22.24/24.0 host 3.41/64.0
+  RTX 3090 24GB (stated)          4096x1  feasible  all-vram  V 15.19 D 0.0 N 0.0 | dev 19.27/24.0 host 3.41/64.0
+  RTX 3090 24GB (stated)          8192x8  feasible  all-vram  V 15.19 D 0.0 N 0.0 | dev 22.35/24.0 host 3.41/64.0
+Qwen/Qwen3.6-35B-A3B: described in 0s (Qwen/Qwen3.6-35B-A3B (qwen3_5_moe, qwen3_5_moe): 40/40 MoE layers, E=256 H=2048 I=512, top-8; 32.21B expert + 2.45B dense params)
+  RTX A2000 12GB (seat, probed)   4096x1  feasible  solver    V 5.12 D 11.75 N 0.0 | dev 11.39/11.99 host 12.48/21.87
+  RTX A2000 12GB (seat, probed)   8192x8  feasible  solver    V 4.49 D 12.39 N 0.0 | dev 11.39/11.99 host 13.11/21.87
+  RTX 5090 32GB (FP1's box)       4096x1  feasible  all-vram  V 16.88 D 0.0 N 0.0 | dev 22.32/31.84 host 1.23/64.0
+  RTX 5090 32GB (FP1's box)       8192x8  feasible  all-vram  V 16.88 D 0.0 N 0.0 | dev 22.96/31.84 host 1.23/64.0
+  RTX 4090 24GB (stated)          4096x1  feasible  all-vram  V 16.88 D 0.0 N 0.0 | dev 22.21/24.0 host 3.23/64.0
+  RTX 4090 24GB (stated)          8192x8  feasible  solver    V 14.12 D 2.75 N 0.0 | dev 22.8/24.0 host 5.77/64.0
+  RTX 3090 24GB (stated)          4096x1  feasible  all-vram  V 16.88 D 0.0 N 0.0 | dev 22.34/24.0 host 3.23/64.0
+  RTX 3090 24GB (stated)          8192x8  feasible  solver    V 14.12 D 2.75 N 0.0 | dev 22.8/24.0 host 5.77/64.0
+ibm-granite/granite-3.1-3b-a800m-instruct: described in 0s (ibm-granite/granite-3.1-3b-a800m-instruct (granitemoe, granitemoe): 32/32 MoE layers, E=40 H=1536 I=512, top-8; 3.02B expert + 0.28B dense params)
+  RTX A2000 12GB (seat, probed)   4096x1  feasible  all-vram  V 1.58 D 0.0 N 0.0 | dev 2.48/11.99 host 0.92/21.87
+  RTX A2000 12GB (seat, probed)   8192x8  feasible  all-vram  V 1.58 D 0.0 N 0.0 | dev 4.68/11.99 host 0.92/21.87
+  RTX 5090 32GB (FP1's box)       4096x1  feasible  all-vram  V 1.58 D 0.0 N 0.0 | dev 2.93/31.84 host 1.2/64.0
+  RTX 5090 32GB (FP1's box)       8192x8  feasible  all-vram  V 1.58 D 0.0 N 0.0 | dev 5.11/31.84 host 1.2/64.0
+  RTX 4090 24GB (stated)          4096x1  feasible  all-vram  V 1.58 D 0.0 N 0.0 | dev 2.81/24.0 host 3.2/64.0
+  RTX 4090 24GB (stated)          8192x8  feasible  all-vram  V 1.58 D 0.0 N 0.0 | dev 5.0/24.0 host 3.2/64.0
+  RTX 3090 24GB (stated)          4096x1  feasible  all-vram  V 1.58 D 0.0 N 0.0 | dev 2.81/24.0 host 3.2/64.0
+  RTX 3090 24GB (stated)          8192x8  feasible  all-vram  V 1.58 D 0.0 N 0.0 | dev 5.02/24.0 host 3.2/64.0
+ibm-granite/granite-4.0-h-tiny: described in 0s (ibm-granite/granite-4.0-h-tiny (granitemoehybrid, granitemoe): 40/40 MoE layers, E=64 H=1536 I=512, top-6; 6.04B expert + 0.90B dense params)
+  RTX A2000 12GB (seat, probed)   4096x1  feasible  all-vram  V 3.16 D 0.0 N 0.0 | dev 5.12/11.99 host 0.92/21.87
+  RTX A2000 12GB (seat, probed)   8192x8  feasible  all-vram  V 3.16 D 0.0 N 0.0 | dev 5.38/11.99 host 0.92/21.87
+  RTX 5090 32GB (FP1's box)       4096x1  feasible  all-vram  V 3.16 D 0.0 N 0.0 | dev 5.54/31.84 host 1.2/64.0
+  RTX 5090 32GB (FP1's box)       8192x8  feasible  all-vram  V 3.16 D 0.0 N 0.0 | dev 5.8/31.84 host 1.2/64.0
+  RTX 4090 24GB (stated)          4096x1  feasible  all-vram  V 3.16 D 0.0 N 0.0 | dev 5.43/24.0 host 3.2/64.0
+  RTX 4090 24GB (stated)          8192x8  feasible  all-vram  V 3.16 D 0.0 N 0.0 | dev 5.69/24.0 host 3.2/64.0
+  RTX 3090 24GB (stated)          4096x1  feasible  all-vram  V 3.16 D 0.0 N 0.0 | dev 5.46/24.0 host 3.2/64.0
+  RTX 3090 24GB (stated)          8192x8  feasible  all-vram  V 3.16 D 0.0 N 0.0 | dev 5.72/24.0 host 3.2/64.0
+LiquidAI/LFM2-8B-A1B: described in 0s (LiquidAI/LFM2-8B-A1B (lfm2_moe, lfm2_moe): 22/24 MoE layers, E=32 H=2048 I=1792, top-4; 7.75B expert + 0.59B dense params)
+  RTX A2000 12GB (seat, probed)   4096x1  feasible  all-vram  V 4.06 D 0.0 N 0.0 | dev 5.47/11.99 host 1.58/21.87
+  RTX A2000 12GB (seat, probed)   8192x8  feasible  all-vram  V 4.06 D 0.0 N 0.0 | dev 5.89/11.99 host 1.58/21.87
+  RTX 5090 32GB (FP1's box)       4096x1  feasible  all-vram  V 4.06 D 0.0 N 0.0 | dev 5.89/31.84 host 1.87/64.0
+  RTX 5090 32GB (FP1's box)       8192x8  feasible  all-vram  V 4.06 D 0.0 N 0.0 | dev 6.3/31.84 host 1.87/64.0
+  RTX 4090 24GB (stated)          4096x1  feasible  all-vram  V 4.06 D 0.0 N 0.0 | dev 5.77/24.0 host 3.87/64.0
+  RTX 4090 24GB (stated)          8192x8  feasible  all-vram  V 4.06 D 0.0 N 0.0 | dev 6.19/24.0 host 3.87/64.0
+  RTX 3090 24GB (stated)          4096x1  feasible  all-vram  V 4.06 D 0.0 N 0.0 | dev 5.81/24.0 host 3.87/64.0
+  RTX 3090 24GB (stated)          8192x8  feasible  all-vram  V 4.06 D 0.0 N 0.0 | dev 6.22/24.0 host 3.87/64.0
+mistralai/Mixtral-8x7B-Instruct-v0.1: described in 0s (mistralai/Mixtral-8x7B-Instruct-v0.1 (mixtral, mixtral): 32/32 MoE layers, E=8 H=4096 I=14336, top-2; 45.10B expert + 1.61B dense params)
+  RTX A2000 12GB (seat, probed)   4096x1  feasible  solver    V 6.37 D 17.26 N 0.0 | dev 11.37/11.99 host 18.83/21.87
+  RTX A2000 12GB (seat, probed)   8192x8  feasible  solver    V 2.31 D 17.53 N 3.78 | dev 11.35/11.99 host 20.72/21.87
+  RTX 5090 32GB (FP1's box)       4096x1  feasible  all-vram  V 23.63 D 0.0 N 0.0 | dev 27.87/31.84 host 14.9/64.0
+  RTX 5090 32GB (FP1's box)       8192x8  feasible  solver    V 21.87 D 1.75 N 0.0 | dev 30.16/31.84 host 3.61/64.0
+  RTX 4090 24GB (stated)          4096x1  feasible  solver    V 15.97 D 7.66 N 0.0 | dev 22.74/24.0 host 11.52/64.0
+  RTX 4090 24GB (stated)          8192x8  feasible  solver    V 11.9 D 11.72 N 0.0 | dev 22.72/24.0 host 15.58/64.0
+  RTX 3090 24GB (stated)          4096x1  feasible  solver    V 15.97 D 7.66 N 0.0 | dev 22.74/24.0 host 11.52/64.0
+  RTX 3090 24GB (stated)          8192x8  feasible  solver    V 11.9 D 11.72 N 0.0 | dev 22.72/24.0 host 15.58/64.0
+baidu/ERNIE-4.5-21B-A3B-PT: described in 0s (baidu/ERNIE-4.5-21B-A3B-PT (ernie4_5_moe, qwen2_moe): 27/28 MoE layers, E=64 H=2560 I=1536, top-6; 20.38B expert + 1.44B dense params)
+  RTX A2000 12GB (seat, probed)   4096x1  feasible  solver    V 6.91 D 3.77 N 0.0 | dev 11.39/11.99 host 4.54/21.87
+  RTX A2000 12GB (seat, probed)   8192x8  feasible  solver    V 5.2 D 5.48 N 0.0 | dev 11.39/11.99 host 6.25/21.87
+  RTX 5090 32GB (FP1's box)       4096x1  feasible  all-vram  V 10.68 D 0.0 N 0.0 | dev 14.28/31.84 host 1.89/64.0
+  RTX 5090 32GB (FP1's box)       8192x8  feasible  all-vram  V 10.68 D 0.0 N 0.0 | dev 16.0/31.84 host 1.89/64.0
+  RTX 4090 24GB (stated)          4096x1  feasible  all-vram  V 10.68 D 0.0 N 0.0 | dev 14.16/24.0 host 3.9/64.0
+  RTX 4090 24GB (stated)          8192x8  feasible  all-vram  V 10.68 D 0.0 N 0.0 | dev 15.88/24.0 host 3.9/64.0
+  RTX 3090 24GB (stated)          4096x1  feasible  all-vram  V 10.68 D 0.0 N 0.0 | dev 14.24/24.0 host 3.9/64.0
+  RTX 3090 24GB (stated)          8192x8  feasible  all-vram  V 10.68 D 0.0 N 0.0 | dev 15.97/24.0 host 3.9/64.0
+deepseek-ai/DeepSeek-V2-Lite: described in 0s (deepseek-ai/DeepSeek-V2-Lite (deepseek_v2, qwen2_moe): 26/27 MoE layers, E=64 H=2048 I=1408, top-6; 14.39B expert + 1.31B dense params)
+  RTX A2000 12GB (seat, probed)   4096x1  feasible  all-vram  V 7.54 D 0.0 N 0.0 | dev 10.59/11.99 host 1.5/21.87
+  RTX A2000 12GB (seat, probed)   8192x8  feasible  solver    V 3.51 D 4.03 N 0.0 | dev 11.39/11.99 host 4.79/21.87
+  RTX 5090 32GB (FP1's box)       4096x1  feasible  all-vram  V 7.54 D 0.0 N 0.0 | dev 10.99/31.84 host 1.79/64.0
+  RTX 5090 32GB (FP1's box)       8192x8  feasible  all-vram  V 7.54 D 0.0 N 0.0 | dev 14.54/31.84 host 1.79/64.0
+  RTX 4090 24GB (stated)          4096x1  feasible  all-vram  V 7.54 D 0.0 N 0.0 | dev 10.87/24.0 host 3.79/64.0
+  RTX 4090 24GB (stated)          8192x8  feasible  all-vram  V 7.54 D 0.0 N 0.0 | dev 14.43/24.0 host 3.79/64.0
+  RTX 3090 24GB (stated)          4096x1  feasible  all-vram  V 7.54 D 0.0 N 0.0 | dev 10.92/24.0 host 3.79/64.0
+  RTX 3090 24GB (stated)          8192x8  feasible  all-vram  V 7.54 D 0.0 N 0.0 | dev 14.5/24.0 host 3.79/64.0
+openai/gpt-oss-20b: described in 0s (openai/gpt-oss-20b (gpt_oss, gptoss): 24/24 MoE layers, E=32 H=2880 I=2880, top-4; 19.11B expert + 1.80B dense params)
+  RTX A2000 12GB (seat, probed)   4096x1  refused   solver    V 0.0 D 0.0 N 0.0 | dev 0.17/11.99 host 0.71/21.87
+  RTX A2000 12GB (seat, probed)   8192x8  refused   solver    V 0.0 D 0.0 N 0.0 | dev 0.17/11.99 host 0.71/21.87
+  RTX 5090 32GB (FP1's box)       4096x1  feasible  all-vram  V 10.01 D 0.0 N 0.0 | dev 14.27/31.84 host 2.83/64.0
+  RTX 5090 32GB (FP1's box)       8192x8  feasible  all-vram  V 10.01 D 0.0 N 0.0 | dev 15.92/31.84 host 2.83/64.0
+  RTX 4090 24GB (stated)          4096x1  feasible  all-vram  V 10.01 D 0.0 N 0.0 | dev 14.16/24.0 host 4.83/64.0
+  RTX 4090 24GB (stated)          8192x8  feasible  all-vram  V 10.01 D 0.0 N 0.0 | dev 15.8/24.0 host 4.83/64.0
+  RTX 3090 24GB (stated)          4096x1  feasible  all-vram  V 10.01 D 0.0 N 0.0 | dev 14.23/24.0 host 4.83/64.0
+  RTX 3090 24GB (stated)          8192x8  feasible  all-vram  V 10.01 D 0.0 N 0.0 | dev 15.89/24.0 host 4.83/64.0

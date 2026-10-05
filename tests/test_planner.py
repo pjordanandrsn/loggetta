@@ -221,6 +221,14 @@ def test_serving_spills_to_nvme_when_the_host_is_short(topo):
     assert p.status == "feasible", p.render()
     assert _tier(p, "expert rows on NVMe") > 0 and _tier(p, "cold view") > 0
     assert p.selected.host_bytes + p.budget["host_headroom"] <= p.budget["host"]
+    try:
+        from experts4bit_qlora.serve_recipe import min_hot_rows  # noqa: F401
+    except ImportError:
+        return
+    h = p.selected.setup["hot_rows"]                  # the fewest a cold layer can route: top-4 x 512, <= 128, <= NVMe rows
+    view = next(ln.bytes for ln in p.selected.lines if ln.name.startswith("cold view"))   # h rows of the arena
+    nvme_rows = _tier(p, "expert rows on NVMe") * h // view
+    assert h == min(128, 4 * 512, nvme_rows) and any("cold tier: hot_rows" in r for r in p.reasons)
 
 
 def test_forcing_device_residency_keeps_the_solver_out(topo):
@@ -429,3 +437,20 @@ def test_serve_plans_learn_the_residual_and_host_growth_from_this_models_receipt
     other = plan(topo, hw(cap=(12, 0)), Workload(kind="serve", context_len=4096, concurrency=1),
                  observations=[{**rec, "model": {"model": "someone/else"}}])
     assert not any(ln.name.startswith(("allocator residual", "host growth")) for ln in other.selected.lines)
+
+
+def test_serve_slack_is_borrowed_across_cards_only_for_serving(topo):
+    def rec(rid, kind, setup):
+        return {"run_id": rid, "status": "OK", "model": {"model": "other/model"}, "workload": {"kind": kind},
+                "setup": setup, "hardware": {"gpu": {"name": "Another GPU", "driver": "1"}},
+                "measured": {"device_peak_bytes": 4 * GiB, "device_reserved_peak_bytes": int(4.08 * GiB)}}
+    serve = _serve(topo, 4096, 1, cap=(12, 0)).selected.setup
+    obs = [rec("served-elsewhere", "serve", {**serve, "buckets": list(serve["buckets"])})]
+    p = plan(topo, hw(cap=(12, 0)), Workload(kind="serve", context_len=4096, concurrency=1),
+             Constraints(fixed={"graphs": serve["graphs"]}), observations=obs)
+    res = next(ln for ln in p.selected.lines if ln.name.startswith("allocator reserve"))
+    assert res.basis == "heuristic" and "served-elsewhere" in res.detail and "Another GPU" in res.detail
+    trained = plan(topo, hw(), Workload(seq_len=512), observations=[rec("trained-elsewhere", "train", {
+        "expert_residency": "device", "expert_kernel": "grouped_nf4"})])
+    tres = next(ln for ln in trained.selected.lines if ln.name.startswith("allocator reserve"))
+    assert tres.basis == "inferred"

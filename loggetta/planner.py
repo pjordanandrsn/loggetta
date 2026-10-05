@@ -84,7 +84,9 @@ def reserve_fraction(gpu, setup, observations, default, model=None, kind="train"
     3. this GPU + setup, another model: measured, but for a different model;
     4. the largest slack measured on this GPU, conservative (a smaller borrowed figure would make the unmeasured
        candidate look cheaper than the measured one);
-    5. ``default``.
+    5. serving only: the largest slack measured for this setup on any GPU (heuristic: borrowed across cards; all-VRAM
+       serving measured 0.06-1.46% on two cards, where training slack moved 8-39% with model and card);
+    6. ``default``.
 
     Only receipts of the same workload ``kind`` count: a server allocates its pools once, a trainer churns activations
     every step, so one's slack says nothing about the other's. Receipts without a kind are training receipts. ``key``
@@ -136,6 +138,11 @@ def reserve_fraction(gpu, setup, observations, default, model=None, kind="train"
         worst = max(same_gpu, key=frac)
         return frac(worst), "measured", (f"no receipt for this setup; the largest slack measured on this GPU, receipt "
                                          f"{worst.get('run_id')} = {frac(worst):.3f} (conservative)")
+    if same_setup and kind == "serve":              # training slack varies 8-39% by model and card; serving's did not
+        worst = max(same_setup, key=frac)
+        return frac(worst), "heuristic", (f"no receipt on this GPU; the largest slack measured for this setup on any GPU, "
+                                          f"receipt {worst.get('run_id')} on {gname(worst)} = {frac(worst):.3f} "
+                                          "(borrowed across cards, conservative)")
     return default[0], default[1], default[2]
 
 
@@ -340,6 +347,8 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
                         lo, top = (mid, top) if side_fits({**setup, field: mid}, side) else (lo, mid)
                 setup = {**setup, field: int(lo * 1000) / 1000}
                 reasons.append(f"{b.NAME}: {field} sized to {setup[field]:.3f}, the largest the {side} budget allows")
+            if hasattr(b, "resolve"):              # fields the candidate left to the mechanism, now concrete
+                setup = b.resolve(topology, setup, workload)
             lines, dev, host, unmodelled, refusals = price(setup)
             rejected = list(refusals)
             bounds = {}

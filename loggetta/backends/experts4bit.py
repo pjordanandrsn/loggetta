@@ -185,6 +185,10 @@ def explain(sel, feasible, infeasible, budget, status, constraints, workload) ->
             out.append("tier budgets: VRAM filled to the device budget, then DRAM to the host budget less its headroom "
                        "(E4B_PAGED_VRAM_GB / E4B_PAGED_DRAM_GB); routing is assumed uniform, as serve_paged runs the "
                        "solver without a profile")
+            if "hot_rows" not in constraints.fixed:
+                out.append(f"cold tier: hot_rows {s.get('hot_rows')}, the fewest the split can serve with (a cold layer's "
+                           "routed experts per step); its pinned landing, cold view and setup tier scale with it, so "
+                           "the server's default of 64 would cost host memory the DRAM tier can use")
             out.append(f"kernels: {status.kernels.get('cpu_tier', (None, ''))[1]}")
         else:
             out.append(f"all experts resident (placement all-vram): {sel.device_bytes / GiB:.2f} GiB estimated + "
@@ -262,7 +266,8 @@ def _serve_candidates(workload, constraints, status):
     solver_ok = "vram_gb" in ServeSetup.__dataclass_fields__ and status.kernels.get("cpu_tier", (False,))[0]
     if solver_ok and fixed.get("placement", "solver") == "solver" and ("host" in residency or "placement" in fixed):
         # the tiers' budgets are filled by the planner (fill_knobs) unless the caller fixed them
-        out.append({**base, "graphs": False, "vram_gb": 0.0, "dram_gb": 0.0, **fixed, "placement": "solver"})
+        out.append({**base, "graphs": False, "vram_gb": 0.0, "dram_gb": 0.0, "hot_rows": "auto", **fixed,
+                    "placement": "solver"})
     return out
 
 
@@ -279,6 +284,20 @@ def _serve_setup(cls, setup: dict):
     if isinstance(vals.get("graphs"), str):
         vals["graphs"] = vals["graphs"] not in ("0", "false", "False")
     return cls(**vals)
+
+
+def resolve(topology, setup: dict, workload=None) -> dict:
+    """Concrete values for the fields a candidate leaves to the mechanism: ``hot_rows="auto"`` becomes the fewest cold
+    rows the tier split can serve with (experts4bit-qlora's ``min_hot_rows``, at least 1), or the server's default
+    when the installed package cannot say."""
+    if setup.get("hot_rows") != "auto":
+        return setup
+    try:
+        from experts4bit_qlora.serve_recipe import ServeSetup, min_hot_rows
+    except ImportError:
+        return {**setup, "hot_rows": 64}
+    probe = _serve_setup(ServeSetup, {**setup, "hot_rows": 1})
+    return {**setup, "hot_rows": max(1, min_hot_rows(topology, probe))}
 
 
 def fill_knobs(topology, setup: dict, workload) -> list:
@@ -298,7 +317,7 @@ def estimate(topology, setup: dict, workload):
     if workload.kind == "serve":
         from experts4bit_qlora.serve_recipe import ServeSetup, estimate_serve_footprint
 
-        fp = estimate_serve_footprint(topology, _serve_setup(ServeSetup, setup))
+        fp = estimate_serve_footprint(topology, _serve_setup(ServeSetup, resolve(topology, setup, workload)))
         return [(i.name, i.where, i.bytes, i.basis, i.detail) for i in fp.items], fp.unmodelled, fp.refusals
     from experts4bit_qlora.recipe import QLoRASetup, estimate_qlora_footprint
 

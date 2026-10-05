@@ -312,6 +312,42 @@ used 8%. Decode throughput was 0.2 tokens/s, with NVMe plus CPU tiers on a 2-cor
 placements, P109 included. The planner charges the largest measured for the model being planned, and no prior for
 other models. Attributing it (allocator snapshot) is the obvious next measurement.
 
+## 6c. Serving across the ten families (plan-only)
+
+`bench/serve_family_sweep.py` covered the training sweep's ten families on four cards at 4096 × 1 and 8192 × 8.
+- **Cards:** the seat's A2000 (probed, 21.9 GiB host), FP1's RTX 5090, and a stated RTX 4090 and RTX 3090 (24 GB,
+  64 GiB host; what-ifs).
+- **Where it ran:** on Necessity through the local pool (`evidence/serve-family-sweep.*`): plan-venv, torch 2.8.0+cpu,
+  transformers 5.18.0, the native CPU kernels built. No family code was added.
+
+Cells read "VRAM" for all-VRAM, else "VRAM / DRAM / NVMe" tiers in GiB:
+
+| model | ctx × seqs | A2000 12 GB | 3090 / 4090 24 GB | 5090 32 GB |
+|---|---|---|---|---|
+| OLMoE-1B-7B, granite-3.1-3b, granite-4.0-h-tiny, LFM2-8B | both | VRAM | VRAM | VRAM |
+| DeepSeek-V2-Lite | 4096 × 1 / 8192 × 8 | VRAM / 3.5 / 4.0 / 0 | VRAM | VRAM |
+| ERNIE-4.5-21B-A3B | 4096 × 1 / 8192 × 8 | 6.9 / 3.8 / 0 · 5.2 / 5.5 / 0 | VRAM | VRAM |
+| Qwen3-30B-A3B | 4096 × 1 / 8192 × 8 | 6.5 / 8.7 / 0 · 3.4 / 11.8 / 0 | VRAM | VRAM |
+| Qwen3.6-35B-A3B | 4096 × 1 / 8192 × 8 | 5.1 / 11.8 / 0 · 4.5 / 12.4 / 0 | VRAM · 14.1 / 2.8 / 0 | VRAM |
+| Mixtral-8x7B | 4096 × 1 / 8192 × 8 | 6.4 / 17.3 / 0 · 2.3 / 17.5 / **3.8** | 16.0 / 7.7 / 0 · 11.9 / 11.7 / 0 | VRAM · 21.9 / 1.8 / 0 |
+| gpt-oss-20b | both | **refused** | VRAM | VRAM |
+
+**What the sweep exposed, and what changed because of it:**
+- **`hot_rows` is now planned.** At the server's default of 64, Mixtral's ~99 MB experts made the cold tier's
+  pinned landing, cold view and setup tier ~20 GiB on the A2000. That squeezed the DRAM tier to 0.18 GiB and put
+  17 GiB on NVMe. The same default is *below* what Qwen3-30B (128 experts, top-8) needs once a layer is cold.
+  - e4b's `min_hot_rows` gives the cold tier's own minimum: top_k × max(chunk, seqs), at most n_experts and the
+    NVMe rows. A solver setup below it is refused in words.
+  - The planner plans exactly that minimum. Mixtral's A2000 single-user plan now holds 17.3 GiB in DRAM with
+    nothing on NVMe.
+- **Unseen cards borrow serving slack.** The stated 4090/3090 have no receipts and took the 20% default, which put
+  Qwen3-30B on tiers on 24 GB. Serving plans now borrow the largest slack measured for the same setup on any GPU,
+  labelled heuristic: all-VRAM serving measured 0.06–1.46% on two cards. Qwen3-30B and single-user Qwen3.6 now plan
+  all-VRAM on 24 GB.
+  - Training keeps its default: its slack moved 8–39% with model and card.
+- **gpt-oss-20b on 12 GB is a correct refusal.** Its per-expert biases do not ride the arena, so the hybrid tier
+  cannot serve it, and all-VRAM needs 13.9 GiB + headroom.
+
 ## 7. Not measured, said plainly
 
 - **No performance model.** Speed is ordered from evidence, never predicted, apart from the transfer lower bound.
