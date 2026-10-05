@@ -454,6 +454,40 @@ All values GiB unless marked.
 - **The source checkpoint is read whole at load.** That took 34 min cold off the seat volume (~5 MB/s) and ~6 min
   warm. It is listed as not modelled.
 
+## 6f. SV2: the int4 levers on Qwen3-30B-A3B, decode graphs on, a rented RTX 5090
+
+Lane SV2 is experts4bit-qlora#1207 (owner-approved, $5 cap), registered before the box in #1208 and read in #1210.
+- **The box:** `sv2-5090-1`, one RTX 5090, **$0.45**, teardown proven. Announced on the session bus before launch and
+  reported there after.
+- **The build:** `serve_paged` built in-process with the environment `ServeSetup.to_env()` gives, all-VRAM, decode
+  graphs on.
+- **The workload:** 16 seeded 1,024-token prompts × 32 new tokens.
+
+| arm | estimate | allocator peak | driver peak | plan total before SV2 | plan total after |
+|---|---|---|---|---|---|
+| NF4 | 21.786 | 21.612 | 22.619 | 22.810 | 22.810 |
+| int4 experts | 21.839 | 21.664 | 22.656 | 23.942 | **22.847** |
+| int4 experts + attention | 22.410 | 22.236 | 23.252 | 24.539 | **23.446** |
+| int4 experts + prefill graph | 21.839 | 22.222 | 23.398 | 23.942 | **23.391** |
+
+All values GiB. Plans use FP1's RTX 5090 profile (`bench/replan_serve.py`; "before" = SV1 + P109 receipts).
+
+- **Every registered reading held:**
+  - the estimate 0.8% over the int4 experts' peak;
+  - the int4 stores +54.0 MiB at load (priced +54);
+  - int4 attention +585.2 MiB (priced +585.0);
+  - the repack's host peak 3.30 GB under its 6.9 GiB price;
+  - after load, the int4 builds hold 1.5 GB less host memory than NF4.
+- **The prefill graph at int4 costs +571 MiB**, SV1's NF4 figure. SC2b's +3.3 GiB is not reproduced at this head. With
+  that receipt on file, the prefill-graph plan learns its pool and lands within 0.03% of the driver peak.
+- **Before SV2's receipts, an int4 plan was conservative by design:** no receipt had its slack keys, so it was charged
+  this card's largest slack and this model's largest residual (SV1's prefill-graph pool). That is 1.3 GiB over. After,
+  each arm's plan sits 0.19 GiB above its driver peak, as the NF4 arm does.
+- **The NF4 build itself kept 3.21 GB of freed host heap** on this 48-core host. The int4 builds' trims (#1182) give it
+  back, which is why they end below NF4. Trimming after every build is a separate e4b change.
+- **The host plan stays conservative** (10.3 GiB planned against ~6.5 GiB measured at the repack). The repack price is
+  a ceiling, and the planner still sums it with serving's growth, though the two do not coincide.
+
 ## 7. Not measured, said plainly
 
 - **No performance model.** Speed is ordered from evidence, never predicted, apart from the transfer lower bound.
@@ -462,7 +496,8 @@ All values GiB unless marked.
 - **Qwen3-30B ran once, on a rented RTX 5090 (FP1).** Every other model above 8B was planned, not run.
 - **Serving** is planned at both placements. All-VRAM is checked on two model/card pairs. The solver's tiers are
   checked on one model and card (OLMoE, A2000) and assume uniform routing, as the server does. The int4 levers
-  are priced and checked on that same pair only (6e), and planned only when fixed. A measured routing profile and
+  are priced and checked on OLMoE / A2000 (6e) and Qwen3-30B / RTX 5090 with decode graphs (6f), and planned only
+  when fixed. A measured routing profile and
   decode speed are not planned; see `SERVING-PRESSURE-TEST.md`.
 
 ## Provenance

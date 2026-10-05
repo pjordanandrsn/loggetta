@@ -124,6 +124,13 @@ python -m loggetta train <model> ...  -> plan and execute in one step
     - int4 experts +24 MiB priced, against +8 MiB at the serving peak and +24 MiB at load.
     - int4 attention costs device memory (each projection keeps a bf16 copy), so it is a speed lever.
     - Measuring it found glibc keeping 2.3–3.6 GB of the levers' freed host heap; the fix in #1182 trims it.
+  - **SV2, on a rented RTX 5090** ($0.45, e4b#1207/#1210, owner-approved, coordinated over the bus): every registered
+    reading held on Qwen3-30B with decode graphs.
+    - int4 experts −0.8% against the estimate;
+    - the int4 stores +54.0 MiB at load, priced +54;
+    - int4 attention +585.2 MiB, priced +585.0;
+    - the prefill graph at int4 +571 MiB, as at NF4, not SC2b's 3.3 GiB.
+    - With the receipts on file, the int4 plans land 0.19 GiB above the driver peak.
   - Serving slack is 0.06–1.5% at all-VRAM and 8–15% under the solver, against training's 8–39%.
 
 ## What remains speculative
@@ -134,7 +141,8 @@ python -m loggetta train <model> ...  -> plan and execute in one step
 - **Above 8B, only Qwen3-30B-A3B was run** (FP1, RTX 5090, $0.85); the rest were planned, not run.
 - **Serving assumes uniform routing**, as the server does (no profile reaches `solve_placement`). A measured hot
   set and decode speed are not planned.
-  - The int4 levers are planned only when fixed, and checked on one model and card.
+  - The int4 levers are planned only when fixed, and checked on two model/card pairs (OLMoE on the A2000; Qwen3-30B on
+    an RTX 5090 with graphs).
   - The graph pools are learned from receipts, not priced: two points each.
   - The tiered placement is checked on one model and one card.
 - **Ceilings, not expectations.** Prefill staging and the cold-row stack are priced at their worst case, so short
