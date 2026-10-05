@@ -420,9 +420,9 @@ def test_a_solver_receipts_slack_does_not_reach_all_vram_plans(topo):
 
 def test_serve_plans_learn_the_residual_and_host_growth_from_this_models_receipts(topo):
     first = _serve(topo, 4096, 1, cap=(12, 0))
+    planner_lines = ("allocator reserve", "CUDA context", "allocator residual")   # what the planner adds itself
     setup, est = first.selected.setup, sum(ln.bytes for ln in first.selected.lines if ln.where == "device"
-                                          and ln.name in {"frozen expert stacks (all VRAM)", "dense weights (bf16)",
-                                                          "FP8 paged KV pool", "prefill/decode working set"})
+                                          and not ln.name.startswith(planner_lines))
     rec = {"run_id": "seen", "status": "OK", "model": {"model": topo.model}, "workload": {"kind": "serve"},
            "setup": {**setup, "buckets": list(setup["buckets"]), "torch_threads": "2"},
            "hardware": {"gpu": {"name": "Other GPU", "driver": "1"}},

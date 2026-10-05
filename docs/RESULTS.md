@@ -308,9 +308,24 @@ Each run replanned with the other runs' receipts only (leave-one-out, `bench/rep
 All values GiB. Both totals err high, the safe direction. The learned 15% slack came from another run; this one
 used 8%. Decode throughput was 0.2 tokens/s, with NVMe plus CPU tiers on a 2-core seat; it is recorded, not claimed.
 
-**The residual.** Every serve run so far missed the e4b estimate by 0.15–0.21 GiB: two models, two cards, both
-placements, P109 included. The planner charges the largest measured for the model being planned, and no prior for
-other models. Attributing it (allocator snapshot) is the obvious next measurement.
+**The residual, attributed.** `bench/serve_residual.py` rebuilt the server under the caching allocator's history
+recording (Python stacks), replayed the trace, and grouped what was live at the generation peak by source line
+(`evidence/2026-10-05-residual-attribution/`). OLMoE on the A2000:
+
+| run | estimate vs peak | what the gap was |
+|---|---|---|
+| all-VRAM, 1 × 512, 128-token prompt | 8 MiB **over** | nothing missing |
+| solver 1.2 / 1.5 GiB, same prompt | 183 MiB under | `hot_residency._cold_contrib`: one layer's routed NVMe experts streamed to the GPU (54 rows × 3.375 MiB + outputs) |
+| all-VRAM, 4 × 4096, 1024-token prompts | 179 MiB under | bf16 **prefill staging**, one prompt's K/V for all 16 layers (128 MiB), plus ~50 MiB of MoE workspace above the stated heuristic |
+
+So it was never a fixed term, and the 0.15–0.21 GiB seen everywhere was a coincidence of these runs' prompt
+lengths. Both causes are now priced in e4b at their ceilings:
+- the cold-row stack (#1139), at `min_hot_rows ×` row bytes;
+- prefill staging (#1141), at `(max_tokens_per_seq + chunk_tokens) ×` bf16 K/V bytes per token.
+
+The staging ceiling matters for long prompts: a 4,000-token OLMoE prompt stages ~512 MiB, which no earlier plan
+priced. The planner's learned residual stays as a safety line, recomputed against today's estimate, so it shrinks
+to the leftover workspace.
 
 ## 6c. Serving across the ten families (plan-only)
 
