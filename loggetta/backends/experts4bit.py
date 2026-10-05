@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 NAME = "experts4bit"
 WORKLOADS = ("train", "serve")
 #: which probed kernels each workload uses: the planner reports only those as unusable
-KERNELS_FOR = {"train": ("grouped_nf4", "reference"), "serve": ("paged_fp8",)}
+KERNELS_FOR = {"train": ("grouped_nf4", "reference"), "serve": ("paged_fp8", "paged_graphs")}
 GiB = 1 << 30
 
 #: The order a speed objective tries setups in, and the evidence for each step of it. Not a performance model:
@@ -90,6 +90,14 @@ def probe(gpu) -> BackendStatus:
         if cap is None or tuple(cap) < tuple(MIN_CAPABILITY):
             kernels["paged_fp8"] = (False, f"grouped-nf4-gemm's floor is sm_{MIN_CAPABILITY[0]}{MIN_CAPABILITY[1]}")
         else:
+            try:
+                from experts4bit_qlora.engines.fp8_paged_kv import fused_append_unsupported
+            except ImportError:
+                kernels["paged_graphs"] = (False, "this experts4bit-qlora cannot say whether its decode graphs run "
+                                                  "here (no fp8_paged_kv.fused_append_unsupported): eager decode only")
+            else:
+                why = fused_append_unsupported(tuple(cap))
+                kernels["paged_graphs"] = (why is None, why or "bucketed decode graphs (fused FP8 KV append)")
             kernels["paged_fp8"] = (True, "paged FP8 KV pool + attention, " + (
                 "fp8 compute" if tuple(cap) >= (8, 9) else "f32 compute (fp8 compute needs sm_89+, "
                                                             "fp8_paged_attn.fp8_compute_unsupported)"))
@@ -212,8 +220,9 @@ def _serve_candidates(workload, constraints, status):
             "max_tokens_per_seq": workload.context_len or 4096}
     if constraints.expert_residency is not None and "device" not in constraints.expert_residency:
         base["placement"] = "solver"               # the tiered placement, which the estimate refuses in words
-    graphs = [fixed["graphs"]] if "graphs" in fixed else [True, False]
-    return [{**base, **fixed, "graphs": g} for g in graphs]
+    can_graph = status.kernels.get("paged_graphs", (False,))[0]
+    graphs = [fixed["graphs"]] if "graphs" in fixed else ([True, False] if can_graph else [False])
+    return [{**base, **fixed, "graphs": g} for g in graphs if can_graph or not g]
 
 
 def estimate(topology, setup: dict, workload):

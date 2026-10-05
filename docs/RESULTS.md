@@ -218,6 +218,38 @@ after load and after the runs rather than sampling it, so its reserve is an end-
   agrees by construction. Before P109, the default over-reserved 4.1 GiB at 30B: a 5090 plan would have refused
   setups that fit.
 
+**Run on the seat: a planned serve, measured** (`bench/serve_validate.py`). The script:
+- plans the workload;
+- builds `serve_paged`'s engine in-process with exactly the plan's environment (`ServeSetup.to_env`);
+- decodes 4 × (1024 prompt + 64 new) tokens;
+- writes an `execution-receipt/1` of kind serve (`evidence/2026-10-05-rtx-a2000-serve/`).
+
+Model and setup: OLMoE-1B-7B on the RTX A2000, all-VRAM, 4 × 4096. The arena was baked locally (grouped-nf4-gemm
+`bake_nf4`, 3.6 GB). The calibration blob is P39's: the solver it feeds is overridden by all-VRAM.
+
+- **The first attempt crashed, and that is a finding.** The plan chose decode graphs, and `serve_paged`'s
+  default agrees. Graphs need grouped-nf4-gemm's fused FP8 KV append, whose e4m3 cast (`tl.float8e4nv`) Triton
+  compiles only on sm_89+. On sm_86 the first graphed decode step died in Triton's compiler
+  (`graphs-sm86-crash.log.txt`). Every Ampere card took that path by default.
+  - e4b fix: branch `fix/fused-kv-append-sm89`. Below sm_89, `auto` decodes eagerly, the fused append degrades,
+    and an explicit `=1` is refused in words.
+  - Planner: decode graphs are offered only where e4b's `fused_append_unsupported(capability)` says they run.
+    With an e4b that cannot say, graphs are never planned.
+- **Eager decode, measured:**
+
+| | estimate | measured |
+|---|---|---|
+| allocator (stacks + dense + KV + working set) | 5.40 | 5.57 peak (**−3.1%**) |
+| reserve slack | 20% default (1.08) | **1.46%** |
+| CUDA context | 0.17 (a training receipt) | 0.12 |
+| device total | 6.64 before → **5.64** after this receipt (`bench/replan_serve.py`) | 5.78 driver peak |
+
+All values GiB. Decode throughput was 4.9 tokens/s, eager, on a seat at load 20–40. It is recorded, not claimed.
+- **One pattern, two points.** The allocator estimate missed by about the same absolute amount on both models:
+  0.16–0.21 GiB at 30B and 0.17 GiB at 1B. That points to a roughly fixed unmodelled term (workspaces, prefill
+  temporaries) rather than a proportional one, so the small model's miss is larger in percent. Two points make it
+  a hypothesis, and nothing is fitted to it.
+
 **Plan-only sweep** (`bench/serve_plan_sweep.py`, `evidence/serve-plan-sweep.json`; budget = the card's total,
 default slack):
 
@@ -236,8 +268,9 @@ largest at 16-token-block granularity. The A2000 sweep ran before any A2000 serv
 - **The activation heuristic** is a formula, checked against nine allocator peaks (three here, six in the
   register), not derived.
 - **Qwen3-30B ran once, on a rented RTX 5090 (FP1).** Every other model above 8B was planned, not run.
-- **Serving** is planned for the all-VRAM placement only, checked on one model and card (P109). Tiers, int4 stores
-  and decode speed are not planned; see `SERVING-PRESSURE-TEST.md`.
+- **Serving** is planned for the all-VRAM placement only. It is checked on two model/card pairs: P109's Qwen3-30B on
+  an RTX 5090, and OLMoE on the seat's A2000 (eager). Tiers, int4 stores and decode speed are not planned; see
+  `SERVING-PRESSURE-TEST.md`.
 
 ## Provenance
 

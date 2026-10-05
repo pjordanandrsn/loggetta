@@ -1,0 +1,57 @@
+{
+ "schema": "replan-comparison/1",
+ "receipt": "serve-OLMoE-1B-7B-0924-c4096x4-20261005T000049",
+ "model": "allenai/OLMoE-1B-7B-0924",
+ "gpu": "NVIDIA RTX A2000 12GB",
+ "workload": {
+  "kind": "serve",
+  "context_len": 4096,
+  "concurrency": 4,
+  "prompt_tokens": 1024,
+  "new_tokens": 64
+ },
+ "setup": {
+  "placement": "all-vram",
+  "max_seqs": 4,
+  "max_tokens_per_seq": 4096,
+  "chunk_tokens": 512,
+  "graphs": false,
+  "buckets": [
+   1,
+   2,
+   4,
+   8,
+   16
+  ],
+  "kv_groups": "auto"
+ },
+ "rows": [
+  {
+   "observations": "before",
+   "status": "feasible",
+   "allocator_estimate_gib": 5.397,
+   "reserve_gib": 1.079,
+   "reserve_basis": "inferred",
+   "reserve_detail": "default 20% of the allocator estimate; no serve receipt on file measured this GPU",
+   "context_gib": 0.166,
+   "context_detail": "receipt granite-4.0-h-tiny-device-grouped_nf4-t1024-20261004T183236Z: driver-reported process peak minus allocator reserved peak",
+   "plan_device_total_gib": 6.642
+  },
+  {
+   "observations": "after",
+   "status": "feasible",
+   "allocator_estimate_gib": 5.397,
+   "reserve_gib": 0.079,
+   "reserve_basis": "measured",
+   "reserve_detail": "receipt serve-OLMoE-1B-7B-0924-c4096x4-20261005T000049 (this GPU, setup and model; largest of 1) = 0.015",
+   "context_gib": 0.166,
+   "context_detail": "receipt granite-4.0-h-tiny-device-grouped_nf4-t1024-20261004T183236Z: driver-reported process peak minus allocator reserved peak",
+   "plan_device_total_gib": 5.641
+  }
+ ],
+ "measured": {
+  "allocator_peak_gib": 5.571,
+  "reserved_peak_gib": 5.652,
+  "driver_peak_gib": 5.775
+ }
+}

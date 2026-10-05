@@ -1,0 +1,40 @@
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/node/work/moegen-venv/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1784, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/node/work/moegen-venv/lib/python3.11/site-packages/transformers/models/olmoe/modeling_olmoe.py", line 271, in forward
+    attn_output, attn_weights = attention_interface(
+                                ^^^^^^^^^^^^^^^^^^^^
+  File "/home/node/work/loggetta-ws/e4b/experts4bit_qlora/engines/paged_attention.py", line 253, in paged_attention_forward
+    ctx.kv.append_graph_bt1(
+  File "/home/node/work/loggetta-ws/e4b/experts4bit_qlora/engines/fp8_paged_kv.py", line 650, in append_graph_bt1
+    fp8_kv_append_bt1(v, self._g_vflat[layer],
+  File "/home/node/work/loggetta-ws/gnf4/kernel/fp8_kv.py", line 412, in fp8_kv_append_bt1
+    _fp8_append_bt1_side[(S, H)](
+  File "/home/node/work/moegen-venv/lib/python3.11/site-packages/triton/runtime/jit.py", line 390, in <lambda>
+    return lambda *args, **kwargs: self.run(grid=grid, warmup=False, *args, **kwargs)
+                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/node/work/moegen-venv/lib/python3.11/site-packages/triton/runtime/jit.py", line 594, in run
+    kernel = self.compile(src, target=target, options=options.__dict__)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/node/work/moegen-venv/lib/python3.11/site-packages/triton/compiler/compiler.py", line 339, in compile
+    module = src.make_ir(options, codegen_fns, module_map, context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/node/work/moegen-venv/lib/python3.11/site-packages/triton/compiler/compiler.py", line 83, in make_ir
+    return ast_to_ttir(self.fn, self, context=context, options=options, codegen_fns=codegen_fns,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+triton.compiler.errors.CompilationError: at 39:12:
+    blk = pos // bt
+    fill = pos - blk * bt
+    row = tl.load(tbl_ptr + slot * bps + blk).to(tl.int64)
+    pay = row * row_bytes + fill * (H * D) + h * D
+    sc = (row * row_bytes + pay_bytes
+          + (fill * (H * GROUPS) + h * GROUPS) * 4)
+    for g in tl.static_range(GROUPS):
+        offs = tl.arange(0, GS)
+        x = tl.load(x_ptr + s * (H * D) + h * D + g * GS + offs
+                    ).to(tl.float32)
+        y, scale = _e4m3_group(x, E4M3_MAX)
+        q = y.to(tl.float8e4nv).to(tl.uint8, bitcast=True)
+            ^

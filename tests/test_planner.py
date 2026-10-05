@@ -135,11 +135,20 @@ def _serve(topo, ctx, seqs, constraints=Constraints(), **hwkw):
     return plan(topo, hw(**hwkw), Workload(kind="serve", context_len=ctx, concurrency=seqs), constraints)
 
 
+def _can_graph():
+    """Whether the experts4bit-qlora under test can say where its decode graphs run (fused_append_unsupported)."""
+    try:
+        from experts4bit_qlora.engines.fp8_paged_kv import fused_append_unsupported  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
 def test_serving_plans_the_paged_server_with_its_kv_pool(topo):
-    p = _serve(topo, 4096, 8)
+    p = _serve(topo, 4096, 8, cap=(12, 0))
     assert p.status == "feasible", p.render()
     s = p.selected.setup
-    assert (s["placement"], s["max_seqs"], s["max_tokens_per_seq"], s["graphs"]) == ("all-vram", 8, 4096, True)
+    assert (s["placement"], s["max_seqs"], s["max_tokens_per_seq"], s["graphs"]) == ("all-vram", 8, 4096, _can_graph())
     kv = next(ln for ln in p.selected.lines if ln.name == "FP8 paged KV pool")
     assert kv.basis == "derived" and kv.where == "device"
     assert any("KV pool" in r for r in p.reasons) and not any("grouped_nf4" in r for r in p.reasons)
@@ -147,7 +156,7 @@ def test_serving_plans_the_paged_server_with_its_kv_pool(topo):
     assert "4096 tokens per sequence x 8 sequences" in p.render()
     assert any("E4B_PAGED_MAX_SEQS=8" in r and "E4B_PAGED_MAX_TOKENS_PER_SEQ=4096" in r for r in p.reasons)
     again = ExecutionPlan.from_dict(json.loads(p.to_json()))
-    assert again.to_json() == p.to_json() == _serve(topo, 4096, 8).to_json()
+    assert again.to_json() == p.to_json() == _serve(topo, 4096, 8, cap=(12, 0)).to_json()
     from loggetta.runtime import PlanNotExecutable, execute
     with pytest.raises(PlanNotExecutable, match="planned only"):
         execute(p)
@@ -292,9 +301,19 @@ def test_slack_for_an_unmeasured_gpu_transfers_through_an_anchor(topo):
     assert abs(line.bytes / alloc - 0.20) < 1e-3
 
 
+def test_serving_below_sm89_plans_eager_decode_and_says_why(topo):
+    p = _serve(topo, 4096, 8)                                 # the stated test card is sm_86
+    assert p.status == "feasible"
+    assert all(c.setup["graphs"] is False for c in (p.selected,) + p.alternatives)
+    assert any("paged_graphs not usable" in r for r in p.reasons)
+    assert any("E4B_PAGED_GRAPHS=0" in r for r in p.reasons)
+
+
 def test_serve_slack_prefers_the_receipt_with_the_whole_setup(topo):
     pytest.importorskip("fp8_paged_attn", reason="needs grouped-nf4-gemm")
-    base = _serve(topo, 4096, 4).selected.setup
+    if not _can_graph():
+        pytest.skip("this experts4bit-qlora plans no decode graphs")
+    base = _serve(topo, 4096, 4, cap=(12, 0)).selected.setup
 
     def rec(rid, graphs, reserved):
         return {"run_id": rid, "status": "OK", "model": {"model": topo.model}, "workload": {"kind": "serve"},
@@ -303,7 +322,7 @@ def test_serve_slack_prefers_the_receipt_with_the_whole_setup(topo):
                 "measured": {"cuda_context_bytes": 200 << 20, "device_peak_bytes": 4 * GiB,
                              "device_reserved_peak_bytes": reserved}}
     obs = [rec("eager", False, int(4.4 * GiB)), rec("graphs", True, int(5.0 * GiB))]
-    p = plan(topo, hw(), Workload(kind="serve", context_len=4096, concurrency=4), observations=obs)
+    p = plan(topo, hw(cap=(12, 0)), Workload(kind="serve", context_len=4096, concurrency=4), observations=obs)
     by = {c.setup["graphs"]: next(ln for ln in c.lines if ln.name.startswith("allocator reserve"))
           for c in (p.selected,) + p.alternatives}
     assert by[True].basis == by[False].basis == "measured"
