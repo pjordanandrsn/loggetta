@@ -9,7 +9,7 @@
   blocks of seq 512 × micro-batch 2 (1,024 tokens per forward), 12 steps. Step time is the median of steps 3–12.
 
 Every number below is generated from receipts by `bench/summarize_receipts.py`, except where a row says otherwise.
-Receipts are kept in the private workspace (`runs/receipts/`).
+Runs write raw receipts under `runs/receipts/`; curated public evidence is committed under `evidence/`.
 
 ## 1. One real workload through the planner
 

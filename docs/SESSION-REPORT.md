@@ -66,7 +66,7 @@ directly; nothing prevents it.
   - #1141 prefill staging.
 
   One bug fix: #1090, eager decode below sm_89 instead of a crash in Triton's compiler.
-- **planner** (private `pjordanandrsn/loggetta`): new.
+- **Loggetta** (`pjordanandrsn/loggetta`): new.
 
 ## What works now
 

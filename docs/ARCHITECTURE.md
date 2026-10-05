@@ -46,8 +46,8 @@ the ownership split and the dependency direction (`experts4bit-qlora -> grouped-
 ## 2. Layers and dependency direction
 
 ```
-            planner layer (this repo; private, renameable)
-     hardware inventory · plan types · planner policy · runtime/receipts · CLI
+            Loggetta planner layer (this repo)
+     hardware inventory · Planner · ExecutionPlan · ExecutionReceipt · CLI/orchestration
                  │  imports (lazily, only to plan or run)
                  ▼
      experts4bit-qlora  (model-family layer + training/serving runtime)
