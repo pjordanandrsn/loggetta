@@ -1,0 +1,66 @@
+{
+ "schema": "replan-comparison/1",
+ "receipt": "sv1-5090-1/qwen3_graphs",
+ "model": "Qwen/Qwen3-30B-A3B",
+ "gpu": "NVIDIA GeForce RTX 5090",
+ "workload": {
+  "kind": "serve",
+  "context_len": 4096,
+  "concurrency": 16,
+  "prompt_tokens": 1024,
+  "new_tokens": 32
+ },
+ "setup": {
+  "placement": "all-vram",
+  "max_seqs": 16,
+  "max_tokens_per_seq": 4096,
+  "chunk_tokens": 512,
+  "graphs": true,
+  "buckets": [
+   1,
+   2,
+   4,
+   8,
+   16
+  ],
+  "kv_groups": "auto",
+  "prefill_graph": "0",
+  "vram_gb": 1.2,
+  "dram_gb": 6.0,
+  "hot_rows": 64
+ },
+ "rows": [
+  {
+   "observations": "before",
+   "status": "feasible",
+   "allocator_estimate_gib": 21.786,
+   "plan_host_total_gib": 1.404,
+   "nvme_gib": 0.0,
+   "reserve_gib": 0.184,
+   "reserve_basis": "measured",
+   "reserve_detail": "receipt p109-5090-2/G2 (this GPU, setup and model; largest of 3) = 0.008",
+   "context_gib": 0.615,
+   "context_detail": "receipt fp1-5090-1/qwen3_host: driver-reported process peak minus allocator reserved peak",
+   "plan_device_total_gib": 22.586
+  },
+  {
+   "observations": "after",
+   "status": "feasible",
+   "allocator_estimate_gib": 21.786,
+   "plan_host_total_gib": 1.404,
+   "nvme_gib": 0.0,
+   "reserve_gib": 0.285,
+   "reserve_basis": "measured",
+   "reserve_detail": "receipt sv1-5090-1/qwen3_graphs (this GPU, setup and model; largest of 4) = 0.013",
+   "context_gib": 0.615,
+   "context_detail": "receipt fp1-5090-1/qwen3_host: driver-reported process peak minus allocator reserved peak",
+   "plan_device_total_gib": 22.687
+  }
+ ],
+ "measured": {
+  "allocator_peak_gib": 21.612,
+  "host_required_peak_gib": null,
+  "reserved_peak_gib": 21.895,
+  "driver_peak_gib": 22.619
+ }
+}

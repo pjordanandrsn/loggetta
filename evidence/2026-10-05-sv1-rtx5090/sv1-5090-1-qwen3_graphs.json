@@ -1,0 +1,126 @@
+{
+ "schema": "execution-receipt/1",
+ "run_id": "sv1-5090-1/qwen3_graphs",
+ "status": "OK",
+ "source": "experts4bit-qlora lane SV1 (sv1-5090-1), arm qwen3_graphs",
+ "model": {
+  "model": "Qwen/Qwen3-30B-A3B",
+  "revision": "ad44e777bcd18fa416d9da3bd8f70d33ebb85d39"
+ },
+ "workload": {
+  "kind": "serve",
+  "context_len": 4096,
+  "concurrency": 16,
+  "prompt_tokens": 1024,
+  "new_tokens": 32
+ },
+ "setup": {
+  "placement": "all-vram",
+  "max_seqs": 16,
+  "max_tokens_per_seq": 4096,
+  "chunk_tokens": 512,
+  "graphs": true,
+  "buckets": [
+   1,
+   2,
+   4,
+   8,
+   16
+  ],
+  "kv_groups": "auto",
+  "prefill_graph": "0",
+  "vram_gb": 1.2,
+  "dram_gb": 6.0,
+  "hot_rows": 64
+ },
+ "hardware": {
+  "gpu": {
+   "name": "NVIDIA GeForce RTX 5090",
+   "memory_total": "32607 MiB",
+   "driver": "595.84"
+  }
+ },
+ "measured": {
+  "device_peak_bytes": 23205197824,
+  "device_reserved_peak_bytes": 23509073920,
+  "driver_process_peak_bytes": 24287117312,
+  "load_device_peak_bytes": 22937339904,
+  "load_reserved_peak_bytes": 23116906496,
+  "load_seconds": 37.9,
+  "tokens_per_s": 47.7,
+  "requests_done": 16,
+  "cuda_context_bytes": 778043392
+ },
+ "estimate": {
+  "items": [
+   {
+    "name": "frozen expert stacks (all VRAM)",
+    "where": "device",
+    "bytes": 16307457024,
+    "basis": "derived"
+   },
+   {
+    "name": "cold tier landing (pinned)",
+    "where": "host",
+    "bytes": 268435456,
+    "basis": "derived"
+   },
+   {
+    "name": "setup tier (while the stacks are built)",
+    "where": "host",
+    "bytes": 169869312,
+    "basis": "derived"
+   },
+   {
+    "name": "dense weights (bf16)",
+    "where": "device",
+    "bytes": 3082186752,
+    "basis": "derived"
+   },
+   {
+    "name": "FP8 paged KV pool",
+    "where": "device",
+    "bytes": 3488028672,
+    "basis": "derived"
+   },
+   {
+    "name": "prefill staging (bf16 K/V of prompts mid-prefill)",
+    "where": "device",
+    "bytes": 452984832,
+    "basis": "derived"
+   },
+   {
+    "name": "prefill/decode working set",
+    "where": "device",
+    "bytes": 62152704,
+    "basis": "heuristic"
+   }
+  ],
+  "unmodelled": [
+   "CUDA graph memory pools for the decode buckets",
+   "CUDA context, cuBLAS/Triton workspaces and allocator fragmentation (the caller's to add)"
+  ],
+  "refusals": [],
+  "device_total": 23392809984
+ },
+ "graph_status": {
+  "1": "graph",
+  "2": "graph",
+  "4": "graph",
+  "8": "graph",
+  "16": "graph"
+ },
+ "prefill_graph": {
+  "status": "off"
+ },
+ "provenance": {
+  "started_at": "2026-10-05T12:45:06Z",
+  "imported_from": "/home/node/work/loggetta-ws/runs/sv1-5090-1/tc1/receipts/qwen3_graphs.json",
+  "versions": {
+   "experts4bit-qlora": "0.48.0",
+   "grouped-nf4-gemm": "0.41.0",
+   "torch": "2.8.0+cu128",
+   "transformers": "5.18.0"
+  }
+ }
+}

@@ -18,7 +18,7 @@ NAME = "experts4bit"
 WORKLOADS = ("train", "serve")
 #: setup fields that separate allocator-slack regimes, per workload (measured: training offload vs resident; serving
 #: solver tiers 15% vs all-VRAM 1-2% on the A2000)
-SLACK_KEYS = {"train": ("expert_residency", "expert_kernel"), "serve": ("placement", "graphs")}
+SLACK_KEYS = {"train": ("expert_residency", "expert_kernel"), "serve": ("placement", "graphs", "prefill_graph")}
 #: which probed kernels each workload uses: the planner reports only those as unusable
 KERNELS_FOR = {"train": ("grouped_nf4", "reference"), "serve": ("paged_fp8", "paged_graphs", "cpu_tier")}
 GiB = 1 << 30

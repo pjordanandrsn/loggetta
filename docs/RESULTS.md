@@ -368,6 +368,44 @@ VRAM tier at long contexts, so the 8192 × 8 rows shifted, and Qwen3-30B at 8192
 - **gpt-oss-20b on 12 GB is a correct refusal.** Its per-expert biases do not ride the arena, so the hybrid tier
   cannot serve it, and all-VRAM needs 13.9 GiB + headroom.
 
+## 6d. SV1: the graphs, measured on a rented RTX 5090
+
+Lane SV1 is experts4bit-qlora#1152, registered before the box in #1153 and read in #1161.
+- **The box:** `sv1-5090-1`, one RTX 5090, **$1.50**, teardown proven.
+- **The build:** `serve_paged` built in-process with the environment `ServeSetup.to_env()` gives, all-VRAM, from
+  arenas baked on the box.
+- **The workload:** 16 seeded 1,024-token prompts × 32 new tokens.
+
+| arm | estimate | allocator peak | driver peak | tok/s |
+|---|---|---|---|---|
+| OLMoE eager | 9.196 | 8.812 | 9.506 | 33.9 |
+| OLMoE decode graphs | 9.213 | 8.870 | 9.811 | 143.3 |
+| OLMoE + prefill graph (pool 224 MiB) | 9.213 | 9.104 | 10.207 | 148.8 |
+| Qwen3-30B decode graphs | 21.786 | 21.612 | 22.619 | 47.7 |
+| Qwen3-30B + prefill graph (pool 310 MiB) | 21.786 | 22.169 | 23.375 | 49.8 |
+
+All values GiB unless marked.
+
+- **The estimate held** at −4.2% (OLMoE eager; the margin is prefill staging at its ceiling) and −0.8% (Qwen3-30B with
+  decode graphs).
+- **The two pools the estimate leaves unpriced, at NF4:**
+  - decode graphs: +60 MiB;
+  - the prefill graph: +0.24 GiB (OLMoE) and +0.57 GiB (Qwen3-30B).
+  - SC2b's +3.3 GiB was the int4 stack.
+  - e4b's notes now cite these numbers; nothing is priced from two points.
+- **Planning with them** (`bench/import_sv1.py`, `bench/replan_serve.py` on FP1's RTX 5090 profile). The serve slack
+  keys and the learned residual now include `prefill_graph`. A receipt with the same graph settings teaches its pool:
+
+| plan (plan device total vs driver peak) | before SV1's receipts | after |
+|---|---|---|
+| Qwen3-30B, decode graphs | 22.59 vs 22.62 | 22.69 |
+| Qwen3-30B, + prefill graph | 22.59 vs 23.38 (pool unpriced) | **23.24** |
+| OLMoE, decode graphs | 9.91 vs 9.81 | 10.09 |
+
+- **The incident.** The runner left the 16 GB Qwen3 arena where the driver's final fetch copies everything back.
+  I stopped that fetch after saving the receipts, so the launcher records HARNESS_ERROR; the lane itself
+  finished OK. Fixed in #1160.
+
 ## 7. Not measured, said plainly
 
 - **No performance model.** Speed is ordered from evidence, never predicted, apart from the transfer lower bound.

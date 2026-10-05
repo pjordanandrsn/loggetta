@@ -1,0 +1,84 @@
+{
+ "gpus": [
+  {
+   "index": 0,
+   "vendor": "nvidia",
+   "name": "NVIDIA GeForce RTX 5090",
+   "uuid": null,
+   "compute_capability": {
+    "value": [
+     12,
+     0
+    ],
+    "source": "reported",
+    "note": "receipt fp1-5090-1/olmoe_device forensics"
+   },
+   "memory_total": {
+    "value": 34190917632,
+    "source": "reported",
+    "note": "receipt fp1-5090-1/olmoe_device forensics"
+   },
+   "memory_free": {
+    "value": 34190917632,
+    "source": "inferred",
+    "note": "a rented box: the whole card free"
+   },
+   "driver": {
+    "value": "595.84",
+    "source": "reported",
+    "note": "receipt fp1-5090-1/olmoe_device forensics"
+   },
+   "pcie_gen_max": {
+    "value": 4,
+    "source": "reported",
+    "note": "receipt fp1-5090-1/olmoe_device forensics"
+   },
+   "pcie_width_max": {
+    "value": 16,
+    "source": "reported",
+    "note": "receipt fp1-5090-1/olmoe_device forensics"
+   },
+   "pcie_gen_current": {
+    "value": 4,
+    "source": "reported",
+    "note": "receipt fp1-5090-1/olmoe_device forensics"
+   },
+   "pcie_width_current": {
+    "value": 16,
+    "source": "reported",
+    "note": "receipt fp1-5090-1/olmoe_device forensics"
+   }
+  }
+ ],
+ "host": {
+  "cpu_model": {
+   "value": "AMD EPYC 7B13",
+   "source": "reported",
+   "note": "receipt fp1-5090-1/olmoe_device forensics"
+  },
+  "cpus": {
+   "value": 16,
+   "source": "inferred",
+   "note": "a typical rental slice"
+  },
+  "memory_total": {
+   "value": 2151622049792,
+   "source": "reported",
+   "note": "receipt fp1-5090-1/olmoe_device forensics"
+  },
+  "memory_available": {
+   "value": 68719476736,
+   "source": "user",
+   "note": "planning as if 64 GiB were ours"
+  },
+  "memory_limit": {
+   "value": null,
+   "source": "unknown",
+   "note": ""
+  }
+ },
+ "platform": "Linux x86_64",
+ "notes": [
+  "rebuilt from receipt fp1-5090-1/olmoe_device forensics"
+ ]
+}

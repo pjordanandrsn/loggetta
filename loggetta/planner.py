@@ -158,7 +158,7 @@ def learned_serve_overheads(backend, topology, setup, observations, key):
     Returns MemoryLine-shaped tuples ``(name, where, bytes, basis, detail)``."""
     from .plan import Workload
 
-    out, best, grow = [], None, None
+    out, best, best_key, grow = [], None, None, None
     for o in observations:
         if o.get("workload", {}).get("kind") != "serve" or o.get("status") != "OK" \
                 or o.get("model", {}).get("model") != topology.model:
@@ -173,15 +173,21 @@ def learned_serve_overheads(backend, topology, setup, observations, key):
                 r = m["device_peak_bytes"] - sum(x[2] for x in raw if x[1] == "device")
                 if best is None or r > best[0]:
                     best = (r, o.get("run_id"))
+                if all(str(rs.get(k)) == str(setup.get(k)) for k in key) and (best_key is None or r > best_key[0]):
+                    best_key = (r, o.get("run_id"))          # same placement / graphs / prefill graph: their pools too
         if m.get("host_anon_peak_bytes") and m.get("host_anon_after_load_bytes") and \
                 all(rs.get(k) == setup.get(k) for k in key):
             g = m["host_anon_peak_bytes"] - m["host_anon_after_load_bytes"]
             if grow is None or g > grow[0]:
                 grow = (g, o.get("run_id"))
+    if best_key is not None:
+        best, scope = best_key, f"this model with the same {', '.join(key)}"
+    else:
+        scope = "this model (none with the same " + ", ".join(key) + ")"
     if best and best[0] > 0:
         out.append(("allocator residual (runtime buffers no item prices)", "device", int(best[0]), "measured",
                     f"receipt {best[1]}: its allocator peak minus today's estimate of its own setup (largest on file "
-                    "for this model)"))
+                    f"for {scope})"))
     if grow and grow[0] > 0:
         out.append(("host growth while serving", "host", int(grow[0]), "measured",
                     f"receipt {grow[1]}: anonymous host memory gained after load (largest on file for this model and "

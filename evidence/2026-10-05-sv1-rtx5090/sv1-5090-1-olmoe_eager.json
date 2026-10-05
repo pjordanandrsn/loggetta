@@ -1,0 +1,119 @@
+{
+ "schema": "execution-receipt/1",
+ "run_id": "sv1-5090-1/olmoe_eager",
+ "status": "OK",
+ "source": "experts4bit-qlora lane SV1 (sv1-5090-1), arm olmoe_eager",
+ "model": {
+  "model": "allenai/OLMoE-1B-7B-0924",
+  "revision": "6d84c48581ece794365f2b8e9cfb043c68ade9c5"
+ },
+ "workload": {
+  "kind": "serve",
+  "context_len": 4096,
+  "concurrency": 16,
+  "prompt_tokens": 1024,
+  "new_tokens": 32
+ },
+ "setup": {
+  "placement": "all-vram",
+  "max_seqs": 16,
+  "max_tokens_per_seq": 4096,
+  "chunk_tokens": 512,
+  "graphs": false,
+  "buckets": [
+   1,
+   2,
+   4,
+   8,
+   16
+  ],
+  "kv_groups": "auto",
+  "prefill_graph": "0",
+  "vram_gb": 1.2,
+  "dram_gb": 6.0,
+  "hot_rows": 64
+ },
+ "hardware": {
+  "gpu": {
+   "name": "NVIDIA GeForce RTX 5090",
+   "memory_total": "32607 MiB",
+   "driver": "595.84"
+  }
+ },
+ "measured": {
+  "device_peak_bytes": 9461948416,
+  "device_reserved_peak_bytes": 9554624512,
+  "driver_process_peak_bytes": 10206838784,
+  "load_device_peak_bytes": 9208109056,
+  "load_reserved_peak_bytes": 9380560896,
+  "load_seconds": 8.5,
+  "tokens_per_s": 33.9,
+  "requests_done": 16,
+  "cuda_context_bytes": 652214272
+ },
+ "estimate": {
+  "items": [
+   {
+    "name": "frozen expert stacks (all VRAM)",
+    "where": "device",
+    "bytes": 3623879680,
+    "basis": "derived"
+   },
+   {
+    "name": "cold tier landing (pinned)",
+    "where": "host",
+    "bytes": 268435456,
+    "basis": "derived"
+   },
+   {
+    "name": "setup tier (while the stacks are built)",
+    "where": "host",
+    "bytes": 226492416,
+    "basis": "derived"
+   },
+   {
+    "name": "dense weights (bf16)",
+    "where": "device",
+    "bytes": 953421824,
+    "basis": "derived"
+   },
+   {
+    "name": "FP8 paged KV pool",
+    "where": "device",
+    "bytes": 4630774784,
+    "basis": "derived"
+   },
+   {
+    "name": "prefill staging (bf16 K/V of prompts mid-prefill)",
+    "where": "device",
+    "bytes": 603979776,
+    "basis": "derived"
+   },
+   {
+    "name": "prefill/decode working set",
+    "where": "device",
+    "bytes": 61939712,
+    "basis": "heuristic"
+   }
+  ],
+  "unmodelled": [
+   "CUDA context, cuBLAS/Triton workspaces and allocator fragmentation (the caller's to add)"
+  ],
+  "refusals": [],
+  "device_total": 9873995776
+ },
+ "graph_status": {},
+ "prefill_graph": {
+  "status": "off"
+ },
+ "provenance": {
+  "started_at": "2026-10-05T12:45:06Z",
+  "imported_from": "/home/node/work/loggetta-ws/runs/sv1-5090-1/tc1/receipts/olmoe_eager.json",
+  "versions": {
+   "experts4bit-qlora": "0.48.0",
+   "grouped-nf4-gemm": "0.41.0",
+   "torch": "2.8.0+cu128",
+   "transformers": "5.18.0"
+  }
+ }
+}

@@ -34,6 +34,8 @@ def main():
     w = Workload(kind="serve", context_len=wl["context_len"], concurrency=wl["concurrency"])
     old = [o for d in a.before for o in load_observations(d)]
     fixed = {"graphs": r["setup"]["graphs"]}
+    if r["setup"].get("prefill_graph") is not None:
+        fixed["prefill_graph"] = str(r["setup"]["prefill_graph"])
     if r["setup"].get("placement") == "solver":           # the run's own tier budgets, as the server read them
         fixed.update(placement="solver", vram_gb=float(r["setup"]["vram_gb"]), dram_gb=float(r["setup"]["dram_gb"]),
                      hot_rows=int(r["setup"]["hot_rows"]))
