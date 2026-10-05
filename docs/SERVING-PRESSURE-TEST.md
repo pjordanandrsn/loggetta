@@ -62,6 +62,11 @@ multi-GPU plan would add per-device budgets; nothing assumes there is exactly on
 
 ## What does not fit yet (deferred, stated)
 
+- **The first-chunk prefill graph's pool** (on by default in experts4bit-qlora 0.47.0, +3.3 GiB at 30B) is not
+  priced. Plans set `prefill_graph=0` unless the caller fixes it.
+- **Decode graphs below sm_89.** They need the fused FP8 KV append, which Triton cannot compile there (found on the
+  A2000). Plans offer graphs only where experts4bit-qlora's `fused_append_unsupported` says they run (e4b#1090).
+
 - **Performance prediction.** Latency and throughput targets beyond the transfer bound need a calibrated model.
   e4b's serving harness (`bench/hybrid-g9/step_decomp.py`) and gnf4's `cold_deadline.Costs` are the measured
   inputs. Receipts with `link_h2d_gbps` and step times are the planner's first calibration data.

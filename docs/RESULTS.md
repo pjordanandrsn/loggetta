@@ -213,6 +213,10 @@ after load and after the runs rather than sampling it, so its reserve is an end-
 | eager decode | 26.24 (default 20% = 4.27) | **21.99** (P109's 0.13%) | 22.12 |
 | decode graphs | 26.25 | **22.16** (P109's 0.85%) | 22.11–22.45 |
 
+- **The prefill graph is planned off.** experts4bit-qlora 0.47.0 made `E4B_PAGED_PREFILL_GRAPH=auto` the server's
+  default. Its private pool is +3.3 GiB at 30B, the estimate does not price it, and `auto` checks only the
+  device's free memory, not the plan's budget. A plan therefore sets it to `0` and says why; a caller can fix
+  `prefill_graph=auto` (e4b#1098 names the pool as not modelled).
 - **Independence.** The allocator estimate is independent of P109. The context line in both columns is FP1's
   training receipt on the same card (0.61 GiB, a different driver). The "after" reserve is P109's own, so that line
   agrees by construction. Before P109, the default over-reserved 4.1 GiB at 30B: a 5090 plan would have refused

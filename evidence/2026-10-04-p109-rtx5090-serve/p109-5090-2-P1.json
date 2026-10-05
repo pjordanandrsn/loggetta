@@ -25,7 +25,8 @@
    8,
    16
   ],
-  "kv_groups": "auto"
+  "kv_groups": "auto",
+  "prefill_graph": "0"
  },
  "hardware": {
   "gpu": {

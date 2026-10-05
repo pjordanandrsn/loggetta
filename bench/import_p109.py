@@ -43,7 +43,9 @@ def main():
             "source": f"experts4bit-qlora lane P109 ({run}), arm {arm}",
             "model": {"model": r["model"], "revision": r["revision"]},
             "workload": {"kind": "serve", "context_len": cfg["max_tokens_per_seq"], "concurrency": cfg["max_seqs"]},
-            "setup": {k: (list(cfg[k]) if k == "buckets" else cfg[k]) for k in SETUP_KEYS},
+            # P109 predates E4B_PAGED_PREFILL_GRAPH: none of its arms ran a prefill graph
+            "setup": {**{k: (list(cfg[k]) if k == "buckets" else cfg[k]) for k in SETUP_KEYS},
+                      "prefill_graph": str(cfg.get("prefill_graph", "0"))},
             "hardware": {"gpu": {"name": name, "driver": driver, "memory_total": total_mib}},
             "measured": {"device_peak_bytes": after["max_memory_allocated"], "device_reserved_peak_bytes": reserved,
                          "cuda_context_bytes": (after["total"] - after["free"]) - reserved,

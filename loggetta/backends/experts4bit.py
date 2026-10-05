@@ -146,7 +146,8 @@ SERVE_EVIDENCE = {
 def label(setup: dict) -> str:
     if "max_seqs" in setup:
         return (f"serve {setup['placement']}, fp8 paged KV, {setup['max_seqs']} seqs x {setup['max_tokens_per_seq']} "
-                f"tokens{', decode graphs' if setup.get('graphs') else ''}")
+                f"tokens{', decode graphs' if setup.get('graphs') else ''}"
+                f"{', prefill graph ' + str(setup['prefill_graph']) if setup.get('prefill_graph') not in (None, '0') else ''}")
     s = setup
     return (f"experts on {s.get('expert_residency')}, {s.get('expert_kernel')} kernel"
             + (", NF4 attention" if s.get("attn_4bit") else "")
@@ -168,6 +169,10 @@ def explain(sel, feasible, infeasible, budget, status, constraints, workload) ->
                    "serve_paged resolves them (reported at /health)")
         if constraints.objective == "speed":
             out += [f"ordering, {k}: {v}" for k, v in SERVE_EVIDENCE.items()]
+        if s.get("prefill_graph") == "0" and "prefill_graph" not in constraints.fixed:
+            out.append("first-chunk prefill graph off (the server's default is auto): its private pool is not priced "
+                       "(SC2b measured +3.3 GiB at Qwen3-30B), so the plan's memory would not bound the process; fix "
+                       "prefill_graph=auto to let the server engage it when that much is free")
         out.append("not planned yet: the solver's VRAM/DRAM/NVMe tiers, int4 expert stores, decode speed")
         from experts4bit_qlora.serve_recipe import ServeSetup
 
@@ -220,6 +225,8 @@ def _serve_candidates(workload, constraints, status):
             "max_tokens_per_seq": workload.context_len or 4096}
     if constraints.expert_residency is not None and "device" not in constraints.expert_residency:
         base["placement"] = "solver"               # the tiered placement, which the estimate refuses in words
+    if "prefill_graph" in base:
+        base["prefill_graph"] = "0"                # its pool is not priced: a plan bounds memory by what it priced
     can_graph = status.kernels.get("paged_graphs", (False,))[0]
     graphs = [fixed["graphs"]] if "graphs" in fixed else ([True, False] if can_graph else [False])
     return [{**base, **fixed, "graphs": g} for g in graphs if can_graph or not g]

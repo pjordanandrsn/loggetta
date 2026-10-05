@@ -327,3 +327,16 @@ def test_serve_slack_prefers_the_receipt_with_the_whole_setup(topo):
           for c in (p.selected,) + p.alternatives}
     assert by[True].basis == by[False].basis == "measured"
     assert "receipt graphs" in by[True].detail and "receipt eager" in by[False].detail
+
+
+def test_serving_plans_the_prefill_graph_off_unless_asked(topo):
+    from experts4bit_qlora.serve_recipe import ServeSetup
+    if "prefill_graph" not in ServeSetup.__dataclass_fields__:
+        pytest.skip("this experts4bit-qlora's ServeSetup has no prefill_graph")
+    p = _serve(topo, 4096, 8, cap=(12, 0))
+    assert p.selected.setup["prefill_graph"] == "0"
+    assert any("prefill graph off" in r for r in p.reasons)
+    assert any("E4B_PAGED_PREFILL_GRAPH=0" in r for r in p.reasons)
+    asked = _serve(topo, 4096, 8, Constraints(fixed={"prefill_graph": "auto"}), cap=(12, 0))
+    assert asked.selected.setup["prefill_graph"] == "auto" and "prefill graph auto" in asked.selected.label()
+    assert any("prefill graph" in u for u in asked.selected.unmodelled)
