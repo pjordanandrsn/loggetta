@@ -342,12 +342,15 @@ Cells read "VRAM" for all-VRAM, else "VRAM / DRAM / NVMe" tiers in GiB:
 | model | ctx × seqs | A2000 12 GB | 3090 / 4090 24 GB | 5090 32 GB |
 |---|---|---|---|---|
 | OLMoE-1B-7B, granite-3.1-3b, granite-4.0-h-tiny, LFM2-8B | both | VRAM | VRAM | VRAM |
-| DeepSeek-V2-Lite | 4096 × 1 / 8192 × 8 | VRAM / 3.5 / 4.0 / 0 | VRAM | VRAM |
-| ERNIE-4.5-21B-A3B | 4096 × 1 / 8192 × 8 | 6.9 / 3.8 / 0 · 5.2 / 5.5 / 0 | VRAM | VRAM |
-| Qwen3-30B-A3B | 4096 × 1 / 8192 × 8 | 6.5 / 8.7 / 0 · 3.4 / 11.8 / 0 | VRAM | VRAM |
-| Qwen3.6-35B-A3B | 4096 × 1 / 8192 × 8 | 5.1 / 11.8 / 0 · 4.5 / 12.4 / 0 | VRAM · 14.1 / 2.8 / 0 | VRAM |
-| Mixtral-8x7B | 4096 × 1 / 8192 × 8 | 6.4 / 17.3 / 0 · 2.3 / 17.5 / **3.8** | 16.0 / 7.7 / 0 · 11.9 / 11.7 / 0 | VRAM · 21.9 / 1.8 / 0 |
+| DeepSeek-V2-Lite | 4096 × 1 / 8192 × 8 | VRAM · 2.7 / 4.9 / 0 | VRAM | VRAM |
+| ERNIE-4.5-21B-A3B | 4096 × 1 / 8192 × 8 | 6.7 / 4.0 / 0 · 4.8 / 5.9 / 0 | VRAM | VRAM |
+| Qwen3-30B-A3B | 4096 × 1 / 8192 × 8 | 6.3 / 8.9 / 0 · 2.8 / 12.4 / 0 | VRAM · 12.5 / 2.7 / 0 | VRAM |
+| Qwen3.6-35B-A3B | 4096 × 1 / 8192 × 8 | 5.0 / 11.8 / 0 · 4.3 / 12.6 / 0 | VRAM · 14.0 / 2.9 / 0 | VRAM |
+| Mixtral-8x7B | 4096 × 1 / 8192 × 8 | 5.8 / 17.8 / 0 · 0.5 / 17.5 / **5.6** | 15.5 / 8.1 / 0 · 10.9 / 12.7 / 0 | VRAM · 20.9 / 2.8 / 0 |
 | gpt-oss-20b | both | **refused** | VRAM | VRAM |
+
+(Re-run after e4b#1139/#1141 priced prefill staging and the cold-row stack. Staging takes device memory from the
+VRAM tier at long contexts, so the 8192 × 8 rows shifted, and Qwen3-30B at 8192 × 8 on 24 GB moved back to tiers.)
 
 **What the sweep exposed, and what changed because of it:**
 - **`hot_rows` is now planned.** At the server's default of 64, Mixtral's ~99 MB experts made the cold tier's
