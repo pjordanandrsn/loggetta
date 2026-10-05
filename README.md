@@ -190,34 +190,30 @@ Those are roadmap items, not assumptions hidden inside current results.
 
 ## Install
 
-For planning plus the current `experts4bit-qlora` backend:
-
-```bash
-python -m pip install "loggetta[experts4bit]"
-```
-
-For the planner core only:
+Loggetta is the user-facing install for the stack. One command installs the planner, the e4b runtime, and the gnf4 kernel layer:
 
 ```bash
 python -m pip install loggetta
 ```
 
-The released backend floor is:
+That installs:
 
-- `experts4bit-qlora >= 0.48.0`
-- `grouped-nf4-gemm >= 0.41.0`
+- **Loggetta** — Planner, `ExecutionPlan`, `ExecutionReceipt`, CLI, orchestration and measured feedback
+- **experts4bit-qlora >= 0.48.0** — model/runtime layer for loading, QLoRA, training, serving and residency
+- **grouped-nf4-gemm >= 0.41.0** — packed low-bit kernels and residency primitives
 
-Those releases support training plans and execution plus serving plans. The newest serving-estimate refinements in
-RESULTS 6b–6e depend on APIs that are newer than e4b `0.48.0`; reproducing those specific measurements currently
-requires `experts4bit-qlora` `main`. Loggetta labels unsupported or unavailable mechanisms rather than pretending
-they exist.
+The old `loggetta[experts4bit]` spelling remains accepted as a compatibility alias, but the extra is no longer required.
+
+The released backend versions support training plans and execution plus serving plans. The newest serving-estimate refinements in
+RESULTS 6b–6e depend on APIs newer than e4b `0.48.0`; reproducing those specific measurements currently requires
+`experts4bit-qlora` `main`. Loggetta labels unavailable mechanisms rather than pretending they exist.
 
 Source installs remain useful for development:
 
 ```bash
 git clone https://github.com/pjordanandrsn/loggetta
 cd loggetta
-python -m pip install -e ".[experts4bit]"
+python -m pip install -e .
 ```
 
 ## Why a separate planner?
