@@ -2,26 +2,43 @@
 requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
-# PRIVATE INCUBATION. Not for any package index. The distribution and import name are a working name: nothing
-# serialized depends on it (tests/test_renameable.py), so a rename is this file + the package directory.
 [project]
 name = "loggetta"
 version = "0.0.1"
-description = "A planning layer for MoE training and serving: decide how a workload runs on this machine, and why, before loading anything."
+description = "Turn a workload, machine, and constraints into an inspectable execution plan for large-model training and serving."
+readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Jordan Anderson" }]
+keywords = ["machine-learning", "llm", "gpu", "planning", "qlora", "moe"]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
 # The core (hardware inventory, plan types, planner policy) is pure Python. Everything model- or kernel-shaped
 # comes from the backend packages, which stay independently installable and usable on their own.
 dependencies = []
 
 [project.optional-dependencies]
-# experts4bit-qlora >= the release carrying `recipe` and `arch.topology` (not released yet: install the branch);
-# grouped-nf4-gemm >= the release carrying `nf4_route.route_for`.
-experts4bit = ["experts4bit-qlora[train,fast]", "grouped-nf4-gemm", "datasets"]
+experts4bit = [
+  "experts4bit-qlora[train,fast]>=0.48.0",
+  "grouped-nf4-gemm>=0.41.0",
+  "datasets",
+]
 test = ["pytest>=7"]
 
 [project.scripts]
 loggetta = "loggetta.cli:main"
+
+[project.urls]
+Source = "https://github.com/pjordanandrsn/loggetta"
+Issues = "https://github.com/pjordanandrsn/loggetta/issues"
 
 [tool.setuptools.packages.find]
 include = ["loggetta*"]
