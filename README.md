@@ -10,6 +10,7 @@ It selects a supported configuration, explains why it won, records why alternati
 
 <p>
   <img src="https://img.shields.io/badge/Python-%E2%89%A53.10-3776AB?logo=python&logoColor=white" alt="Python >=3.10">
+  <a href="https://pypi.org/project/loggetta/"><img src="https://img.shields.io/pypi/v/loggetta" alt="PyPI"></a>
   <img src="https://img.shields.io/badge/status-pre--1.0-F59E0B" alt="pre-1.0">
   <img src="https://img.shields.io/badge/scope-single--GPU%20MoE-6F42C1" alt="single-GPU MoE">
   <img src="https://img.shields.io/badge/artifacts-ExecutionPlan%20%2B%20ExecutionReceipt-2EA44F" alt="ExecutionPlan + ExecutionReceipt">
@@ -189,27 +190,35 @@ Those are roadmap items, not assumptions hidden inside current results.
 
 ## Install
 
-Until the functional PyPI release lands, install from source:
+For planning plus the current `experts4bit-qlora` backend:
+
+```bash
+python -m pip install "loggetta[experts4bit]"
+```
+
+For the planner core only:
+
+```bash
+python -m pip install loggetta
+```
+
+The released backend floor is:
+
+- `experts4bit-qlora >= 0.48.0`
+- `grouped-nf4-gemm >= 0.41.0`
+
+Those releases support training plans and execution plus serving plans. The newest serving-estimate refinements in
+RESULTS 6b–6e depend on APIs that are newer than e4b `0.48.0`; reproducing those specific measurements currently
+requires `experts4bit-qlora` `main`. Loggetta labels unsupported or unavailable mechanisms rather than pretending
+they exist.
+
+Source installs remain useful for development:
 
 ```bash
 git clone https://github.com/pjordanandrsn/loggetta
 cd loggetta
 python -m pip install -e ".[experts4bit]"
 ```
-
-The required lower-layer APIs are present in:
-
-- `experts4bit-qlora >= 0.48.0`
-- `grouped-nf4-gemm >= 0.41.0`
-
-No development branches or `PYTHONPATH` overrides are required for training plans and their execution. Serve plans
-work with those releases too. The serve-estimate refinements in RESULTS 6b–6e are in experts4bit-qlora's next
-release: exact bytes per expert, the cold tier's minimum `hot_rows`, the cold-row stack, prefill staging and the int4
-levers. Until it ships, reproducing those numbers needs its `main`.
-
-> [!TIP]
-> PyPI `0.0.1` is the metadata-only preview used to establish the project name. Functional releases will
-> supersede it.
 
 ## Why a separate planner?
 
