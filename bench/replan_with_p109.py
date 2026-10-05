@@ -29,7 +29,7 @@ def main():
     from replan_with_fp1 import rtx5090_profile
 
     from loggetta import Constraints, Workload, describe_model, plan
-    from loggetta.runtime import load_observations
+    from loggetta.execution import load_observations
 
     old = load_observations(a.a2000) + load_observations(a.fp1)
     p109 = load_observations(a.p109)

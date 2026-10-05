@@ -25,7 +25,7 @@ def test_no_code_file_spells_the_package_name():
 
 def test_schemas_are_generic():
     from loggetta.plan import PLAN_SCHEMA
-    from loggetta.runtime import RECEIPT_SCHEMA
+    from loggetta.execution import RECEIPT_SCHEMA
 
     for s in (PLAN_SCHEMA, RECEIPT_SCHEMA):
         assert NAME.lower() not in s.lower()

@@ -8,6 +8,7 @@
 - Workload: QLoRA (r 8, α 16, bf16 adapters, attention + expert LoRA, AdamW 2e-4) on alpaca packed into fixed
   blocks of seq 512 × micro-batch 2 (1,024 tokens per forward), 12 steps. Step time is the median of steps 3–12.
 
+Each result compares an `ExecutionReceipt` with the `ExecutionPlan` that produced it, which the receipt embeds.
 Every number below is generated from receipts by `bench/summarize_receipts.py`, except where a row says otherwise.
 Runs write raw receipts under `runs/receipts/`; curated public evidence is committed under `evidence/`.
 
@@ -21,7 +22,8 @@ Runs write raw receipts under `runs/receipts/`; curated public evidence is commi
 3. priced 8 candidate setups and noticed 1.34 GiB of the card held by another process;
 4. chose experts resident on the device, the grouped NF4 kernel (training route `fused`: sm_86 is not 9.0) and
    bf16 attention;
-5. ran the selected setup through `experts4bit_qlora.prepare_qlora_training`;
+5. handed the plan to its backend: `experts4bit_qlora.prepare_qlora_training` built the selected setup, and the
+   executor ran the measured loop around it;
 6. wrote a receipt.
 
 Correctness was checked, not assumed:

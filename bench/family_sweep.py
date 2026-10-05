@@ -39,7 +39,7 @@ def main():
     a = ap.parse_args()
     from loggetta import Workload, describe_model, plan
     from loggetta.hardware import HardwareProfile
-    from loggetta.runtime import load_observations
+    from loggetta.execution import load_observations
 
     obs = load_observations(a.observations)
     hw = HardwareProfile.from_dict(json.load(open(a.hardware)), origin=os.path.basename(a.hardware))

@@ -157,7 +157,7 @@ def test_serving_plans_the_paged_server_with_its_kv_pool(topo):
     assert any("E4B_PAGED_MAX_SEQS=8" in r and "E4B_PAGED_MAX_TOKENS_PER_SEQ=4096" in r for r in p.reasons)
     again = ExecutionPlan.from_dict(json.loads(p.to_json()))
     assert again.to_json() == p.to_json() == _serve(topo, 4096, 8, cap=(12, 0)).to_json()
-    from loggetta.runtime import PlanNotExecutable, execute
+    from loggetta.execution import PlanNotExecutable, execute
     with pytest.raises(PlanNotExecutable, match="planned only"):
         execute(p)
 

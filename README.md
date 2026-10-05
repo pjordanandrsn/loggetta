@@ -69,9 +69,17 @@ python -m loggetta plan Qwen/Qwen3-30B-A3B --seq 2048
 # Constrain the planner deliberately
 python -m loggetta plan allenai/OLMoE-1B-7B-0924 --experts device --vram 6
 
-# Execute a supported plan through the backend and write the receipt
-python -m loggetta train allenai/OLMoE-1B-7B-0924 --seq 512 --micro-batch 2 --steps 12 --out receipts/
+# Keep the plan as a file, then execute that plan through the backend; the receipt lands in receipts/
+python -m loggetta plan allenai/OLMoE-1B-7B-0924 --seq 512 --micro-batch 2 --steps 12 --out plan.json
+python -m loggetta execute plan.json --out receipts/
+
+# Plan again from what was measured
+python -m loggetta plan allenai/OLMoE-1B-7B-0924 --seq 512 --micro-batch 2 --observations receipts/
 ```
+
+`train MODEL ...` is `plan` and `execute` in one step. Serving is planned with `plan MODEL --workload serve
+--context T --concurrency N`. The plan's *Why* carries the server's exact environment; `execute` does not start
+servers yet.
 
 ### Three levels of control
 
@@ -86,7 +94,42 @@ weights or touching the device. The plan includes the winner, every relevant los
 sources, evidence labels, warnings, and explicit “not modeled” items.
 
 `execute(plan)` is intentionally thin. It validates the plan, delegates execution to the selected backend, and
-constructs an `ExecutionReceipt` from the backend result. It does **not** reimplement the runtime.
+constructs an `ExecutionReceipt` from the backend result. It does **not** reimplement the runtime. Before anything
+loads, it refuses a refused plan, a workload kind its backend only plans, and a plan made for a different GPU
+(`plan --hardware`), whose receipt would name the wrong card.
+
+<details>
+<summary><strong>A real plan, abridged</strong> (OLMoE-1B-7B on an RTX A2000, from <code>evidence/2026-10-04-rtx-a2000/</code>)</summary>
+
+```text
+Budget    device  10.65 GiB [reported: free now]   host  23.49 GiB [reported: available now]   headroom   0.53 GiB [policy]
+
+Selected  backend experts4bit: experts on device, grouped_nf4 kernel
+
+Estimated memory (each line says how it is known)
+  device frozen expert stacks                    3.38 GiB  [derived]  16 stacks in nf4, blocksize 64 (packed + absmax)
+  device dense weights (bf16)                    0.89 GiB  [derived]
+  device optimizer state (adamw)                 0.23 GiB  [derived]
+  device activations                             0.54 GiB  [heuristic]  16 saved layer inputs (T x H bf16) + ...
+  device allocator reserve (cached, unallocated blocks)   1.17 GiB  [measured]  receipt ...173932Z: ... = 0.222
+  device CUDA context + library workspaces       0.13 GiB  [measured]  receipt ...173932Z
+  device total                                   6.56 GiB   of  10.65 GiB budget
+
+Why
+  - experts resident on the device: 6.56 GiB estimated + 0.53 GiB headroom fits the 10.65 GiB budget
+  - ordering, expert_kernel: grouped_nf4 before reference: e4b.train.h2h.unsloth.olmoe.5090.2026-09-19 (1.39 vs 14.88 s/step), ...
+
+Performance  not predicted: no performance model is calibrated for this backend yet; ...
+
+Alternatives considered
+  [fits ] experts on device, grouped_nf4 kernel, NF4 attention       device   6.10 GiB  host   0.72 GiB  ...
+  [fits ] experts on host, grouped_nf4 kernel                        device   2.69 GiB  host   4.10 GiB  ...
+  ...
+```
+
+Its receipt: allocator 5.26 GiB estimated, 5.47 GiB measured; driver 6.56 GiB estimated, 6.82 GiB measured.
+
+</details>
 
 ## Evidence, not vibes
 
@@ -100,6 +143,7 @@ Current checks from [`docs/RESULTS.md`](docs/RESULTS.md):
 | **Planner parity, A2000 / OLMoE** | Planned and hand-composed paths had **bitwise-identical step-1 loss** (`1.858969`), effectively identical allocator peaks (`5.4710` vs `5.4706 GiB`), and the same `60,817,408` trainable parameters. |
 | **Allocator estimates, A2000** | Across six measured runs spanning three model families, estimates landed **+0.01 to +0.21 GiB** from measured peaks. |
 | **Qwen3-30B-A3B, RTX 5090** | Allocator estimate **22.09 GiB**, measured **21.91 GiB**. After receipt-calibrated runtime overheads: planned process peak **24.54 GiB**, measured **24.34 GiB**. |
+| **Serving tiers, A2000 / OLMoE** | The planned VRAM / DRAM / NVMe split matched the server's own (**272 / 421 / 331** experts); allocator **2.052** GiB planned, **2.051** GiB measured. |
 | **Host offload** | Transfer time is treated as a **lower bound**, not a fabricated step-time prediction. |
 
 > [!IMPORTANT]
@@ -158,7 +202,10 @@ The required lower-layer APIs are present in:
 - `experts4bit-qlora >= 0.48.0`
 - `grouped-nf4-gemm >= 0.41.0`
 
-No development branches or `PYTHONPATH` overrides are required for those interfaces.
+No development branches or `PYTHONPATH` overrides are required for training plans and their execution. Serve plans
+work with those releases too. The serve-estimate refinements in RESULTS 6b–6e are in experts4bit-qlora's next
+release: exact bytes per expert, the cold tier's minimum `hot_rows`, the cold-row stack, prefill staging and the int4
+levers. Until it ships, reproducing those numbers needs its `main`.
 
 > [!TIP]
 > PyPI `0.0.1` is the metadata-only preview used to establish the project name. Functional releases will
@@ -199,8 +246,9 @@ python bench/family_sweep.py --hardware hw.json
 python bench/summarize_receipts.py runs/receipts
 ```
 
-The fast test suite is CPU-only. GPU benchmarks and validation runs stay separate so ordinary correctness tests
-do not silently become hardware-dependent.
+The fast test suite is CPU-only. Planner tests run when `experts4bit-qlora` is importable. The execution tests
+check the handoff to the backend with a stand-in executor, so they need nothing installed. GPU benchmarks and
+validation runs stay separate so ordinary correctness tests do not silently become hardware-dependent.
 
 </details>
 

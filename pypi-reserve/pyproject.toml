@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "loggetta"
 version = "0.0.1"
-description = "Preview reservation release for Loggetta, a planning layer for fitting and running large local models."
+description = "Preview reservation release for Loggetta, which turns a workload, a machine, and constraints into an inspectable execution plan."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"

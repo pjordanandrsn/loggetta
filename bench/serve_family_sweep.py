@@ -53,7 +53,7 @@ def main():
 
     from loggetta import Constraints, Workload, describe_model, plan
     from loggetta.hardware import HardwareProfile
-    from loggetta.runtime import load_observations
+    from loggetta.execution import load_observations
 
     obs = [o for d in a.obs + [a.fp1] for o in load_observations(d)]
     cards = {"RTX A2000 12GB (seat, probed)": HardwareProfile.from_dict(json.load(open(a.a2000)), origin=a.a2000),

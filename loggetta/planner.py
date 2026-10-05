@@ -1,4 +1,5 @@
-"""The planner: (topology, hardware, workload, constraints, backends) -> ExecutionPlan. Pure policy; runs nothing.
+"""The planner: (topology, hardware, workload, constraints, backends, receipts) -> ExecutionPlan. Pure policy; runs
+nothing.
 
 Policy lives here and nowhere below: the device and host budgets, the headroom kept free, the runtime overhead
 charged on top of a backend's estimate, which candidates are feasible, the order an objective tries them in, and
@@ -320,20 +321,23 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
 
         def price(setup):
             raw, unmodelled, refusals = b.estimate(topology, setup, workload)
+            # matched against receipts as they are read (defaults filled): a backend release whose setup lacks a key
+            # field ran with its default too, so the candidate reads the same way
+            keyed = {**key_defaults, **setup}
             alloc = sum(r[2] for r in raw if r[1] == "device")
             default = (reserve_frac, *reserve_meta)
             if workload.kind != "train":
                 default = (DEFAULT_RESERVE_FRAC, "inferred", f"default {DEFAULT_RESERVE_FRAC:.0%} of the allocator "
                            f"estimate; no {workload.kind} receipt on file measured this GPU")
-            frac, fbasis, fsrc = reserve_fraction(gpu, setup, b_obs, default, model=topology.model,
+            frac, fbasis, fsrc = reserve_fraction(gpu, keyed, b_obs, default, model=topology.model,
                                                   kind=workload.kind, key=slack_key)
             reserve = MemoryLine("allocator reserve (cached, unallocated blocks)", "device", int(frac * alloc),
                                  fbasis, fsrc)
             learned = ()
             if workload.kind == "serve":
-                ck = (setup.get("placement"), tuple(setup.get(k) for k in slack_key))
+                ck = (keyed.get("placement"), tuple(keyed.get(k) for k in slack_key))
                 if ck not in learned_cache:
-                    learned_cache[ck] = learned_serve_overheads(b, topology, setup, b_obs, slack_key)
+                    learned_cache[ck] = learned_serve_overheads(b, topology, keyed, b_obs, slack_key)
                 learned = tuple(MemoryLine(*x) for x in learned_cache[ck])
             lines = tuple(MemoryLine(*r) for r in raw) + (reserve,) + learned + tuple(dev_over) + tuple(host_over)
             dev = sum(ln.bytes for ln in lines if ln.where == "device")

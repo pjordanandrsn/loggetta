@@ -67,7 +67,7 @@ def main():
     from loggetta import Constraints, Workload, describe_model, plan
     from loggetta.cli import _parse_fixed
     from loggetta.hardware import HardwareProfile, probe
-    from loggetta.runtime import load_observations
+    from loggetta.execution import load_observations
 
     baked = None
     if not os.path.exists(a.arena):

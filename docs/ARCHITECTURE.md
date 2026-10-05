@@ -1,8 +1,34 @@
 # Architecture
 
-This document was derived from the code of experts4bit-qlora (e4b, v0.45.0, origin/main `7b3b6aa5`) and
-grouped-nf4-gemm (gnf4, v0.37.0, origin/main `c6455de`), inspected on 2026-10-04. The code and the tests are the
-source of truth; this file says where things live and why.
+**Loggetta's primary output is an `ExecutionPlan`.**
+- The planner is pure policy. It determines what should run.
+- Execution is delegated to the backend the plan names.
+- Loggetta's execution layer is orchestration around that backend call, plus construction of the resulting
+  `ExecutionReceipt`.
+- Later plans read the receipt as evidence.
+
+```
+   workload + machine + constraints + evidence (earlier receipts)
+                          │
+                          ▼
+                       Planner            pure, deterministic; loads no weights, touches no device
+                          │
+                          ▼
+                    ExecutionPlan         the product: selection, estimates with their basis, what lost, refusal
+                          │  execute(plan): check, dispatch, record
+                          ▼
+     backend: experts4bit-qlora → grouped-nf4-gemm      how it runs: loading, adapters, engines, kernels
+                          │
+                          ▼
+                  ExecutionReceipt ──── measured feedback ────► Planner
+```
+
+The code and the tests are the source of truth; this file says where things live and why.
+- Section 1 records the two lower packages as they were when this layer was started: experts4bit-qlora (e4b)
+  v0.45.0, origin/main `7b3b6aa5`, and grouped-nf4-gemm (gnf4) v0.37.0, origin/main `c6455de`, inspected on
+  2026-10-04.
+- The interfaces in section 4 are released in e4b 0.48.0 and gnf4 0.41.0. The serve estimate's later items are in
+  e4b's next release.
 
 ## 1. What the two packages already were (from the code, not the READMEs)
 
@@ -46,12 +72,13 @@ the ownership split and the dependency direction (`experts4bit-qlora -> grouped-
 ## 2. Layers and dependency direction
 
 ```
-            Loggetta planner layer (this repo)
-     hardware inventory · Planner · ExecutionPlan · ExecutionReceipt · CLI/orchestration
+     Loggetta (this repo): what should execute
+     hardware · planner · plan (ExecutionPlan) · execution + measure (ExecutionReceipt) · cli
+     backends/experts4bit*.py: the questions it asks e4b, and the handoff of a plan to e4b
                  │  imports (lazily, only to plan or run)
                  ▼
-     experts4bit-qlora  (model-family layer + training/serving runtime)
-     arch/topology · recipe · loader · engines · serve_paged
+     experts4bit-qlora  (how: model-family layer + training/serving runtime)
+     arch/topology · recipe · serve_recipe · loader · engines · serve_paged
                  │  imports inside functions ([fast] extra)
                  ▼
      grouped-nf4-gemm   (kernels + residency primitives)
@@ -69,7 +96,7 @@ the ownership split and the dependency direction (`experts4bit-qlora -> grouped-
 
 **There are no cycles.**
 - gnf4 does not know e4b.
-- Neither lower package knows the planner. Their new APIs are named for what they do (`describe_moe`,
+- Neither lower package imports the planner. Their new APIs are named for what they do (`describe_moe`,
   `estimate_qlora_footprint`, `route_for`) and documented without reference to any consumer.
 
 ## 3. What belongs where (the rule: knowledge lives with its owner)
@@ -86,7 +113,10 @@ the ownership split and the dependency direction (`experts4bit-qlora -> grouped-
 | pinned host-memory cost | gnf4 `pinned_request_cost` (#71) | the allocator rounding is measured there; e4b's estimate applies the same rule |
 | GPU/host inventory with provenance | planner `hardware` | machine knowledge, not model or kernel knowledge |
 | budgets, headroom, runtime overhead, candidate ordering, refusal and suggestions | planner `planner` | **policy** |
-| plan / receipt formats | planner `plan`, `runtime` | the artifacts this layer exists to produce |
+| which measured evidence a plan trusts, and for what (same GPU, setup, model, workload kind) | planner `planner` | **policy**: the feedback half of the loop |
+| plan / receipt formats | planner `plan`, `execution` | the artifacts this layer exists to produce |
+| checking a plan may run here, dispatching it to its backend, writing the receipt | planner `execution` | orchestration around one backend call, not mechanism |
+| running a training plan: building the model, adapters, engines and kernels | e4b `prepare_qlora_training`, called by the backend's executor | e4b knows how; the executor adds only the measured loop and integrity checks |
 
 **Rejected abstractions.**
 - No plugin framework. `backends/__init__.py` is a one-element tuple.
@@ -97,30 +127,41 @@ the ownership split and the dependency direction (`experts4bit-qlora -> grouped-
 
 ## 4. Interfaces between the layers (all that exist)
 
-**Kernel → runtime (new):**
+**gnf4 → e4b (new):**
 ```python
 nf4_route.route_for(capability, *, has_grouped_mm, requested="auto") -> (route | None, reason)
 ```
 
-**Runtime → planner (new):**
+**e4b → Loggetta (new):**
 ```python
 describe_moe(model, *, revision=None, trust_remote_code=False) -> MoETopology   # config + meta tree, no weights
 setup_refusals(topology, QLoRASetup) -> tuple[str]                             # words, not exceptions
 estimate_qlora_footprint(topology, QLoRASetup, *, tokens_per_microbatch, optimizer) -> Footprint
-prepare_qlora_training(model_id, QLoRASetup, *, device, revision) -> PreparedQLoRA
-estimate_serve_footprint(topology, ServeSetup) -> Footprint                    # paged server, all-VRAM only (e4b#1080)
+prepare_qlora_training(model_id, QLoRASetup, *, device, revision) -> PreparedQLoRA   # the run: e4b builds the setup
+estimate_serve_footprint(topology, ServeSetup) -> Footprint                    # paged server: all-VRAM and the solver's tiers
+min_hot_rows(topology, ServeSetup) -> int                                      # cold tier's floor (next e4b release)
+fused_append_unsupported(capability) -> str | None                             # where decode graphs cannot run
 ServeSetup.to_env() -> {"E4B_PAGED_*": str}                                    # what serve_paged reads back
 ```
 
-**Backend contract inside the planner** (`backends/experts4bit.py`): `WORKLOADS`, `KERNELS_FOR`, `probe(gpu)`,
-`candidates(...)`, `estimate(...)`, `speed_rank(setup)`, `label(setup)`, `explain(...)`, `policy_notes(...)`,
-`describe_kernel(...)`, plus an executor for training (`experts4bit_train.run`; serve plans are planned only). A
-second backend implements the same functions; generalize into a protocol only then.
+**Backend contract inside the planner** (`backends/experts4bit.py`):
+- questions: `WORKLOADS`, `KERNELS_FOR`, `probe(gpu)`, `candidates(...)`, `estimate(...)`, `speed_rank(setup)`,
+  `label(setup)`, `explain(...)`, `policy_notes(...)`, `describe_kernel(...)`;
+- for serving: `fill_knobs`, `resolve`, `SLACK_KEYS`, `SLACK_DEFAULTS`;
+- the handoff: `executor(kind)` returns the function that runs a feasible plan of that workload kind, or `None` when
+  the kind is planned only (serve, today); `run_tag(setup)` names the setup in a receipt's run id.
+
+A second backend implements the same functions; generalize into a protocol only then.
 
 ## 5. The plan
 
-`plan(topology, hardware, workload, constraints) -> ExecutionPlan`. It is pure and deterministic: the same inputs
-give byte-identical JSON. It loads no weights and touches no device.
+`plan(topology, hardware, workload, constraints, observations=receipts) -> ExecutionPlan`. The plan is the
+product, not an internal return value: it is rendered, saved (`plan --out`), reviewed, and executed as a file
+(`execute PLAN.json`).
+
+It is pure and deterministic: the same inputs give byte-identical JSON. It loads no weights and touches no device.
+Model facts come from the backend (`describe_model` asks e4b's `describe_moe`); the planner has no topology type of
+its own.
 
 **What a plan contains:**
 - the model identity and topology summary;
@@ -143,12 +184,31 @@ give byte-identical JSON. It loads no weights and touches no device.
 **Three levels of control:**
 - Automatic: `plan MODEL`.
 - Directed: budgets, allowed expert residency, objective `speed` / `min_vram` / `min_ram`.
-- Expert: `--fix FIELD=VALUE` pins any `QLoRASetup` field, and the planner only varies the rest.
+- Expert: `--fix FIELD=VALUE` pins any backend setup field (`QLoRASetup` or `ServeSetup`), and the planner only
+  varies the rest.
 
-## 6. Runtime, observation, provenance
+## 6. Execution, the receipt, and feedback
 
-`execute(plan)` refuses a refused plan, then builds the setup with `prepare_qlora_training` and runs a fixed-shape
-loop (packed alpaca blocks, AdamW or AdamW8bit, clip 1.0). It writes an `execution-receipt/1` with:
+`execute(plan)` (module `execution`) is orchestration. In order, it:
+
+1. refuses a refused plan, with the refusal's reasons;
+2. finds the backend the plan selected, and that backend's executor for the workload kind. Serve plans have none
+   yet: their *Why* carries the server's environment, and `bench/serve_validate.py` starts the server from it;
+3. refuses a plan made for another GPU (`check_here`, by UUID, else by name). Its receipt would name the wrong card,
+   and later plans would learn this card's overheads under that card's name;
+4. calls the executor with the plan;
+5. wraps what comes back into an `execution-receipt/1`, written beside earlier ones.
+
+Nothing is loaded before step 4, and nothing in this module knows how a model runs.
+
+**The experts4bit executor** (`backends/experts4bit_train.py`) has `prepare_qlora_training` build the model from
+exactly the selected setup. Loading, the 4-bit stores, adapters, the fused engines, offload and kernels are e4b's.
+Around it, the executor adds only the measured loop:
+- packed alpaca blocks of fixed shape;
+- AdamW or AdamW8bit, clip 1.0;
+- timing, memory sampling, and the integrity checks.
+
+**The receipt carries:**
 
 - **measured memory:**
   - allocator peak and reserved peak;
@@ -163,11 +223,22 @@ loop (packed alpaca blocks, AdamW or AdamW8bit, clip 1.0). It writes an `executi
 - **engagement:** what the recipe actually enabled (fused modules, the kernel route, rope/rmsnorm flags read from
   env);
 - **comparison:** `measured − estimated`, both numbers present, for the allocator, driver and host views;
-- **provenance:** the git commit and dirty flag of each imported source tree, distribution versions, argv, the
-  plan.
+- **provenance:** the git commit and dirty flag of each imported source tree (taken at process start), distribution
+  versions, argv;
+- **the plan:** the whole `ExecutionPlan` that produced it, so every comparison can be traced to the estimate it
+  checks.
 
-Receipts are also the planner's memory: `--observations DIR` replaces the inferred CUDA-context default with the
-measured value for the same GPU and driver, and notes an earlier measured peak for an identical setup.
+**Receipts are the planner's evidence** (`--observations DIR`, `load_observations`). Each lookup says which receipt
+it used, and with what basis:
+- the CUDA context and host baseline for the same GPU and driver;
+- allocator reserve slack, matched by setup key, model, GPU and workload kind. Where none matches, it is transferred
+  through an anchor model (heuristic);
+- the measured host-to-device bandwidth;
+- for serving, this model's allocator residual and host growth;
+- an earlier measured peak for an identical setup.
+
+A receipt of one workload kind never informs the other: a server's allocation pattern says nothing about a
+trainer's.
 
 (The measured results of the first slice are in section 8.)
 
@@ -180,8 +251,12 @@ measured value for the same GPU and driver, and notes an earlier measured peak f
   until then.
 - Nothing in the planner changes.
 
-**A new backend.** Add `backends/<name>.py` with the five functions above and an executor, list it in
-`BACKENDS`, and give it a `WORKLOADS` tuple. The planner's selection, refusal and rendering are backend-agnostic.
+**A new backend.** Add `backends/<name>.py` with the contract in section 4, including `executor` and `run_tag`.
+List it in `BACKENDS`, and give it a `WORKLOADS` tuple.
+- Selection, refusal, rendering and `execute` are backend-agnostic.
+- The planner still names a few training setup fields: receipt matching for reserve slack, the PCIe-width warning
+  and the "allow host-backed experts" suggestion (SERVING-PRESSURE-TEST lists them). A second backend would match or
+  move them.
 
 **A new kernel** behind e4b is e4b's business: it shows up as a `QLoRASetup.expert_kernel` value with a
 `setup_refusals` rule and a capability probe answered by the kernel package.
@@ -195,7 +270,8 @@ _See `docs/RESULTS.md`._
 **What a rename touches:**
 - the package directory;
 - `pyproject.toml` (name, script);
-- the README title and this repo's name.
+- the README title and this repo's name;
+- the PyPI project (`0.0.1` is reserved under the current name).
 
 **What a rename does not touch:**
 - No serialized format names the project: `execution-plan/1`, `execution-receipt/1`, `estimate-validation/1`.

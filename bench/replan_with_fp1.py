@@ -41,7 +41,7 @@ def main():
     a = ap.parse_args()
     from loggetta import Constraints, Workload, describe_model, plan
     from loggetta.hardware import HardwareProfile
-    from loggetta.runtime import load_observations
+    from loggetta.execution import load_observations
 
     old = load_observations(a.old)
     new = old + load_observations(a.fp1)
