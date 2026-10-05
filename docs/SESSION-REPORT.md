@@ -1,4 +1,4 @@
-# Session report: should the umbrella layer exist, and what is it? (2026-10-04)
+# Session report: should the umbrella layer exist, and what is it? (2026-10-04 to 10-05)
 
 Short answers. Detail is in [ARCHITECTURE.md](ARCHITECTURE.md), [RESULTS.md](RESULTS.md) and
 [SERVING-PRESSURE-TEST.md](SERVING-PRESSURE-TEST.md).
@@ -21,15 +21,21 @@ the kernel route were all added to the packages that own them.
 | | owns | added this session |
 |---|---|---|
 | **grouped-nf4-gemm** | kernels, packed layouts, kernel dispatch, host/NVMe residency primitives, pinned-memory costing | `nf4_route.route_for(capability, *, has_grouped_mm, requested, n_groups)`, the training-route decision as a pure function, with `MIN_CAPABILITY` / `GROUPED_MM_CAPABILITY` as data |
-| **experts4bit-qlora** | model families, loading, adapters, the training/serving runtime, residency integration, what its own mechanisms cost | `describe_moe` (topology from config + meta tree), `QLoRASetup`, `estimate_qlora_footprint` (itemized, derived vs heuristic, including link traffic), `setup_refusals`, `prepare_qlora_training`; `estimate_serve_footprint` / `ServeSetup` / `paged_kv_pool_bytes` (the paged server, e4b#1080); `loader.check_admission` / `admission_refusal`; one routed-top-k alias list |
+| **experts4bit-qlora** | model families, loading, adapters, the training/serving runtime, residency integration, what its own mechanisms cost | `describe_moe` (topology from config + meta tree), `QLoRASetup`, `estimate_qlora_footprint` (itemized, derived vs heuristic, including link traffic), `setup_refusals`, `prepare_qlora_training`; for the paged server `ServeSetup` (+ `to_env`), `estimate_serve_footprint`, `paged_kv_pool_bytes`, `solver_tiers`, `bytes_per_expert`, `min_hot_rows`, prefill staging and the cold-row stack (#1080, #1098, #1115, #1122, #1130, #1139, #1141); `fused_append_unsupported` and the sm_89 decode fix (#1090); `loader.check_admission` / `admission_refusal`; one routed-top-k alias list |
 | **planner layer** (this repo) | hardware inventory with provenance; budgets, headroom and runtime overheads (learned from receipts); candidate ordering by objective with cited evidence; refusal and computed suggestions; plan and receipt formats; execution harness; CLI | everything here |
 
 ## Interfaces between the layers (the complete list)
 
 - **kernel → runtime:** `route_for(...) -> (route | None, reason)`.
-- **runtime → planner:** `describe_moe`, `setup_refusals`, `estimate_qlora_footprint`, `prepare_qlora_training`.
-- **inside the planner:** one backend module exposing `probe`, `candidates`, `policy_notes`, `estimate`,
-  `speed_rank`, `describe_kernel` and an executor. It is a plain tuple, not a plugin registry.
+- **runtime → planner:**
+  - training: `describe_moe`, `setup_refusals`, `estimate_qlora_footprint`, `prepare_qlora_training`;
+  - serving: `ServeSetup` / `to_env`, `estimate_serve_footprint`, `min_hot_rows`, and `fused_append_unsupported`
+    (where decode graphs can run).
+- **inside the planner:** one backend module, a plain tuple rather than a plugin registry, exposing:
+  - `probe`, `candidates`, `estimate`, `speed_rank`, `label`, `explain`, `policy_notes`, `describe_kernel` and an
+    executor;
+  - for serving, `fill_knobs` (fields the planner sizes to a budget), `resolve` (fields left to the mechanism),
+    `SLACK_KEYS` and `KERNELS_FOR`.
 
 ## Dependency direction
 
@@ -50,6 +56,16 @@ directly; nothing prevents it.
   - topology, recipe, admission and top-k changes, with tests;
   - companions: CHANGELOG, capabilities, README door table, llms bundle;
   - `train.py` untouched.
+- **experts4bit-qlora, serving** (all merged except #1141, on auto-merge). The estimate:
+  - #1080 serve estimate;
+  - #1098 the prefill graph's pool named;
+  - #1115 the solver's tiers and the hybrid tier's host buffers;
+  - #1122 exact bytes per expert;
+  - #1130 `min_hot_rows` + refusal;
+  - #1139 the cold-row stack;
+  - #1141 prefill staging.
+
+  One bug fix: #1090, eager decode below sm_89 instead of a crash in Triton's compiler.
 - **planner** (private `pjordanandrsn/loggetta`): new.
 
 ## What works now
@@ -67,6 +83,11 @@ python -m loggetta train <model> ...  -> plan, then execute, then write a receip
   - Granite-4.0-h-tiny (Mamba hybrid).
 - **Plan-only, ten families** with zero per-family planner code. The sweep exposed four real gaps, fixed at the
   owning layer.
+- **Serving:** `plan <model> --workload serve --context T --concurrency N`.
+  - All-VRAM when it fits, else the solver's VRAM/DRAM/NVMe tiers, sized to the budgets.
+  - `hot_rows` is planned, and the plan's "Why" carries the server's environment.
+  - `bench/serve_validate.py` builds `serve_paged` with exactly that environment and writes a receipt.
+  - Serve plans are not executed by the planner itself.
 
 ## What was measured (see RESULTS.md)
 
@@ -80,6 +101,15 @@ python -m loggetta train <model> ...  -> plan, then execute, then write a receip
   driver-view error from +1.06 to +0.26 GiB.
 - **Transfer lower bound** ≥1.16 s/step against 2.79–3.13 s measured: it holds.
 - **Fused vs reference loop** on this card: 3.1×. Host-offload vs resident: about 1.3×.
+- **Serving (RESULTS 6–6c):**
+  - The serve estimate is 0.7–0.9% under P109's Qwen3-30B allocator peaks on an RTX 5090.
+  - A planned tiered OLMoE serve on the A2000 matched the server's own split (272 / 421 / 331 experts), with the
+    allocator at 2.052 planned against 2.051 measured.
+  - The leftover ~0.18 GiB was attributed by allocator-history replay to prefill staging and the cold-row stack, now
+    both priced.
+  - With two 4,000-token prompts, the estimate (5.420 GiB, 0.56 GiB of it staging) sits 6 MiB above the measured
+    peak.
+  - Serving slack is 0.06–1.5% at all-VRAM and 8–15% under the solver, against training's 8–39%.
 
 ## What remains speculative
 
@@ -87,8 +117,11 @@ python -m loggetta train <model> ...  -> plan, then execute, then write a receip
 - **The activation term is heuristic.**
 - **Reserve slack** is measured at 30B on an RTX 5090 (FP1). On other GPUs it is transferred through an anchor ratio, stated as heuristic.
 - **Above 8B, only Qwen3-30B-A3B was run** (FP1, RTX 5090, $0.85); the rest were planned, not run.
-- **Serving is planned for one placement only** (all-VRAM, context × concurrency, e4b#1080). The KV pool is the
-  server's own arithmetic; no serve receipt has checked the total yet. Tiered placements are refused in words.
+- **Serving assumes uniform routing**, as the server does (no profile reaches `solve_placement`). A measured hot
+  set, int4 expert stores and decode speed are not planned. The tiered placement is checked on one model and one
+  card.
+- **Ceilings, not expectations.** Prefill staging and the cold-row stack are priced at their worst case, so short
+  prompts leave margin unused.
 - **Multi-GPU is a list in the data model,** nothing more.
 
 ## Architectural risks
@@ -105,6 +138,9 @@ python -m loggetta train <model> ...  -> plan, then execute, then write a receip
    it ran in.
 4. **Shared hardware.** The A2000 and the host are shared with other sessions. "Free now" is a moving budget;
    plans state it and warn, but they cannot reserve it.
+5. **Server defaults the planner overrides.** `E4B_PAGED_HOT_ROWS=64` is too few for Qwen3-30B once a layer is on
+   NVMe and far too many for Mixtral. `E4B_PAGED_PREFILL_GRAPH=auto` holds an unpriced pool. Plans set both, but a
+   hand-started server still gets the defaults.
 
 ## Could the project be renamed tomorrow?
 
@@ -128,8 +164,12 @@ repository name.
 6. **It is useful already.** It says what fits on this card, why, and what to change. It caught a would-be crash
    (MLA attention in `add_attention_lora`) and a silent no-op (out_proj-only attention, before #1048 taught the
    detector). After #1048 it picked up LFM2's attention with no planner change.
-7. **Serving can grow into it without a rewrite.** Yes: the all-VRAM placement was added as a second workload
-   kind with no planner rewrite (backend candidates, estimate, label and explanation; a serve suggestion search).
+7. **Serving can grow into it without a rewrite.** Yes. Serving was added as a second workload kind, then
+   tiered:
+   - the planner gained generic hooks (fill knobs, resolve, slack keys, learned serve overheads);
+   - all mechanism stayed in e4b;
+   - running it found a real e4b crash on Ampere cards (#1090).
+
    The pressure-test doc names what is still missing.
 8. **Families can grow into it without special cases.** Yes, demonstrated on ten with no family branches.
 9. **Performance claims are measured and reproducible.** Every number comes from a receipt with commits.

@@ -322,8 +322,11 @@ lengths. Both causes are now priced in e4b at their ceilings:
 - the cold-row stack (#1139), at `min_hot_rows ×` row bytes;
 - prefill staging (#1141), at `(max_tokens_per_seq + chunk_tokens) ×` bf16 K/V bytes per token.
 
-The staging ceiling matters for long prompts: a 4,000-token OLMoE prompt stages ~512 MiB, which no earlier plan
-priced. The planner's learned residual stays as a safety line, recomputed against today's estimate, so it shrinks
+The staging ceiling matters for long prompts, and the long-prompt check bears it out
+(`receipt longprompt-olmoe-2x4096-p4000`: OLMoE, all-VRAM, two 4,000-token prompts):
+- the allocator estimate is **5.420 GiB, with 0.56 GiB of staging**, against a **5.414 GiB** measured peak;
+- without the staging item the estimate would have been 4.858 GiB, 10% under;
+- serving slack was 2.1%. The planner's learned residual stays as a safety line, recomputed against today's estimate, so it shrinks
 to the leftover workspace.
 
 ## 6c. Serving across the ten families (plan-only)
