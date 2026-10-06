@@ -281,3 +281,25 @@ _See `docs/RESULTS.md`._
 
 `tests/test_renameable.py` fails if a code file spells the package name, a schema carries it, or an env var
 appears.
+
+
+## User data and adapter artifacts (0.2.0)
+
+Optional `Workload.data` and `Workload.learning_rate` fields extend `execution-plan/1`; old plans load with their
+original Alpaca demonstration and learning-rate defaults, and serializing those defaults keeps the old wire shape.
+Older releases cannot interpret new non-default fields and should be upgraded before executing a new plan.
+
+Dataset preparation is separate from pure planning. Execution validates and packs the requested token budget into
+a temporary memory-mapped file before loading model weights. The runtime-specific executor calls the existing
+QLoRA recipe, trains its adapters, then exports them. `execution.execute` chooses the artifact destination and
+records returned artifact metadata in the run report; it does not know model tensor layouts.
+
+The native adapter serializer lives in `backends/experts4bit_adapters.py`. The runtime's structural LoRA discovery
+identifies trainable adapter tensors and the runtime's recipe rebuilds the recorded setup. Serialization uses
+safetensors plus a manifest and tokenizer files. No full model state_dict, frozen base weights, optimizer state,
+or private training-example text is included. The public `load_adapter` function delegates to that backend helper.
+It is a native artifact, not a PEFT conversion or an exact training-resume checkpoint.
+
+Exports never overwrite an existing directory. Export errors mark the report `SAVE_FAILED`; integrity failures
+suppress adapter export. The data record identifies the actual token stream and explicitly labels full-sequence
+loss, concatenated packing, shuffling and repetition. GPU throughput claims still require measured GPU runs.

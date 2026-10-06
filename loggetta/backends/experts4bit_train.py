@@ -77,41 +77,84 @@ def link_h2d(n_bytes: int = 256 << 20, reps: int = 5) -> dict:
     return {"link_h2d_gbps": st.median(rates), "link_h2d_probe": f"{n_bytes >> 20} MiB pinned x{reps}, median"}
 
 
-def run(plan, *, seed: int = 0, warmup: int = 2, log=print) -> dict:
-    """Build the plan's setup with ``prepare_qlora_training`` and train it through :func:`train_loop`."""
-    import torch
+def run(plan, *, seed: int = 0, warmup: int = 2, log=print, adapter_dir: str | None = None) -> dict:
+    """Prepare user data, build the selected setup, train, then export reusable native adapters.
 
+    Data validation/tokenization precedes model loading. Adapter export happens after training measurement, so
+    save-time allocations do not change the meaning of historical training peaks and step timings.
+    """
+    import torch
+    from transformers import AutoTokenizer
     from experts4bit_qlora.recipe import QLoRASetup, prepare_qlora_training
 
+    from ..data import TrainingData, prepare_data
     from ..measure import DriverMemorySampler, proc_status
+    from .experts4bit_adapters import save_adapter, validate_target
 
-    torch.manual_seed(seed)
-    torch.cuda.set_device(plan.constraints.device)
-    torch.zeros(1, device="cuda")                       # CUDA context up before the baseline reading
-    meas = {"host_baseline_bytes": proc_status().get("VmRSS"), **link_h2d()}
-    with DriverMemorySampler() as smi:
-        t0 = time.time()
-        prep = prepare_qlora_training(plan.model["model"], QLoRASetup(**plan.selected.setup), device="cuda",
-                                      revision=plan.model.get("revision"))
-        meas["load_seconds"] = time.time() - t0
-        meas["load_device_peak_bytes"] = torch.cuda.max_memory_allocated()
-        meas["host_anon_after_load_bytes"] = proc_status().get("RssAnon")
-        out = train_loop(prep.model, prep.trainable, plan.model["model"], plan.workload, smi, meas,
-                         revision=plan.model.get("revision"), seed=seed, warmup=warmup, log=log)
-    out["engaged"] = prep.report
-    return out
+    target = validate_target(adapter_dir) if adapter_dir is not None else None
+    spec = TrainingData.from_dict(plan.workload.data)
+    if plan.workload.data is None:
+        log("No dataset supplied: using the documented Alpaca demonstration, repeated as needed.", flush=True)
+    tok = AutoTokenizer.from_pretrained(plan.model["model"], revision=plan.model.get("revision"))
+    t_data = time.perf_counter()
+    n_blocks = plan.workload.steps * plan.workload.grad_accum * plan.workload.micro_batch
+    with prepare_data(tok, n_blocks, plan.workload.seq_len, spec, seed=seed,
+                      cache_dir=str(target.parent) if target is not None else None) as prepared:
+        data_seconds = time.perf_counter() - t_data
+        log(f"Data ready: {prepared.info['tokens']} tokens from {prepared.info['examples_used']} rows; "
+            f"{prepared.info['passes']} pass(es); full-sequence loss.", flush=True)
+        torch.manual_seed(seed)
+        torch.cuda.set_device(plan.constraints.device)
+        torch.zeros(1, device="cuda")
+        meas = {"host_baseline_bytes": proc_status().get("VmRSS"), **link_h2d(),
+                "data_prepare_seconds": data_seconds, "data_token_cache_bytes": prepared.info["token_cache_bytes"]}
+        with DriverMemorySampler() as smi:
+            t0 = time.time()
+            prep = prepare_qlora_training(plan.model["model"], QLoRASetup(**plan.selected.setup), device="cuda",
+                                          revision=plan.model.get("revision"))
+            meas["load_seconds"] = time.time() - t0
+            meas["load_device_peak_bytes"] = torch.cuda.max_memory_allocated()
+            meas["host_anon_after_load_bytes"] = proc_status().get("RssAnon")
+            out = train_loop(prep.model, prep.trainable, plan.model["model"], plan.workload, smi, meas,
+                             revision=plan.model.get("revision"), seed=seed, warmup=warmup, log=log,
+                             prepared_data=prepared)
+        out["engaged"] = prep.report
+        if target is not None:
+            out["artifacts"] = {}
+            if out["status"] != "OK":
+                out["artifact_error"] = "integrity checks failed; no reusable adapter was exported"
+            else:
+                save_start = time.perf_counter()
+                try:
+                    out["artifacts"]["adapter"] = save_adapter(prep.model, tok, target, plan,
+                                                                data=out["data"], report=prep.report, seed=seed)
+                except (OSError, ValueError, RuntimeError) as exc:
+                    out["status"] = "SAVE_FAILED"
+                    out["artifact_error"] = f"{type(exc).__name__}: {exc}"
+                out["measured"]["adapter_save_seconds"] = time.perf_counter() - save_start
+        return out
 
 
-def train_loop(model, trainable, model_id, w, smi, meas, *, revision=None, seed=0, warmup=2, log=print) -> dict:
-    """The measured loop, shared by every arm that must be comparable: fixed-shape packed blocks, AdamW 2e-4,
+def train_loop(model, trainable, model_id, w, smi, meas, *, revision=None, seed=0, warmup=2, log=print,
+               prepared_data=None, device="cuda") -> dict:
+    """The measured loop, shared by every arm that must be comparable: fixed-shape packed blocks, configurable AdamW learning rate,
     gradient accumulation, clip 1.0. Fills ``meas`` and returns the correctness record."""
     import torch
     from transformers import AutoTokenizer
 
     from ..measure import proc_status
 
-    tok = AutoTokenizer.from_pretrained(model_id, revision=revision)
-    blocks, data_info = packed_blocks(tok, w.steps * w.grad_accum * w.micro_batch, w.seq_len, seed=seed)
+    if prepared_data is None:
+        # Legacy direct benchmark arms retain the original demo data path. User execution always supplies
+        # prevalidated data from run(), including for the demo, so malformed data fails before loading weights.
+        if w.data is not None:
+            raise ValueError("custom data must be prepared before the model loads")
+        tok = AutoTokenizer.from_pretrained(model_id, revision=revision)
+        blocks, data_info = packed_blocks(tok, w.steps * w.grad_accum * w.micro_batch, w.seq_len, seed=seed)
+    else:
+        blocks, data_info = prepared_data.blocks, prepared_data.info
+    is_cuda = torch.device(device).type == "cuda"
+    sync = torch.cuda.synchronize if is_cuda else lambda: None
     digest_before = _expert_digest(model)
     b_norm = lambda: sum(float(p.detach().float().norm()) for n, p in model.named_parameters()  # noqa: E731
                          if p.requires_grad and "lora_B" in n)
@@ -120,40 +163,43 @@ def train_loop(model, trainable, model_id, w, smi, meas, *, revision=None, seed=
     if w.optimizer == "adamw_8bit":
         import bitsandbytes as bnb
 
-        opt = bnb.optim.AdamW8bit(trainable, lr=2e-4)
+        opt = bnb.optim.AdamW8bit(trainable, lr=w.learning_rate)
     else:
-        opt = torch.optim.AdamW(trainable, lr=2e-4)
+        opt = torch.optim.AdamW(trainable, lr=w.learning_rate)
     model.train()
-    torch.cuda.synchronize()
-    torch.cuda.reset_peak_memory_stats()
+    sync()
+    if is_cuda:
+        torch.cuda.reset_peak_memory_stats()
     smi_floor = smi.peak
     losses, step_s, k = [], [], 0
     for step in range(w.steps):
-        torch.cuda.synchronize()
+        sync()
         ts = time.time()
         opt.zero_grad(set_to_none=True)
         acc = 0.0
         for _ in range(w.grad_accum):
-            ids = torch.tensor(blocks[k:k + w.micro_batch], device="cuda")
+            ids = torch.tensor(blocks[k:k + w.micro_batch], dtype=torch.long, device=device)
             k += w.micro_batch
             loss = model(input_ids=ids, labels=ids).loss
+            if not torch.isfinite(loss):
+                raise ValueError(f"non-finite loss at step {step + 1}; training stopped before an optimizer update")
             (loss / w.grad_accum).backward()
             acc += float(loss.detach()) / w.grad_accum
-        torch.nn.utils.clip_grad_norm_(trainable, 1.0)
+        torch.nn.utils.clip_grad_norm_(trainable, 1.0, error_if_nonfinite=True)
         opt.step()
-        torch.cuda.synchronize()
+        sync()
         step_s.append(time.time() - ts)
         losses.append(acc)
         if step == 0 or (step + 1) % 5 == 0 or step + 1 == w.steps:
             log(f"  step {step + 1}/{w.steps}  loss {acc:.4f}  {step_s[-1]:.2f}s  "
-                f"peak {torch.cuda.max_memory_allocated() / GiB:.2f} GiB", flush=True)
-    meas.update(device_peak_bytes=torch.cuda.max_memory_allocated(),
-                device_reserved_peak_bytes=torch.cuda.max_memory_reserved())
+                f"peak {(torch.cuda.max_memory_allocated() / GiB if is_cuda else 0):.2f} GiB", flush=True)
+    meas.update(device_peak_bytes=torch.cuda.max_memory_allocated() if is_cuda else None,
+                device_reserved_peak_bytes=torch.cuda.max_memory_reserved() if is_cuda else None)
     time.sleep(2 * smi.interval)                          # let the sampler see the end state
     meas["driver_process_peak_bytes"] = smi.peak or None
     meas["driver_samples"] = smi.samples
     meas["driver_peak_before_training_bytes"] = smi_floor or None
-    if smi.peak:
+    if smi.peak and is_cuda:
         meas["cuda_context_bytes"] = smi.peak - meas["device_reserved_peak_bytes"]
     meas["host_peak_bytes"] = proc_status().get("VmHWM")
     meas["host_anon_peak_bytes"] = smi.anon_peak or None
@@ -163,7 +209,7 @@ def train_loop(model, trainable, model_id, w, smi, meas, *, revision=None, seed=
     timed = step_s[warmup:] or step_s
     meas.update(step_seconds=step_s, s_per_step_median=statistics.median(timed),
                 tokens_per_s=w.tokens_per_microbatch * w.grad_accum / statistics.median(timed),
-                timed_steps=f"{warmup + 1}..{w.steps}")
+                timed_steps=f"{warmup + 1 if len(step_s) > warmup else 1}..{w.steps}")
     digest_after = _expert_digest(model)
     b_norm_after = b_norm()
     third = max(1, len(losses) // 3)
@@ -175,6 +221,7 @@ def train_loop(model, trainable, model_id, w, smi, meas, *, revision=None, seed=
         "loss_decreased": statistics.mean(losses[-third:]) < statistics.mean(losses[:third]),
         "frozen_expert_bytes_unchanged": digest_before == digest_after,
         "frozen_expert_digest": digest_after,
+        "frozen_expert_checked_stacks": list(digest_before),
         "adapter_B_norm_before": b_norm_before,
         "adapter_B_norm_after": b_norm_after,
         "adapters_moved": b_norm_after > b_norm_before,

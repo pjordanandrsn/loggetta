@@ -16,6 +16,8 @@ from __future__ import annotations
 import json
 import os
 import time
+import uuid
+from pathlib import Path
 
 from .measure import changed_since, provenance
 from .plan import ExecutionPlan
@@ -90,7 +92,7 @@ def compare(plan: ExecutionPlan, measured: dict) -> dict:
 
 
 def execute(plan: ExecutionPlan, *, out_dir: str | None = None, seed: int = 0, log=print,
-            prov: dict | None = None, hardware=None) -> dict:
+            prov: dict | None = None, hardware=None, adapter_dir: str | None = None) -> dict:
     """Run ``plan`` through its backend and return the receipt (written to ``out_dir`` when given).
 
     Raises ``PlanNotExecutable``, before anything is loaded, for a refused plan (with the refusal's reasons), a
@@ -105,11 +107,12 @@ def execute(plan: ExecutionPlan, *, out_dir: str | None = None, seed: int = 0, l
     check_here(plan, hardware)
     prov = prov or {**provenance(), "taken": "at execute(), after import"}
     t0 = time.time()
-    result = run(plan, seed=seed, log=log)
     model_short = plan.model["model"].rstrip("/").split("/")[-1]
     s = plan.selected.setup
     run_id = (f"{model_short}-{backend.run_tag(s)}"
-              f"-t{plan.workload.tokens_per_microbatch}-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}")
+              f"-t{plan.workload.tokens_per_microbatch}-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{uuid.uuid4().hex[:8]}")
+    target = str(Path(adapter_dir) if adapter_dir is not None else Path(out_dir or "runs") / run_id / "adapter")
+    result = run(plan, seed=seed, log=log, adapter_dir=target)
     receipt = {
         "schema": RECEIPT_SCHEMA, "run_id": run_id, "status": result["status"],
         "model": plan.model, "workload": {**plan.workload.__dict__,
@@ -120,6 +123,10 @@ def execute(plan: ExecutionPlan, *, out_dir: str | None = None, seed: int = 0, l
         "provenance": {**prov, "runtime_seconds": time.time() - t0, "seed": seed,
                        "changed_during_run": changed_since(prov)},
     }
+    if "artifacts" in result:
+        receipt["artifacts"] = result["artifacts"]
+    if "artifact_error" in result:
+        receipt["artifact_error"] = result["artifact_error"]
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
         with open(os.path.join(out_dir, f"{run_id}.json"), "w") as f:
@@ -161,4 +168,9 @@ def summarize(receipt: dict) -> str:
         res = v.get("residual")
         rows.append(f"    {k:24s} {g(v['estimated']):>10s} {g(v['measured']):>10s} "
                     f"{('n/a' if res is None else f'{res / GiB:+.2f} GiB'):>10s}")
+    adapter = receipt.get("artifacts", {}).get("adapter")
+    if adapter:
+        rows.append(f"  adapter   {adapter['path']} ({adapter['tensor_count']} tensors; native runtime format)")
+    if receipt.get("artifact_error"):
+        rows.append(f"  adapter save FAILED: {receipt['artifact_error']}")
     return "\n".join(rows)

@@ -13,6 +13,7 @@ Planning is pure policy and loads no weights; ``execute`` only dispatches to the
 
 Serialized schemas remain implementation-neutral: ``execution-plan/1`` and ``execution-receipt/1``.
 """
+from .data import TrainingData
 from .execution import PlanNotExecutable, execute, load_observations
 from .hardware import HardwareProfile, probe
 from .model import describe_model
@@ -21,4 +22,14 @@ from .planner import plan
 
 __all__ = ["HardwareProfile", "probe", "describe_model", "Constraints", "ExecutionPlan", "Workload", "plan",
            "execute", "load_observations", "PlanNotExecutable"]
-__version__ = "0.1.3"
+__version__ = "0.2.0"
+
+
+def load_adapter(directory, *, device="cuda"):
+    """Rebuild the recorded runtime setup and return a model with the saved adapters loaded."""
+    from .backends.experts4bit_adapters import load_adapter as load
+
+    return load(directory, device=device)
+
+
+__all__ += ["TrainingData", "load_adapter"]
