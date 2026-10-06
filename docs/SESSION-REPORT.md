@@ -131,6 +131,13 @@ python -m loggetta train <model> ...  -> plan and execute in one step
     - int4 attention +585.2 MiB, priced +585.0;
     - the prefill graph at int4 +571 MiB, as at NF4, not SC2b's 3.3 GiB.
     - With the receipts on file, the int4 plans land 0.19 GiB above the driver peak.
+  - **SV3 and the A2000 family runs (RESULTS 6c update, 6g; $0.51 rented, e4b#1224/#1232):**
+    - Qwen3.6's linear-attention state pool matched its price to the byte.
+    - Six families are now served beside the estimate (+0.8–1.8%). gpt-oss's plan was 0.54 GiB under until it had a
+      receipt of its own.
+    - Serving them found server bugs, each fixed: arenas of models with leading dense layers (#1228); MLA refused
+      before loading (#1233); buckets above the sequences fail to capture (#1234); the DRAM tier's prefill transient
+      priced (#1229).
   - Serving slack is 0.06–1.5% at all-VRAM and 8–15% under the solver, against training's 8–39%.
 
 ## What remains speculative

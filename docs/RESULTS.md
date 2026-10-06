@@ -393,6 +393,16 @@ planned feasible above; none could be served as planned.
   buckets up to `max_seqs` (`[1]` for one user).
 - Not checked by the planner: whether a model's checkpoint layout can be baked at all. That is the bake's knowledge,
   not the topology's.
+- **ERNIE-4.5-21B-A3B: two server bugs, then a fourth served family** (`evidence/2026-10-06-a2000-family-serve/`).
+  ERNIE's layer 0 is dense, and DeepSeek-V2's first layer is too.
+  - The arena keyed rows by checkpoint layer (1–27) while the server asked by MoE ordinal (`KeyError: (0, 0)`).
+  - The KV pool was sized by MoE layers (27), not decoder layers (28).
+  - Both are fixed in experts4bit-qlora#1228. The planned tiered serve (736 rows in VRAM, 992 in DRAM) then ran.
+  - It peaked 0.33 GiB over the estimate. An allocator-history replay (`ernie-residual-attribution.txt`) put
+    457.5 MiB in the DRAM tier's prefill on the GPU, which #1229 now prices; it lands 117 MiB over.
+- **DeepSeek-V2-Lite is refused.** Its multi-head latent attention hands the pool keys of 192 and values of 128
+  against a 64-wide pool. The first prompt failed after the whole model had loaded. #1233 refuses it from the config,
+  before loading, and in the estimate.
 
 ## 6d. SV1: the graphs, measured on a rented RTX 5090
 
@@ -511,6 +521,35 @@ All values GiB. Plans use FP1's RTX 5090 profile (`bench/replan_serve.py`; "befo
   back, which is why they end below NF4. Trimming after every build is a separate e4b change.
 - **The host plan stays conservative** (10.3 GiB planned against ~6.5 GiB measured at the repack). The repack price is
   a ceiling, and the planner still sums it with serving's growth, though the two do not coincide.
+
+## 6g. SV3: the hybrid state pool and gpt-oss on a rented RTX 5090
+
+Lane SV3 is experts4bit-qlora#1224 ($10 cap, within the owner's $50 approval), registered in #1225, read in #1232.
+- **The box:** `sv3-5090-1`, one RTX 5090, **$0.51**, teardown proven, announced on the bus before launch.
+- **The arenas:** baked on the box through the loader.
+
+| arm | estimate | allocator peak | driver peak | plan total before SV3 | after |
+|---|---|---|---|---|---|
+| Qwen3.6, 16 seqs, eager | 23.217 | 23.408 | 24.082 | 24.183 | 24.239 |
+| Qwen3.6, 16 seqs, graphs | 24.187 | 24.423 | 25.568 | 25.614 | 25.593 |
+| Qwen3.6, 1 seq, bucket 1 | 21.720 | 21.948 | 22.732 | 23.077 | 22.818 |
+| gpt-oss-20b, 16 seqs, graphs | 15.391 | 15.673 | 17.109 | **16.567** | 17.162 |
+
+All values GiB.
+
+- **The linear-attention state pool matched its price to the byte** in all four Qwen3.6 arms: 16, 32, 17 and 2
+  slots, 30 layers. That is #1219's per-slot arithmetic on the full model.
+- **The estimate held:** every peak sat 0.8–1.8% over its estimate, inside ±5%. That is the allocator residual
+  earlier runs measured, and the planner learns it.
+- **Six families now served beside the estimate:** OLMoE, Qwen3-30B, granite-3.1, ERNIE-4.5, Qwen3.6 and
+  gpt-oss-20b.
+- **gpt-oss-20b was under-planned until now.** Before SV3 its plan was **0.54 GiB under** the driver peak: its 4.9%
+  slack exceeds what it borrowed from other models' receipts. With its own receipt, +0.05 GiB.
+- **The bucket cap's reading is an ALARM, and a finding.**
+  - With one sequence and the default buckets, buckets 2–16 failed to capture on Qwen3.6, so that arm is not used.
+    `bench/import_sv3.py` marks it `ALARM`, and the planner does not learn from it.
+  - The server now captures only the buckets its sequences can use (experts4bit-qlora#1234). The planner defers to
+    that rule.
 
 ## 7. Not measured, said plainly
 

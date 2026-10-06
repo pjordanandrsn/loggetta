@@ -301,7 +301,11 @@ def _serve_candidates(workload, constraints, status):
         return []
     base = {**ServeSetup().to_dict(), "max_seqs": workload.concurrency or 1,
             "max_tokens_per_seq": workload.context_len or 4096}
-    base["buckets"] = usable_buckets(base["max_seqs"], base["buckets"])
+    try:                                    # the server's own rule (experts4bit-qlora#1234) where it has one
+        from experts4bit_qlora.serve_recipe import usable_buckets as _usable
+    except ImportError:
+        _usable = usable_buckets
+    base["buckets"] = _usable(base["max_seqs"], base["buckets"])
     if "prefill_graph" in base:
         base["prefill_graph"] = "0"                # its pool is not priced: a plan bounds memory by what it priced
     residency = constraints.expert_residency or ("device", "host")

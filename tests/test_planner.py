@@ -535,4 +535,12 @@ def test_serve_plans_cap_the_decode_buckets_at_the_sequences():
     assert one.selected.setup["buckets"] == (1,) and any("buckets [1]" in r for r in one.reasons)
     fixed = _serve(topo, 4096, 1, Constraints(fixed={"buckets": (1, 2, 4, 8, 16)}), cap=(12, 0))
     assert tuple(fixed.selected.setup["buckets"]) == (1, 2, 4, 8, 16)
-    assert one.selected.device_bytes < fixed.selected.device_bytes                 # fewer scratch slots
+    try:                                    # experts4bit-qlora#1234: the server drops unusable buckets itself
+        from experts4bit_qlora.serve_recipe import usable_buckets  # noqa: F401
+        server_clamps = True
+    except ImportError:
+        server_clamps = False
+    if server_clamps:
+        assert one.selected.device_bytes == fixed.selected.device_bytes            # priced as the server captures
+    else:
+        assert one.selected.device_bytes < fixed.selected.device_bytes             # fewer scratch slots

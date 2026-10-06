@@ -1,0 +1,4 @@
+Selected  backend experts4bit: serve solver, fp8 paged KV, 4 seqs x 4096 tokens, tiers VRAM 3.96 / DRAM 7.54 GiB
+  placement: solver
+    raise ValueError(f"expected [T, {H}, {D}] at layer {layer}, got {tuple(k.shape)} / {tuple(v.shape)}")
+ValueError: expected [T, 16, 64] at layer 0, got (1024, 16, 192) / (1024, 16, 128)
