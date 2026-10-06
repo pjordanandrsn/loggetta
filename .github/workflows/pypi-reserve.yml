@@ -30,9 +30,15 @@ jobs:
           python -m venv /tmp/loggetta-release
           WHEEL=$(echo dist/*.whl)
           /tmp/loggetta-release/bin/pip install "$WHEEL"
+          # Import the installed wheel, never the source tree left in the working directory.
+          cd "$(mktemp -d)"
           /tmp/loggetta-release/bin/python - <<'PY2'
           from importlib.metadata import version
           import loggetta
+          from loggetta import TrainingData, load_adapter
+          from loggetta.backends.experts4bit_adapters import read_manifest
+          assert callable(load_adapter) and callable(read_manifest)
+          assert TrainingData(source="org/data").repeat is False
           assert loggetta.__version__ == version("loggetta")
           print("loggetta", loggetta.__version__)
           PY2

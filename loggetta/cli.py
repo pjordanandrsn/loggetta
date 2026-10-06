@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 import sys
 
 GiB = 1 << 30
@@ -28,6 +29,19 @@ def _parse_fixed(items):
 def _common(p):
     p.add_argument("model", help="hub id or local snapshot directory")
     p.add_argument("--revision")
+    p.add_argument("--dataset", help="Hub dataset ID or local JSON/JSONL/CSV/Parquet/TXT file")
+    p.add_argument("--dataset-config", help="Hub dataset configuration")
+    p.add_argument("--dataset-revision", help="Hub dataset revision; use a commit SHA for reproducibility")
+    p.add_argument("--split", default="train", help="dataset split (default: train)")
+    p.add_argument("--format", choices=("auto", "text", "alpaca", "chat"), default="auto")
+    p.add_argument("--text-field", default="text")
+    p.add_argument("--messages-field", default="messages")
+    p.add_argument("--instruction-field", default="instruction")
+    p.add_argument("--input-field", default="input")
+    p.add_argument("--output-field", default="output")
+    p.add_argument("--shuffle-data", action="store_true", help="shuffle rows deterministically with --seed")
+    p.add_argument("--repeat-data", action="store_true", help="explicitly allow repeating a short dataset")
+    p.add_argument("--learning-rate", type=float, default=2e-4)
     p.add_argument("--workload", default="train", choices=("train", "serve"))
     p.add_argument("--seq", type=int, default=512)
     p.add_argument("--micro-batch", type=int, default=1)
@@ -64,9 +78,25 @@ def _plan(a):
             hw = HardwareProfile.from_dict(json.load(f), origin=a.hardware)
     else:
         hw = probe()
+    from .data import TrainingData
+
+    data = None
+    if a.dataset:
+        source = a.dataset
+        if Path(source).expanduser().exists() or source.startswith((".", "~", "/")):
+            source = str(Path(source).expanduser().absolute())
+        data = TrainingData(source=source, format=a.format, split=a.split, config=a.dataset_config,
+                            revision=a.dataset_revision, text_field=a.text_field, messages_field=a.messages_field,
+                            instruction_field=a.instruction_field, input_field=a.input_field, output_field=a.output_field,
+                            shuffle=a.shuffle_data, repeat=a.repeat_data).to_dict()
+    elif (a.dataset_config or a.dataset_revision or a.format != "auto" or a.split != "train"
+          or a.shuffle_data or a.repeat_data or a.text_field != "text" or a.messages_field != "messages"
+          or a.instruction_field != "instruction" or a.input_field != "input" or a.output_field != "output"):
+        raise ValueError("dataset options require --dataset; omit them all for the Alpaca demonstration")
     w = Workload(kind=a.workload, seq_len=a.seq, micro_batch=a.micro_batch, grad_accum=a.grad_accum, steps=a.steps,
                  optimizer=a.optimizer, context_len=a.context or (4096 if a.workload == "serve" else None),
-                 concurrency=a.concurrency or (1 if a.workload == "serve" else None))
+                 concurrency=a.concurrency or (1 if a.workload == "serve" else None),
+                 data=data, learning_rate=a.learning_rate)
     c = Constraints(device=a.device, vram_budget=_gib(a.vram), ram_budget=_gib(a.ram), headroom=_gib(a.headroom),
                     expert_residency=None if a.experts == "any" else (a.experts,), fixed=_parse_fixed(a.fix),
                     objective=a.objective, target_s_per_step=a.target_s_per_step)
@@ -92,10 +122,12 @@ def main(argv=None) -> int:
     pe.add_argument("plan", help="a plan written by plan --out")
     pe.add_argument("--out", default="receipts", help="receipt directory")
     pe.add_argument("--seed", type=int, default=0)
+    pe.add_argument("--adapter-out", help="fresh adapter directory (default: OUT/RUN_ID/adapter)")
     pt = sub.add_parser("train", help="plan, then execute a feasible plan through its backend and write a receipt")
     _common(pt)
     pt.add_argument("--out", default="receipts", help="receipt directory")
     pt.add_argument("--seed", type=int, default=0)
+    pt.add_argument("--adapter-out", help="fresh adapter directory (default: OUT/RUN_ID/adapter)")
     a = ap.parse_args(argv)
 
     if a.cmd == "inspect":
@@ -119,7 +151,11 @@ def main(argv=None) -> int:
         with open(a.plan) as f:
             p = ExecutionPlan.from_dict(json.load(f))
     else:
-        p = _plan(a)
+        try:
+            p = _plan(a)
+        except ValueError as e:
+            print(f"invalid plan: {e}", file=sys.stderr)
+            return 2
     if a.cmd == "plan":
         if a.out:
             with open(a.out, "w") as f:
@@ -134,10 +170,13 @@ def main(argv=None) -> int:
 
     print(f"\nExecuting the selected plan through backend {p.selected.backend}...")
     try:
-        receipt = execute(p, out_dir=a.out, seed=a.seed, prov=prov)
+        receipt = execute(p, out_dir=a.out, adapter_dir=a.adapter_out, seed=a.seed, prov=prov)
     except PlanNotExecutable as e:
         print(f"not executable: {e}", file=sys.stderr)
         return 2
+    except (ValueError, OSError) as e:
+        print(f"execution failed: {e}", file=sys.stderr)
+        return 1
     print("\n" + summarize(receipt))
     print(f"\nreceipt: {a.out}/{receipt['run_id']}.json")
     return 0 if receipt["status"] == "OK" else 1

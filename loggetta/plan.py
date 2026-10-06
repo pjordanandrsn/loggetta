@@ -12,6 +12,7 @@ serialized plan or receipt.
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import asdict, dataclass, field
 
 PLAN_SCHEMA = "execution-plan/1"
@@ -33,6 +34,24 @@ class Workload:
     context_len: int | None = None
     concurrency: int | None = None
     phase: str | None = None            # "prefill" | "decode" | None (both)
+    data: dict | None = None            # optional TrainingData fields; old plans keep the Alpaca demonstration
+    learning_rate: float = 2e-4
+
+    def __post_init__(self):
+        for name in ("seq_len", "micro_batch", "grad_accum", "steps"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise ValueError(f"{name} must be a positive integer")
+        if self.seq_len < 2:
+            raise ValueError("seq_len must be at least 2 for causal language-model loss")
+        if not math.isfinite(self.learning_rate) or self.learning_rate <= 0:
+            raise ValueError("learning_rate must be finite and positive")
+        if self.data is not None:
+            from .data import TrainingData
+
+            if self.kind != "train":
+                raise ValueError("training data does not apply to a serving plan")
+            TrainingData.from_dict(self.data)
 
     @property
     def tokens_per_microbatch(self) -> int:
@@ -116,7 +135,13 @@ class ExecutionPlan:
     schema: str = PLAN_SCHEMA
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        out = asdict(self)
+        # Optional v1 additions: old plans still round-trip byte-for-byte, including their omitted defaults.
+        if out["workload"]["data"] is None:
+            del out["workload"]["data"]
+        if out["workload"]["learning_rate"] == 2e-4:
+            del out["workload"]["learning_rate"]
+        return out
 
     def to_json(self) -> str:
         return json.dumps(self.to_dict(), indent=1, sort_keys=True, default=str)
@@ -148,6 +173,12 @@ class ExecutionPlan:
                f"host {gb(self.budget['host'])} [{self.budget['host_source']}]   "
                f"headroom {gb(self.budget['headroom'])} [policy]"
                + (f"   host headroom {gb(self.budget['host_headroom'])} [policy]" if self.budget.get("host_headroom") else "")]
+        if w.kind == "train":
+            if w.data is not None:
+                out += [f"Data      {w.data['source']} ({w.data.get('format', 'auto')}, split {w.data.get('split', 'train')}); "
+                        f"full-sequence loss; learning rate {w.learning_rate:g}"]
+            else:
+                out += ["Data      demonstration: tatsu-lab/alpaca, full-sequence loss, repeated as needed"]
         if self.status == "refused":
             out += ["", "NOT FEASIBLE under the requested constraints.", ""]
             out += [f"  {r}" for r in self.refusal.get("reasons", ())]

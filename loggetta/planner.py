@@ -297,6 +297,10 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
         raise ValueError(f"objective must be one of {OBJECTIVES}")
     gpu = hardware.gpu(constraints.device)
     warnings, reasons = [], []
+    if workload.data is not None:
+        warnings.append("Data preparation buffers and temporary token-file disk space are not included in the "
+                        "training memory estimate; data is validated before model loading. A feasible plan is "
+                        "an estimate, not a guarantee against out-of-memory errors.")
     dev_budget = constraints.vram_budget
     dev_src = "user"
     if dev_budget is None:

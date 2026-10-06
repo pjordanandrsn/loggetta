@@ -6,7 +6,8 @@
 
 **The user-facing home for experts4bit-qlora and grouped-nf4-gemm.**
 
-Plan a workload for your machine, run supported training through the included runtime, and keep the receipt.
+Plan a workload for your machine, fine-tune on your own data through the included runtime, and keep the adapters
+and the run report. A **receipt** is that JSON run report: what ran, what it used, and how it compared with the plan.
 
 <p>
   <a href="https://pypi.org/project/loggetta/"><img src="https://img.shields.io/pypi/v/loggetta" alt="PyPI"></a>
@@ -49,22 +50,54 @@ loggetta plan Qwen/Qwen3-30B-A3B --seq 2048
 
 > [!NOTE]
 > **Use Loggetta. The runtime and kernels come with it.**
-> Loggetta owns the user-facing CLI/API, planning, execution orchestration, and receipts. Internally, e4b owns
-> the runtime mechanisms and gnf4 owns the kernels and low-level residency primitives. Those boundaries are an
+> Loggetta owns the user-facing CLI/API, planning, execution orchestration, and run reports. Internally,
+> experts4bit-qlora owns the runtime and grouped-nf4-gemm owns the kernels and low-level memory-placement tools. Those boundaries are an
 > implementation detail to understand, not extra installation steps to discover.
 
 Loggetta turns a workload, a machine, constraints, and evidence into an **ExecutionPlan**. It explains the selected
-configuration, records why alternatives lost, and refuses unsupported or infeasible plans before loading model
-weights. For supported training plans, Loggetta dispatches into e4b and records the result as an **ExecutionReceipt**.
-Serving placement planning is also included; starting the server remains a separate e4b step in this release.
+configuration, records why alternatives lost, and rejects unsupported configurations or those estimated to exceed
+your budgets before loading model weights. Accepted plans are estimates, not guarantees against running out of
+memory. For supported training, Loggetta calls its runtime and saves reusable native adapters plus an
+**ExecutionReceipt**. Serving placement planning is included; starting the server remains a separate runtime step.
 
 | Planner | ExecutionPlan | ExecutionReceipt |
 | :--- | :--- | :--- |
-| Turns hardware, workload, constraints, objectives, and evidence into a decision. | Captures the selected backend/setup, budgets, estimates, rejected alternatives, refusal reasons, warnings, and evidence quality. | Records what actually happened: memory, timing, correctness, engagement, provenance, and estimate-vs-measured deltas. |
+| Turns hardware, workload, constraints, objectives, and evidence into a decision. | Captures the selected backend/setup, budgets, estimates, rejected alternatives, refusal reasons, warnings, and evidence quality. | Records what actually happened: memory, timing, correctness checks, which optimizations actually ran, source versions, and estimate-vs-measured differences. |
 
 ## Quick start
 
-After installation, use the `loggetta` command throughout:
+### Your model, your data, your adapter
+
+With a JSONL file containing a `text` column and enough tokens for the requested steps:
+
+```bash
+loggetta train Qwen/Qwen3-30B-A3B \
+  --dataset ./data/train.jsonl --format text \
+  --seq 512 --micro-batch 1 --steps 20 --seed 42 \
+  --out runs/my-training --adapter-out adapters/my-adapter
+```
+
+The output contains adapter tensors, the tokenizer, and a manifest of the exact runtime setup. The run report
+records dataset identity, the token-stream hash, memory, timing, and checks that the chosen optimizations ran.
+Existing adapter directories are never overwritten. Short datasets require an explicit `--repeat-data`.
+
+**Current loss: all tokens, including prompts.** Text, Alpaca instruction/input/output, and text-only chat formats
+are supported. Chat uses the tokenizer's own template. See [training and reloading adapters](https://github.com/pjordanandrsn/loggetta/blob/main/docs/TRAINING.md)
+for Hub datasets, field mapping, fixed-shape packing, saved-plan execution, and the native artifact format.
+
+```python
+from loggetta import load_adapter
+from transformers import AutoTokenizer
+
+model = load_adapter("adapters/my-adapter", device="cuda")
+tokenizer = AutoTokenizer.from_pretrained("adapters/my-adapter")
+```
+
+These are native runtime adapters, not PEFT-format checkpoints or exact optimizer-resume snapshots.
+
+### Inspect and keep the plan
+
+Use the `loggetta` command throughout:
 
 ```bash
 # Inspect the machine
@@ -76,8 +109,9 @@ loggetta plan Qwen/Qwen3-30B-A3B --seq 2048
 # Constrain the planner deliberately: device budget is in GiB
 loggetta plan allenai/OLMoE-1B-7B-0924 --experts device --vram 6
 
-# Save a training plan
+# Save a training plan, including your data settings
 loggetta plan allenai/OLMoE-1B-7B-0924 \
+  --dataset ./data/train.jsonl --format text \
   --seq 512 --micro-batch 2 --steps 12 --out plan.json
 
 # Execute the saved plan through the included runtime and write its receipt
@@ -88,7 +122,7 @@ loggetta plan allenai/OLMoE-1B-7B-0924 \
   --seq 512 --micro-batch 2 --observations receipts/
 ```
 
-For a short training run without a separate save/execute step:
+For the original short Alpaca demonstration without a separate save/execute step:
 
 ```bash
 loggetta train allenai/OLMoE-1B-7B-0924 \
@@ -197,7 +231,7 @@ Its receipt: allocator 5.26 GiB estimated, 5.47 GiB measured; driver 6.56 GiB es
 Loggetta is deliberately **not** a performance oracle. It records what it knows, labels heuristics, refuses plans
 it cannot support, and feeds measured receipts back into future planning.
 
-Current checks from [`docs/RESULTS.md`](docs/RESULTS.md):
+Checks from [`docs/RESULTS.md`](https://github.com/pjordanandrsn/loggetta/blob/main/docs/RESULTS.md), for those specific boxes and workloads, not universal error bounds:
 
 | Check | Measured result |
 | :--- | :--- |
@@ -212,27 +246,30 @@ Current checks from [`docs/RESULTS.md`](docs/RESULTS.md):
 > Evidence has a type. Measured facts stay measured; derived values stay derived; inferred values and heuristics
 > stay labelled. Unknowns do not quietly become numbers.
 
-An `ExecutionReceipt` carries provenance, allocator / reserved / driver peaks, correctness checks, engagement
-evidence, timing, and estimate-vs-measured deltas. That receipt is the measured counterpart to the plan that
+An `ExecutionReceipt` records source versions, allocated / reserved / driver-reported memory peaks, correctness
+checks, confirmation that selected optimizations ran, timing, and differences between estimates and measurements. That receipt is the measured counterpart to the plan that
 produced it.
 
 ## Current scope
 
 | Available today | Not claimed yet |
 | :--- | :--- |
-| Default installation of Loggetta, e4b, and gnf4 | First-class dense-model planning |
+| Default installation of Loggetta, its runtime, and its kernels | First-class dense-model planning |
 | Single-GPU MoE planning | Multi-GPU placement or execution planning |
 | Saved `ExecutionPlan` and `ExecutionReceipt` artifacts | Calibrated throughput prediction |
-| QLoRA execution through `loggetta execute` and `loggetta train` | Profile-driven serving hot sets |
+| Your dataset, QLoRA execution, reusable native adapters, and tokenizer export | Exact optimizer-state resume or assistant-only loss |
 | Serving placement planning across device, host, and storage tiers | A Loggetta server-launch command |
 | Measured-memory feedback, explicit constraints, and inspectable refusals | Universal support for every mechanism exposed by the lower packages |
 
-Those are roadmap items, not assumptions hidden inside current results.
+Those are scope boundaries, not assumptions hidden inside current results. The train/save/reload path has CPU
+coverage using real runtime LoRA modules; a separate tiny-model CUDA integration test is available for GPU runs.
+This is not a claim of GPU validation across all supported model families.
 
 ## Installation details
 
 **Starting with 0.1.1, the default install includes the runtime and kernel packages.** There is no planner-only
-default that needs an extra to become useful.
+default that needs an extra to become useful. The dependency footprint is intentional: the default command is
+meant to run supported workloads, not leave users to assemble the runtime afterward.
 
 | Installed package | Role |
 | :--- | :--- |
@@ -257,7 +294,7 @@ Both lower packages can still be installed and used independently.
 
 The minimum backend releases support training plans and execution plus serving plans. The newer serving-estimate
 refinements in RESULTS 6b-6e require APIs beyond e4b `0.48.0`; that minimum release is not sufficient to reproduce
-those specific measurements. See [`docs/RESULTS.md`](docs/RESULTS.md) for the backend revisions used.
+those specific measurements. See [`docs/RESULTS.md`](https://github.com/pjordanandrsn/loggetta/blob/main/docs/RESULTS.md) for the backend revisions used.
 
 Source installation for development:
 
@@ -266,6 +303,22 @@ git clone https://github.com/pjordanandrsn/loggetta
 cd loggetta
 python -m pip install -e .
 ```
+
+## How does this compare with Accelerate?
+
+[Accelerate's `estimate-memory`](https://huggingface.co/docs/accelerate/usage_guides/model_size_estimator)
+already estimates a model's total and largest-layer size, with an Adam-training estimate, without downloading
+its full weights. Pre-load estimation alone is not unique to Loggetta.
+
+Accelerate also has [Big Model Inference](https://huggingface.co/docs/accelerate/concept_guides/big_model_inference),
+including automatic device maps and CPU/disk offload. That documented inference path is distinct from its training
+facilities; Accelerate as a whole is not merely a memory calculator.
+
+Loggetta's focus is the **configuration -> execution -> measured feedback** loop for its included runtime:
+choose among supported MoE configurations, explain selections and refusals, run supported QLoRA training, save
+adapters, and use the resulting run reports to inform later plans. It is not a replacement for Accelerate's broader
+training/distributed infrastructure. No matched estimator-accuracy comparison has been run; the measurements above
+are not a claim of superiority over Accelerate.
 
 ## Why keep the packages separate?
 
@@ -281,10 +334,11 @@ point; maintainers keep clear boundaries.
 
 | Read this | For |
 | :--- | :--- |
-| [`SESSION-REPORT.md`](docs/SESSION-REPORT.md) | Short answers and current state |
-| [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Ownership boundaries and the Planner -> Plan -> Backend -> Receipt model |
-| [`RESULTS.md`](docs/RESULTS.md) | Measurements, estimator error, receipts, and what changed because of them |
-| [`SERVING-PRESSURE-TEST.md`](docs/SERVING-PRESSURE-TEST.md) | Serving placement and pressure-test evidence |
+| [`TRAINING.md`](https://github.com/pjordanandrsn/loggetta/blob/main/docs/TRAINING.md) | Bring your data, save adapters, reload them, and understand loss/packing semantics |
+| [`SESSION-REPORT.md`](https://github.com/pjordanandrsn/loggetta/blob/main/docs/SESSION-REPORT.md) | Short answers and current state |
+| [`ARCHITECTURE.md`](https://github.com/pjordanandrsn/loggetta/blob/main/docs/ARCHITECTURE.md) | Ownership boundaries and the Planner -> Plan -> Backend -> Receipt model |
+| [`RESULTS.md`](https://github.com/pjordanandrsn/loggetta/blob/main/docs/RESULTS.md) | Measurements, estimator error, receipts, and what changed because of them |
+| [`SERVING-PRESSURE-TEST.md`](https://github.com/pjordanandrsn/loggetta/blob/main/docs/SERVING-PRESSURE-TEST.md) | Serving placement and pressure-test evidence |
 
 <details>
 <summary><strong>Tests and validation commands</strong></summary>
