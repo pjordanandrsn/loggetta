@@ -544,3 +544,35 @@ def test_serve_plans_cap_the_decode_buckets_at_the_sequences():
         assert one.selected.device_bytes == fixed.selected.device_bytes            # priced as the server captures
     else:
         assert one.selected.device_bytes < fixed.selected.device_bytes             # fewer scratch slots
+
+
+_OOM = ("CUDA out of memory. Tried to allocate 32.00 MiB. GPU 0 has a total capacity of 11.20 GiB of which 9.75 MiB is "
+        "free. Of the allocated memory 10.59 GiB is allocated by PyTorch")
+
+
+def test_an_out_of_memory_receipt_caps_the_budget_at_what_a_process_gets(topo):
+    """Lane SV5: an RTX 4090 reports 24,564 MiB and gave the process 23.52 GiB; a plan sized against 24 GiB ran out of
+    memory. A receipt's out-of-memory message names the capacity, and the budget is capped there for that GPU class."""
+    from loggetta.planner import usable_capacity
+    rec = {"run_id": "oomed", "status": "OOM", "model": {"model": "x"}, "workload": {"kind": "serve"}, "setup": {},
+           "hardware": {"gpu": {"name": "Test GPU"}}, "measured": {"device_peak_bytes": 10 * GiB}, "error": _OOM}
+    cap = usable_capacity(gpu(), [rec])
+    assert cap == (int(11.20 * GiB), "oomed") and usable_capacity(gpu(), []) is None
+    p = plan(topo, hw(), Workload(seq_len=512), observations=[rec])
+    assert p.budget["device"] == int(11.20 * GiB) and "receipt oomed" in p.budget["device_source"]
+
+
+def test_an_out_of_memory_receipt_is_a_lower_bound_the_plan_respects(topo):
+    """The allocator peak at the failure plus the allocation that failed is a floor on that setup's need; where today's
+    estimate is below it, the gap is charged as a residual."""
+    first = _serve(topo, 4096, 1, cap=(12, 0))
+    setup = first.selected.setup
+    est = sum(ln.bytes for ln in first.selected.lines if ln.where == "device"
+              and not ln.name.startswith(("allocator reserve", "CUDA context", "allocator residual")))
+    rec = {"run_id": "oomed", "status": "OOM", "model": {"model": topo.model}, "workload": {"kind": "serve"},
+           "setup": {**setup, "buckets": list(setup["buckets"])}, "hardware": {"gpu": {"name": "Other GPU"}},
+           "measured": {"device_peak_bytes": est + (300 << 20)}, "error": _OOM}
+    p = plan(topo, hw(cap=(12, 0)), Workload(kind="serve", context_len=4096, concurrency=1),
+             Constraints(fixed={"graphs": setup["graphs"]}), observations=[rec])
+    res = next(ln for ln in p.selected.lines if ln.name.startswith("allocator residual"))
+    assert abs(res.bytes - ((300 << 20) + (32 << 20))) < (1 << 20) and "receipt oomed" in res.detail

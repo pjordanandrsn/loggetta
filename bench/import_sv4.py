@@ -49,7 +49,7 @@ def main():
                 "host_anon_load_peak_bytes", "host_anon_after_load_bytes", "host_anon_peak_bytes",
                 "host_anon_serving_peak_bytes", "host_shmem_peak_bytes")},
             "estimate": r.get("estimate"), "graph_status": r.get("graph_status"), "prefill_graph": r.get("prefill_graph"),
-            "expert_routes_seen": r.get("expert_routes_seen"), "info": r.get("info"), "linear_state": r.get("linear_state"), "server_tiers": r.get("server_tiers"),
+            "expert_routes_seen": r.get("expert_routes_seen"), "info": r.get("info"), "linear_state": r.get("linear_state"), "server_tiers": r.get("server_tiers"), "error": r.get("error"),
             "provenance": {"started_at": started, "imported_from": os.path.abspath(f), "versions": r.get("versions")},
         }
         if m.get("driver_process_peak_bytes") and m.get("device_reserved_peak_bytes"):

@@ -578,6 +578,35 @@ All values GiB.
   - experts4bit-qlora#1241 releases it at the end of the build: pinned memory after the build went from 1,314 MiB to
     14 MiB.
 
+## 6i. SV5: the plan SV4 produced, checked on its card, ran out of memory
+
+Lane SV5 is experts4bit-qlora#1242 ($5 cap within the owner's $50), registered in #1243.
+- **The box:** `sv5-4090-1`, one RTX 4090, **$0.13**, teardown proven.
+- **The plan under test:** after SV4, the planner moved Qwen3-30B at 8 × 8192 on a 24 GB card to all-VRAM with
+  decode graphs, 22.74 GiB planned. SV5 served exactly that plan.
+
+| arm | estimate | allocator peak | driver peak | outcome |
+|---|---|---|---|---|
+| 8 × 1,024-token prompts | 22.150 | 21.734 | 22.477 | OK, under the plan |
+| 8 × 8,000-token prompts | 22.150 | 22.59 at failure (+32 MiB requested) | — | **out of memory** |
+
+All values GiB.
+
+- **The plan was wrong twice.**
+  - **The bulk KV flush was unpriced.** Its finished prompt's K/V across all 48 layers is quantized and held until one
+    write, 526 MiB at a full 8,192-token slot. Short prompts never reach it. experts4bit-qlora#1247 prices it from
+    the pool's own bound; the estimate becomes 22.664 GiB, above the 22.62 GiB the failed arm had reached.
+  - **The card was smaller than stated.** The RTX 4090 reports 24,564 MiB and gave the process 23.52 GiB. The
+    planner now caps a GPU class's budget at the capacity a receipt's out-of-memory message reports
+    (`usable_capacity`).
+  - It also reads an out-of-memory receipt as a lower bound on that setup's need (allocated + requested), charged
+    where today's estimate falls short.
+- **Replanned with the fixes** (`evidence/2026-10-06-sv5-rtx4090/replan-24gb-with-fixes.txt`): with SV4's receipts
+  alone the planner already returns to tiers (13.06 GiB in VRAM); with SV5's too, the budget is 23.52 GiB and the
+  VRAM tier 12.63 GiB. Neither repeats the failing plan.
+- **This is what the lanes are for.** A plan that changed on new evidence was checked on the card it targets before
+  anyone relied on it, and the check failed loudly enough to name both causes.
+
 ## 7. Not measured, said plainly
 
 - **No performance model.** Speed is ordered from evidence, never predicted, apart from the transfer lower bound.

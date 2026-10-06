@@ -1,0 +1,6 @@
+with SV4 (the plan SV5 tested): feasible | serve solver, fp8 paged KV, 8 seqs x 8192 tokens, tiers VRAM 13.06 / DRAM 15.19 GiB | dev 22.80 of budget 24.00 | user: free now
+     0.51 GiB bulk KV flush (one prompt's K/V quantized and written at once) [derived]
+     1.40 GiB allocator reserve (cached, unallocated blocks) [measured]
+with SV4 + SV5: feasible | serve solver, fp8 paged KV, 8 seqs x 8192 tokens, tiers VRAM 12.63 / DRAM 15.19 GiB | dev 22.34 of budget 23.52 | user: free now; capped at the 23.52 GiB a CUDA process got on this GPU class (receipt sv5-4090-1/a5_long's out-of-memory
+     0.51 GiB bulk KV flush (one prompt's K/V quantized and written at once) [derived]
+     1.37 GiB allocator reserve (cached, unallocated blocks) [measured]
