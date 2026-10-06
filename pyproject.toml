@@ -4,9 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "loggetta"
-version = "0.1.2"
+version = "0.1.3"
 description = "Turn a workload, machine, and constraints into an inspectable execution plan for large-model training and serving."
-readme = "README.md"
+readme = "PYPI.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
