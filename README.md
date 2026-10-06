@@ -26,6 +26,22 @@ pip install loggetta
 runtime with its training and fast-kernel dependencies, and [grouped-nf4-gemm](https://github.com/pjordanandrsn/grouped-nf4-gemm).
 No backend extra or separate package assembly is required.
 
+## Measured speed
+
+The performance work lives in the **runtime and kernel layers that Loggetta installs and dispatches into**. These are measured positions for that included stack, not speedups produced by the planner itself.
+
+| Result | Measured comparison |
+| :--- | :--- |
+| **2.352× faster per training step vs Unsloth** | **Qwen3-30B-A3B QLoRA on an RTX 5090**, matched adapters, initialization and tokens, with both frameworks on torch 2.12.1+cu130 / transformers 5.5.0: **3.494 vs 8.218 s/step**. Held-out loss at N=60 was **0.7569 vs 0.7557** and graded COMPARABLE. Unsloth used less peak VRAM: **24.27 vs 27.49 GB**. |
+| **2.468× replication** | The same-stack Qwen3 comparison on a second RTX 5090 host: e4b **4.143 / 4.073 s/step** vs Unsloth **10.155 / 10.120 s/step**. The registered position remains 2.352×; the replication is quoted separately. |
+| **2.775× vs Axolotl** | Matched-work Qwen3-30B-A3B comparison on an RTX 5090 / Ryzen 9 9950X3D host: **2.147 vs 5.956 s/step**. A separate EPYC-host reading was **1.979×**, so this ratio is explicitly host-sensitive. |
+| **2.33× packed-compute throughput** | H100 synthetic expert-offload pipeline, grouped-nf4-gemm vs bitsandbytes CUDA dequantization + cuBLAS: **6.466 vs 2.773 pipeline tok/s**, **26.8 vs 59.1 J/token**. This is a pipeline result, not an end-to-end serving claim. |
+
+Evidence: [same-stack Unsloth result](https://github.com/pjordanandrsn/experts4bit-qlora/blob/main/bench/h2h-2026-10-02/tc1/RESULTS-tc1-samestack-box4.md) · [second-host replication](https://github.com/pjordanandrsn/experts4bit-qlora/blob/main/changelog.d/tc1-amendment-42-read-samestack-host2.md) · [matched Axolotl/Unsloth result](https://github.com/pjordanandrsn/experts4bit-qlora/blob/main/bench/h2h-2026-10-02/tc1/RESULTS-tc1-matched19.md) · [H100 bnb comparison](https://github.com/pjordanandrsn/grouped-nf4-gemm/blob/main/bench/phase3/flagship/RESULTS-flagship-bnb-baseline.md)
+
+> [!IMPORTANT]
+> These are scoped, within-box measurements of the included runtime/kernel stack. They are not universal speedups, and Loggetta does not currently predict throughput. The planner chooses among supported configurations; the measurements above describe what the selected lower layers have demonstrated.
+
 ```bash
 loggetta inspect
 loggetta plan Qwen/Qwen3-30B-A3B --seq 2048
@@ -190,6 +206,7 @@ Current checks from [`docs/RESULTS.md`](docs/RESULTS.md):
 | **Qwen3-30B-A3B, RTX 5090** | Allocator estimate **22.09 GiB**, measured **21.91 GiB**. After receipt-calibrated runtime overheads: planned process peak **24.54 GiB**, measured **24.34 GiB**. |
 | **Serving tiers, A2000 / OLMoE** | The planned VRAM / DRAM / NVMe split matched the server's own (**272 / 421 / 331** experts); allocator **2.052** GiB planned, **2.051** GiB measured. |
 | **Host offload** | Transfer time is treated as a **lower bound**, not a fabricated step-time prediction. |
+| **Included runtime speed, Qwen3-30B-A3B / RTX 5090** | Same-stack matched-work training measured **3.494 s/step for e4b vs 8.218 s/step for Unsloth (2.352×)**, with comparable held-out loss; replicated at **2.468×** on a second host. |
 
 > [!IMPORTANT]
 > Evidence has a type. Measured facts stay measured; derived values stay derived; inferred values and heuristics
