@@ -2,15 +2,15 @@
 
 # Loggetta
 
-### Plan first. Execute through the backend.
+### One install. Plan. Run. Measure.
 
-**Loggetta turns a workload, a machine, and constraints into an inspectable execution plan.**
+**The user-facing home for experts4bit-qlora and grouped-nf4-gemm.**
 
-It selects a supported configuration, explains why it won, records why alternatives lost, and refuses impossible plans before loading weights.
+Plan a workload for your machine, run supported training through the included runtime, and keep the receipt.
 
 <p>
-  <img src="https://img.shields.io/badge/Python-%E2%89%A53.10-3776AB?logo=python&logoColor=white" alt="Python >=3.10">
   <a href="https://pypi.org/project/loggetta/"><img src="https://img.shields.io/pypi/v/loggetta" alt="PyPI"></a>
+  <img src="https://img.shields.io/badge/Python-%E2%89%A53.10-3776AB?logo=python&logoColor=white" alt="Python >=3.10">
   <img src="https://img.shields.io/badge/status-pre--1.0-F59E0B" alt="pre-1.0">
   <img src="https://img.shields.io/badge/scope-single--GPU%20MoE-6F42C1" alt="single-GPU MoE">
   <img src="https://img.shields.io/badge/artifacts-ExecutionPlan%20%2B%20ExecutionReceipt-2EA44F" alt="ExecutionPlan + ExecutionReceipt">
@@ -18,39 +18,114 @@ It selects a supported configuration, explains why it won, records why alternati
 
 </div>
 
----
+```bash
+pip install loggetta
+```
+
+**That installs the stack:** Loggetta, the [experts4bit-qlora](https://github.com/pjordanandrsn/experts4bit-qlora)
+runtime with its training and fast-kernel dependencies, and [grouped-nf4-gemm](https://github.com/pjordanandrsn/grouped-nf4-gemm).
+No backend extra or separate package assembly is required.
+
+```bash
+loggetta inspect
+loggetta plan Qwen/Qwen3-30B-A3B --seq 2048
+```
 
 > [!NOTE]
-> **Loggetta decides what should execute. The backend knows how to execute it.**
+> **Use Loggetta. The runtime and kernels come with it.**
+> Loggetta owns the user-facing CLI/API, planning, execution orchestration, and receipts. Internally, e4b owns
+> the runtime mechanisms and gnf4 owns the kernels and low-level residency primitives. Those boundaries are an
+> implementation detail to understand, not extra installation steps to discover.
 
-Loggetta owns the **Planner**, the **ExecutionPlan**, and the **ExecutionReceipt**. Its current focus is single-GPU
-MoE training and serving through [experts4bit-qlora](https://github.com/pjordanandrsn/experts4bit-qlora), with
-[grouped-nf4-gemm](https://github.com/pjordanandrsn/grouped-nf4-gemm) providing the packed low-bit kernel and
-residency primitives beneath that runtime.
+Loggetta turns a workload, a machine, constraints, and evidence into an **ExecutionPlan**. It explains the selected
+configuration, records why alternatives lost, and refuses unsupported or infeasible plans before loading model
+weights. For supported training plans, Loggetta dispatches into e4b and records the result as an **ExecutionReceipt**.
+Serving placement planning is also included; starting the server remains a separate e4b step in this release.
 
 | Planner | ExecutionPlan | ExecutionReceipt |
 | :--- | :--- | :--- |
 | Turns hardware, workload, constraints, objectives, and evidence into a decision. | Captures the selected backend/setup, budgets, estimates, rejected alternatives, refusal reasons, warnings, and evidence quality. | Records what actually happened: memory, timing, correctness, engagement, provenance, and estimate-vs-measured deltas. |
 
-## The loop
+## Quick start
 
-```mermaid
-flowchart LR
-    I["Workload + machine<br/>constraints + evidence"] --> P["Loggetta Planner"]
-    P --> X["ExecutionPlan<br/>what should run + why"]
-    X --> E["experts4bit-qlora<br/>executes the plan"]
-    E --> G["grouped-nf4-gemm<br/>kernels + primitives"]
-    E --> R["ExecutionReceipt<br/>what actually happened"]
-    R -. "measured feedback" .-> P
+After installation, use the `loggetta` command throughout:
+
+```bash
+# Inspect the machine
+loggetta inspect
+
+# Choose a supported configuration before loading weights
+loggetta plan Qwen/Qwen3-30B-A3B --seq 2048
+
+# Constrain the planner deliberately: device budget is in GiB
+loggetta plan allenai/OLMoE-1B-7B-0924 --experts device --vram 6
+
+# Save a training plan
+loggetta plan allenai/OLMoE-1B-7B-0924 \
+  --seq 512 --micro-batch 2 --steps 12 --out plan.json
+
+# Execute the saved plan through the included runtime and write its receipt
+loggetta execute plan.json --out receipts/
+
+# Plan again using measured evidence from earlier runs
+loggetta plan allenai/OLMoE-1B-7B-0924 \
+  --seq 512 --micro-batch 2 --observations receipts/
 ```
 
-The ownership split is deliberate:
+For a short training run without a separate save/execute step:
 
-| Layer | Owns | Does **not** own |
+```bash
+loggetta train allenai/OLMoE-1B-7B-0924 \
+  --seq 512 --micro-batch 2 --steps 12 --out receipts/
+```
+
+`train` combines planning and execution; it does not bypass admission checks. The equivalent
+`python -m loggetta ...` commands are also supported.
+
+For serving placement:
+
+```bash
+loggetta plan Qwen/Qwen3-30B-A3B \
+  --workload serve --context 4096 --concurrency 1
+```
+
+The serving plan's *Why* carries the server environment. **`loggetta execute` does not start servers yet.**
+The runtime and kernels are installed, but not every lower-layer capability has a Loggetta execution command.
+
+### Three levels of control
+
+| Mode | Example | What it means |
 | :--- | :--- | :--- |
-| **Loggetta** | Hardware inventory/provenance, budgets, objectives, constraints, candidate ordering, refusal policy, `ExecutionPlan`, `ExecutionReceipt`, thin execution orchestration | Model loaders, QLoRA machinery, serving engines, residency engines, kernels |
-| **experts4bit-qlora** | Model topology/conventions, admission, footprint primitives tied to its runtime, loading, adapters, QLoRA preparation, training, serving, residency/offload mechanisms | Cross-backend planning policy |
-| **grouped-nf4-gemm** | Packed low-bit kernels, routing/capability facts, and low-level residency primitives | Model/runtime policy or planner decisions |
+| **Automatic** | `loggetta plan MODEL` | Let the planner choose among supported candidates. |
+| **Directed** | `--vram`, `--ram`, `--experts`, `--objective` | State the budget or goal without hand-building a backend setup. |
+| **Expert** | `--fix FIELD=VALUE` | Pin a backend setup field and make the remaining search work around it. |
+
+## How the stack runs
+
+The CLI/API, planner, plan, execution handoff, and receipt belong to Loggetta. Execution calls the included runtime;
+the runtime calls its kernels. Backend packages remain separate projects without becoming separate setup chores.
+
+```mermaid
+flowchart TB
+    U["User: pip install loggetta"] --> P
+    I["Workload + machine<br/>constraints + evidence"] --> P
+    subgraph L["Loggetta: CLI / API and orchestration"]
+        P["Planner"] --> X["ExecutionPlan<br/>what should run + why"]
+        X --> O["execute(plan)<br/>validate + dispatch"]
+        R["ExecutionReceipt<br/>what actually happened"] -. "measured feedback" .-> P
+    end
+    O --> E["experts4bit-qlora<br/>runs the selected backend setup"]
+    E --> G["grouped-nf4-gemm<br/>kernels + residency primitives"]
+    E -. "execution results" .-> R
+```
+
+### Installed together. Responsibilities kept separate.
+
+| Layer | Owns | Does **not** reimplement |
+| :--- | :--- | :--- |
+| **Loggetta** | The default stack install and user-facing CLI/API; hardware inventory/provenance; budgets, objectives, constraints, candidate ordering, refusal policy, `ExecutionPlan`, `ExecutionReceipt`, execution orchestration | Model loaders, QLoRA machinery, serving engines, residency engines, or kernels |
+| **experts4bit-qlora** | Model topology/conventions, admission, footprint primitives tied to its runtime, loading, adapters, QLoRA preparation, training, serving, residency/offload mechanisms | Loggetta's planning and orchestration policy |
+| **grouped-nf4-gemm** | Packed low-bit kernels, routing/capability facts, and low-level residency primitives | Model-level execution or workload planning |
 
 ```text
 Loggetta -> experts4bit-qlora -> grouped-nf4-gemm
@@ -58,46 +133,15 @@ Loggetta -> experts4bit-qlora -> grouped-nf4-gemm
 
 No cycles. No duplicated topology. No plugin framework until a second backend actually earns one.
 
-## Quick start
-
-```bash
-# What machine am I actually on?
-python -m loggetta inspect
-
-# Produce the artifact Loggetta exists to produce
-python -m loggetta plan Qwen/Qwen3-30B-A3B --seq 2048
-
-# Constrain the planner deliberately
-python -m loggetta plan allenai/OLMoE-1B-7B-0924 --experts device --vram 6
-
-# Keep the plan as a file, then execute that plan through the backend; the receipt lands in receipts/
-python -m loggetta plan allenai/OLMoE-1B-7B-0924 --seq 512 --micro-batch 2 --steps 12 --out plan.json
-python -m loggetta execute plan.json --out receipts/
-
-# Plan again from what was measured
-python -m loggetta plan allenai/OLMoE-1B-7B-0924 --seq 512 --micro-batch 2 --observations receipts/
-```
-
-`train MODEL ...` is `plan` and `execute` in one step. Serving is planned with `plan MODEL --workload serve
---context T --concurrency N`. The plan's *Why* carries the server's exact environment; `execute` does not start
-servers yet.
-
-### Three levels of control
-
-| Mode | Example | What it means |
-| :--- | :--- | :--- |
-| **Automatic** | `plan MODEL` | Let the planner choose among supported candidates. |
-| **Directed** | `--vram`, `--ram`, `--experts`, `--objective` | State the budget or goal without hand-building a backend setup. |
-| **Expert** | `--fix FIELD=VALUE` | Pin a backend setup field and make the remaining search work around it. |
-
 `plan()` is pure policy: for the same inputs it returns the same serializable `ExecutionPlan`, without loading
-weights or touching the device. The plan includes the winner, every relevant loser and why it lost, budget
-sources, evidence labels, warnings, and explicit “not modeled” items.
+weights or touching the device. Hardware probing and model-description gathering happen before that pure planning
+step. The plan includes the winner, every relevant loser and why it lost, budget sources, evidence labels,
+warnings, and explicit "not modeled" items.
 
-`execute(plan)` is intentionally thin. It validates the plan, delegates execution to the selected backend, and
-constructs an `ExecutionReceipt` from the backend result. It does **not** reimplement the runtime. Before anything
-loads, it refuses a refused plan, a workload kind its backend only plans, and a plan made for a different GPU
-(`plan --hardware`), whose receipt would name the wrong card.
+`execute(plan)` validates the plan, dispatches through the selected backend executor, and writes the resulting
+`ExecutionReceipt`. Before anything loads, it refuses a refused plan, a workload kind its backend only plans,
+and a plan made for a different GPU (`plan --hardware`), whose receipt would name the wrong card.
+The backend receives its own setup; it does not need to import Loggetta's plan types.
 
 <details>
 <summary><strong>A real plan, abridged</strong> (OLMoE-1B-7B on an RTX A2000, from <code>evidence/2026-10-04-rtx-a2000/</code>)</summary>
@@ -142,7 +186,7 @@ Current checks from [`docs/RESULTS.md`](docs/RESULTS.md):
 | Check | Measured result |
 | :--- | :--- |
 | **Planner parity, A2000 / OLMoE** | Planned and hand-composed paths had **bitwise-identical step-1 loss** (`1.858969`), effectively identical allocator peaks (`5.4710` vs `5.4706 GiB`), and the same `60,817,408` trainable parameters. |
-| **Allocator estimates, A2000** | Across six measured runs spanning three model families, estimates landed **+0.01 to +0.21 GiB** from measured peaks. |
+| **Allocator estimates, A2000** | Across six measured runs spanning three model families, allocator estimates were within **0.01 to 0.21 GiB** of measured peaks. |
 | **Qwen3-30B-A3B, RTX 5090** | Allocator estimate **22.09 GiB**, measured **21.91 GiB**. After receipt-calibrated runtime overheads: planned process peak **24.54 GiB**, measured **24.34 GiB**. |
 | **Serving tiers, A2000 / OLMoE** | The planned VRAM / DRAM / NVMe split matched the server's own (**272 / 421 / 331** experts); allocator **2.052** GiB planned, **2.051** GiB measured. |
 | **Host offload** | Transfer time is treated as a **lower bound**, not a fabricated step-time prediction. |
@@ -157,58 +201,48 @@ produced it.
 
 ## Current scope
 
-<table>
-<tr>
-<th>Supported today</th>
-<th>Not claimed yet</th>
-</tr>
-<tr>
-<td valign="top">
-
-- ✅ Single-GPU MoE planning
-- ✅ First-class `ExecutionPlan` and `ExecutionReceipt` artifacts
-- ✅ QLoRA planning with execution delegated to `experts4bit-qlora`
-- ✅ Serving placement planning across device, host, and storage tiers
-- ✅ Measured-memory feedback through receipts
-- ✅ Deterministic, inspectable plans and refusals
-- ✅ Explicit constraints instead of hidden “magic” defaults
-
-</td>
-<td valign="top">
-
-- ⏳ Dense-model planning as a first-class Loggetta backend
-- ⏳ Multi-GPU placement or execution planning
-- ⏳ Calibrated throughput prediction
-- ⏳ Profile-driven serving hot sets
-- ⏳ Automatic execution of every serving plan
-
-</td>
-</tr>
-</table>
+| Available today | Not claimed yet |
+| :--- | :--- |
+| Default installation of Loggetta, e4b, and gnf4 | First-class dense-model planning |
+| Single-GPU MoE planning | Multi-GPU placement or execution planning |
+| Saved `ExecutionPlan` and `ExecutionReceipt` artifacts | Calibrated throughput prediction |
+| QLoRA execution through `loggetta execute` and `loggetta train` | Profile-driven serving hot sets |
+| Serving placement planning across device, host, and storage tiers | A Loggetta server-launch command |
+| Measured-memory feedback, explicit constraints, and inspectable refusals | Universal support for every mechanism exposed by the lower packages |
 
 Those are roadmap items, not assumptions hidden inside current results.
 
-## Install
+## Installation details
 
-Loggetta is the user-facing install for the stack. One command installs the planner, the e4b runtime, and the gnf4 kernel layer:
+**Starting with 0.1.1, the default install includes the runtime and kernel packages.** There is no planner-only
+default that needs an extra to become useful.
+
+| Installed package | Role |
+| :--- | :--- |
+| **Loggetta** | Planner, `ExecutionPlan`, `ExecutionReceipt`, CLI/API, orchestration, and measured feedback |
+| **experts4bit-qlora[train,fast] >= 0.48.0** | Model loading, QLoRA, training, serving, and residency, with the training and fast-path dependencies enabled |
+| **grouped-nf4-gemm >= 0.41.0** | Packed low-bit kernels and residency primitives |
+| **datasets** | Data loading used by the training path |
+
+Upgrading an earlier installation:
 
 ```bash
-python -m pip install loggetta
+python -m pip install --upgrade loggetta
 ```
 
-That installs:
+The old `loggetta[experts4bit]` spelling remains accepted as a compatibility alias. It is no longer necessary.
+Both lower packages can still be installed and used independently.
 
-- **Loggetta** — Planner, `ExecutionPlan`, `ExecutionReceipt`, CLI, orchestration and measured feedback
-- **experts4bit-qlora >= 0.48.0** — model/runtime layer for loading, QLoRA, training, serving and residency
-- **grouped-nf4-gemm >= 0.41.0** — packed low-bit kernels and residency primitives
+> [!IMPORTANT]
+> Installing the stack does not remove its hardware requirements. GPU execution still needs a supported device,
+> driver, and compatible PyTorch installation. The current Loggetta command surface executes training plans and
+> produces serving plans; it does not yet launch the server itself.
 
-The old `loggetta[experts4bit]` spelling remains accepted as a compatibility alias, but the extra is no longer required.
+The minimum backend releases support training plans and execution plus serving plans. The newer serving-estimate
+refinements in RESULTS 6b-6e require APIs beyond e4b `0.48.0`; that minimum release is not sufficient to reproduce
+those specific measurements. See [`docs/RESULTS.md`](docs/RESULTS.md) for the backend revisions used.
 
-The released backend versions support training plans and execution plus serving plans. The newest serving-estimate refinements in
-RESULTS 6b–6e depend on APIs newer than e4b `0.48.0`; reproducing those specific measurements currently requires
-`experts4bit-qlora` `main`. Loggetta labels unavailable mechanisms rather than pretending they exist.
-
-Source installs remain useful for development:
+Source installation for development:
 
 ```bash
 git clone https://github.com/pjordanandrsn/loggetta
@@ -216,27 +250,22 @@ cd loggetta
 python -m pip install -e .
 ```
 
-## Why a separate planner?
+## Why keep the packages separate?
 
-Kernel selection belongs with kernels. Model topology and QLoRA mechanisms belong with the runtime. The decision
-**which combination should run on this machine, under this budget, for this objective** is a separate concern,
-and the `ExecutionPlan` is the durable artifact of that decision.
+**One install does not require one codebase.** Kernel selection belongs with kernels. Model topology and QLoRA
+mechanisms belong with the runtime. Loggetta brings them together, decides which combination should run on this
+machine under the user's constraints, and makes that decision inspectable before execution.
 
-Keeping that boundary clean means:
-
-- backend packages remain independently useful;
-- planning stays deterministic and inspectable;
-- the plan can explain both selection and refusal before weight loading;
-- the runtime can evolve without absorbing cross-machine policy;
-- receipts can improve future policy without contaminating kernel or model code;
-- a second backend can earn a general abstraction instead of forcing one prematurely.
+The separation lets e4b and gnf4 remain independently useful, keeps backend knowledge with its owner, and allows
+receipts to improve planning policy without moving model or kernel code into the planner. Users get one starting
+point; maintainers keep clear boundaries.
 
 ## Documentation
 
 | Read this | For |
 | :--- | :--- |
 | [`SESSION-REPORT.md`](docs/SESSION-REPORT.md) | Short answers and current state |
-| [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Ownership boundaries and the Planner → Plan → Backend → Receipt model |
+| [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Ownership boundaries and the Planner -> Plan -> Backend -> Receipt model |
 | [`RESULTS.md`](docs/RESULTS.md) | Measurements, estimator error, receipts, and what changed because of them |
 | [`SERVING-PRESSURE-TEST.md`](docs/SERVING-PRESSURE-TEST.md) | Serving placement and pressure-test evidence |
 
@@ -244,6 +273,7 @@ Keeping that boundary clean means:
 <summary><strong>Tests and validation commands</strong></summary>
 
 ```bash
+python -m pip install -e ".[test]"
 pytest tests/
 python bench/direct_baseline.py --receipt R.json
 python bench/validate_register.py
@@ -251,9 +281,9 @@ python bench/family_sweep.py --hardware hw.json
 python bench/summarize_receipts.py runs/receipts
 ```
 
-The fast test suite is CPU-only. Planner tests run when `experts4bit-qlora` is importable. The execution tests
-check the handoff to the backend with a stand-in executor, so they need nothing installed. GPU benchmarks and
-validation runs stay separate so ordinary correctness tests do not silently become hardware-dependent.
+The fast test suite is CPU-only. Planner tests use the installed backend packages; individual tests may skip
+when a platform cannot import a required kernel module. Execution handoff tests use a stand-in executor rather
+than launching training. GPU benchmarks and validation runs remain separate.
 
 </details>
 
@@ -261,6 +291,6 @@ validation runs stay separate so ordinary correctness tests do not silently beco
 
 <div align="center">
 
-**Plan first. Execute through the backend. Measure. Feed the receipt back.**
+**Install Loggetta. Plan. Run. Measure. Feed the receipt back.**
 
 </div>
