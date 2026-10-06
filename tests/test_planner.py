@@ -517,3 +517,22 @@ def test_host_growth_is_serving_s_own_peak_where_the_receipt_has_one(topo):
     q = plan(topo, hw(cap=(12, 0)), Workload(kind="serve", context_len=4096, concurrency=1),
              Constraints(fixed={"graphs": setup["graphs"]}), observations=[old])
     assert next(ln for ln in q.selected.lines if ln.name == "host growth while serving").bytes == 6 * GiB
+
+
+def test_serve_plans_cap_the_decode_buckets_at_the_sequences():
+    from loggetta.backends.experts4bit import usable_buckets
+    assert usable_buckets(1, (1, 2, 4, 8, 16)) == (1,)
+    assert usable_buckets(8, (1, 2, 4, 8, 16)) == (1, 2, 4, 8)
+    assert usable_buckets(12, (1, 2, 4, 8, 16)) == (1, 2, 4, 8, 12)
+    assert usable_buckets(32, (1, 2, 4, 8, 16)) == (1, 2, 4, 8, 16)       # wider steps run in chunks of the largest
+    if not _can_graph():
+        pytest.skip("decode graphs are not planned by the experts4bit-qlora under test")
+    topo = describe_model(tr.Qwen3MoeConfig(
+        hidden_size=1024, intermediate_size=2048, moe_intermediate_size=768, num_experts=128, num_experts_per_tok=4,
+        num_hidden_layers=8, num_attention_heads=8, num_key_value_heads=4, head_dim=128, vocab_size=32000,
+        max_position_embeddings=4096, decoder_sparse_step=1))
+    one = _serve(topo, 4096, 1, cap=(12, 0))
+    assert one.selected.setup["buckets"] == (1,) and any("buckets [1]" in r for r in one.reasons)
+    fixed = _serve(topo, 4096, 1, Constraints(fixed={"buckets": (1, 2, 4, 8, 16)}), cap=(12, 0))
+    assert tuple(fixed.selected.setup["buckets"]) == (1, 2, 4, 8, 16)
+    assert one.selected.device_bytes < fixed.selected.device_bytes                 # fewer scratch slots
