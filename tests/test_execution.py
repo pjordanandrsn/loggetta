@@ -51,14 +51,16 @@ def test_execute_hands_the_selected_setup_to_its_backend_and_writes_the_receipt(
     p = a_plan()
     seen = {}
 
-    def run(pl, *, seed, log):                                   # the backend: here, a stand-in that loads nothing
+    def run(pl, *, seed, log, adapter_dir):                                   # the backend: here, a stand-in that loads nothing
         seen["setup"] = pl.selected.setup
+        seen["adapter_dir"] = adapter_dir
         return {"status": "OK", "measured": {"device_peak_bytes": 3 * GiB + GiB // 8}, "correctness": {},
                 "engaged": {}, "data": {}}
 
     monkeypatch.setattr(experts4bit, "executor", lambda kind: run if kind == "train" else None)
     r = execute(p, out_dir=str(tmp_path), hardware=hw(), prov={"sources": {}})
     assert seen["setup"] == SETUP
+    assert seen["adapter_dir"].endswith("/adapter")
     assert r["schema"] == RECEIPT_SCHEMA and r["plan"] == p.to_dict() and r["setup"] == SETUP
     assert r["run_id"].startswith("Tiny-MoE-device-grouped_nf4-t512-")       # the backend names its setup
     alloc = r["comparison"]["device_allocator"]                               # context and reserve lines excluded
