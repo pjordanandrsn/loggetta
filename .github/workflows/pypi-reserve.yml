@@ -2,6 +2,10 @@ name: Publish Loggetta to PyPI
 
 on:
   workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/PUBLISH_0_1_3"
 
 permissions:
   contents: read
