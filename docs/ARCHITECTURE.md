@@ -145,13 +145,21 @@ ServeSetup.to_env() -> {"E4B_PAGED_*": str}                                    #
 ```
 
 **Backend contract inside the planner** (`backends/experts4bit.py`):
-- questions: `WORKLOADS`, `KERNELS_FOR`, `probe(gpu)`, `candidates(...)`, `estimate(...)`, `speed_rank(setup)`,
-  `label(setup)`, `explain(...)`, `policy_notes(...)`, `describe_kernel(...)`;
-- for serving: `fill_knobs`, `resolve`, `SLACK_KEYS`, `SLACK_DEFAULTS`;
+- the model: `describe(model, ...)` returns the backend's own description (e4b's `MoETopology` here; the planner
+  never reads its fields), `refusal(topology)` says why the backend can plan nothing for it (or `None`), and
+  `summary(topology)` is the plan's `model` section;
+- questions: `WORKLOADS`, `SLACK_KEYS`, `KERNELS_FOR`, `probe(gpu)`, `candidates(...)`, `estimate(...)`,
+  `speed_rank(setup)`, `label(setup)`, `explain(...)`, `policy_notes(...)`, `describe_kernel(...)`;
+- about a setup: `residency(setup)` (where its frozen weights live, for reading receipts), `plan_warnings(setup,
+  gpu)`, and `relaxed_candidates(...)` (setups outside the caller's constraints, with the words for the change, which
+  the planner prices into a refusal's suggestions);
+- for serving: `fill_knobs`, `resolve`, `SLACK_DEFAULTS`;
 - the handoff: `executor(kind)` returns the function that runs a feasible plan of that workload kind, or `None` when
   the kind is planned only (serve, today); `run_tag(setup)` names the setup in a receipt's run id.
 
 A second backend implements the same functions; generalize into a protocol only then.
+`tests/test_planner_second_backend.py` is such a backend in pure Python (its own topology type and setup fields): the
+planner plans, refuses, suggests, warns and learns from receipts through it without reading a setup field.
 
 ## 5. The plan
 
@@ -160,8 +168,9 @@ product, not an internal return value: it is rendered, saved (`plan --out`), rev
 (`execute PLAN.json`).
 
 It is pure and deterministic: the same inputs give byte-identical JSON. It loads no weights and touches no device.
-Model facts come from the backend (`describe_model` asks e4b's `describe_moe`); the planner has no topology type of
-its own.
+Model facts come from the backends: `describe_model` asks each one's `describe` in order and returns the first
+description its backend can plan for (today e4b's `describe_moe`). The planner has no topology type of its own, and a
+model is refused only when every backend refuses it, each with its own reason.
 
 **What a plan contains:**
 - the model identity and topology summary;
@@ -254,9 +263,9 @@ trainer's.
 **A new backend.** Add `backends/<name>.py` with the contract in section 4, including `executor` and `run_tag`.
 List it in `BACKENDS`, and give it a `WORKLOADS` tuple.
 - Selection, refusal, rendering and `execute` are backend-agnostic.
-- The planner still names a few training setup fields: receipt matching for reserve slack, the PCIe-width warning
-  and the "allow host-backed experts" suggestion (SERVING-PRESSURE-TEST lists them). A second backend would match or
-  move them.
+- The planner names no training setup field: slack is matched on the backend's `SLACK_KEYS`, a receipt's
+  residency is asked of the backend that ran it, and warnings and relaxations are the backend's. The serve
+  suggestion's context/concurrency search still reads two `ServeSetup` fields (SERVING-PRESSURE-TEST).
 
 **A new kernel** behind e4b is e4b's business: it shows up as a `QLoRASetup.expert_kernel` value with a
 `setup_refusals` rule and a capability probe answered by the kernel package.
