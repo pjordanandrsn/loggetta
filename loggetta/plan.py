@@ -36,6 +36,8 @@ class Workload:
     phase: str | None = None            # "prefill" | "decode" | None (both)
     data: dict | None = None            # optional TrainingData fields; old plans keep the Alpaca demonstration
     learning_rate: float = 2e-4
+    #: passes over the dataset; when set, the planner derives ``steps`` from the data profile and records both
+    epochs: float | None = None
 
     def __post_init__(self):
         for name in ("seq_len", "micro_batch", "grad_accum", "steps"):
@@ -52,6 +54,12 @@ class Workload:
             if self.kind != "train":
                 raise ValueError("training data does not apply to a serving plan")
             TrainingData.from_dict(self.data)
+        if self.epochs is not None:
+            if isinstance(self.epochs, bool) or not isinstance(self.epochs, (int, float)) \
+                    or not math.isfinite(self.epochs) or self.epochs <= 0:
+                raise ValueError("epochs must be finite and positive")
+            if self.data is None:
+                raise ValueError("epochs need a dataset (--dataset): the planner counts its tokens")
 
     @property
     def tokens_per_microbatch(self) -> int:
@@ -133,6 +141,8 @@ class ExecutionPlan:
     performance: dict = field(default_factory=dict)
     provenance: dict = field(default_factory=dict)
     schema: str = PLAN_SCHEMA
+    #: the training data's profile (``data.encode_dataset``), when the dataset was read before planning
+    data_profile: dict | None = None
 
     def to_dict(self) -> dict:
         out = asdict(self)
@@ -141,6 +151,10 @@ class ExecutionPlan:
             del out["workload"]["data"]
         if out["workload"]["learning_rate"] == 2e-4:
             del out["workload"]["learning_rate"]
+        if out["workload"]["epochs"] is None:
+            del out["workload"]["epochs"]
+        if out["data_profile"] is None:
+            del out["data_profile"]
         return out
 
     def to_json(self) -> str:
@@ -174,7 +188,17 @@ class ExecutionPlan:
                f"headroom {gb(self.budget['headroom'])} [policy]"
                + (f"   host headroom {gb(self.budget['host_headroom'])} [policy]" if self.budget.get("host_headroom") else "")]
         if w.kind == "train":
-            if w.data is not None:
+            d = self.data_profile
+            if d is not None:
+                ln, src = d["lengths"], d["source"]
+                ident = (f"; sha256 {src['sha256'][:12]}" if src.get("sha256") else
+                         f"; revision {src['requested_revision']}" if src.get("requested_revision") else
+                         "; unpinned Hub revision" if src.get("kind") == "hub" else "")
+                out += [f"Data      {w.data['source']} ({d['format']}, split {d['split']}{ident}): {d['rows']:,} examples, "
+                        f"{d['tokens']:,} tokens, validated and tokenized before planning",
+                        f"          tokens per example: p50 {ln['p50']:,}, p90 {ln['p90']:,}, p99 {ln['p99']:,}, max {ln['max']:,}; "
+                        f"full-sequence loss; learning rate {w.learning_rate:g}"]
+            elif w.data is not None:
                 out += [f"Data      {w.data['source']} ({w.data.get('format', 'auto')}, split {w.data.get('split', 'train')}); "
                         f"full-sequence loss; learning rate {w.learning_rate:g}"]
             else:

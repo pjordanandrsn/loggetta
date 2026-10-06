@@ -40,8 +40,23 @@ loggetta execute plan.json --seed 42 \
 ```
 
 Data settings and learning rate are part of the plan. `execute` does not silently replace them. Make a new plan
-to change the dataset or token dimensions. Model/topology gathering and hardware inspection precede the pure
-planning step. Dataset loading and tokenization happen during execution, before model weights are loaded.
+to change the dataset or token dimensions.
+
+**Your dataset is read before the plan is made.** Every row is validated and tokenized first, before the model's
+config is even fetched. The plan carries the result as a data profile:
+- examples and tokens;
+- tokens per example (p50/p90/p99/max) and a length histogram;
+- the tokenizer's identity;
+- a hash of the encoded examples.
+
+The planner uses the profile to:
+- refuse a plan that would read past the data without permission, saying how many steps read it once;
+- turn `--epochs N` into steps;
+- warn about examples longer than `--seq`, which packing always splits.
+
+`execute` tokenizes the data again and stops before loading any weights if the result differs from the plan's
+profile: the file changed, or the tokenizer did. Plans made before 0.3 have no profile; they, and the Alpaca
+demonstration, read only the rows the token budget needs, as before.
 
 Without `--adapter-out`, each execution chooses a fresh `OUT/RUN_ID/adapter` directory. The run report is
 `OUT/RUN_ID.json`, preserving the existing report-discovery layout. An existing adapter output path is rejected
@@ -114,12 +129,18 @@ steps * gradient_accumulation * micro_batch * sequence_length
 ```
 
 input tokens. This counts input positions, not the number of shifted loss targets. A final example may be cut at
-the token budget; the report records its unused tail. Rows after that budget are not tokenized. By default user
-data is read in order. `--shuffle-data` makes the order deterministic for the execution `--seed`.
+the token budget; the report records its unused tail. By default user data is read in order. `--shuffle-data` makes
+the order deterministic for the execution `--seed`.
 
-A short user dataset fails during preparation, before model loading. Reduce the requested steps or explicitly
-add `--repeat-data`. Repetition and passes are recorded, not disguised as more unique examples. Repeated passes
-use the same selected order. Omitting `--dataset` preserves the historical Alpaca demonstration, which repeats
+`--epochs N` (instead of `--steps`) reads the dataset N times. The plan records the derived steps:
+
+```text
+steps = floor(N * dataset_tokens / (sequence_length * micro_batch * gradient_accumulation)), at least 1
+```
+
+A dataset too short for the requested steps is refused by the plan, which suggests the steps that read it once.
+Pass `--epochs`, or explicitly add `--repeat-data`, to read it more than once. Repetition and passes are recorded,
+not disguised as more unique examples. Repeated passes use the same selected order. Omitting `--dataset` preserves the historical Alpaca demonstration, which repeats
 as needed and is announced in the log.
 
 Tokens are prepared in a temporary memory-mapped file, normally beside the adapter output's parent, and cleaned

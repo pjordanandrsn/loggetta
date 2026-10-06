@@ -1,7 +1,6 @@
 """Native adapter export/reload with actual runtime LoRA modules on CPU, no downloaded models."""
 import copy
 import hashlib
-import json
 from dataclasses import replace
 from types import SimpleNamespace
 

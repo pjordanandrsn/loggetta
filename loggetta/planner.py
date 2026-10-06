@@ -10,6 +10,8 @@ Deterministic: the same inputs give the same plan, byte for byte (``ExecutionPla
 from __future__ import annotations
 
 import json
+import math
+from dataclasses import replace
 
 from .backends import BACKENDS
 from .plan import Candidate, Constraints, ExecutionPlan, MemoryLine, Workload
@@ -285,17 +287,67 @@ def _rank(objective, setup, dev, host, backend):
     return backend.speed_rank(setup), "objective speed: ordered by measured evidence (see Why)"
 
 
+def resolve_data(workload: Workload, profile: dict | None):
+    """What the training data's profile means for the plan: ``steps`` from ``epochs``, whether the data covers the
+    tokens the plan reads, and the examples packing must split. Pure arithmetic on the profile.
+
+    Returns ``(workload, reasons, warnings, refusal)``; ``refusal`` is ``(reasons, suggestions)`` or None."""
+    if profile is None or workload.kind != "train":
+        return workload, [], [], None
+    from .data import longer_than
+
+    if workload.data is not None and profile.get("options") != workload.data:
+        raise ValueError("the data profile was made with other dataset options than the workload's")
+    tokens, per_step = profile["tokens"], workload.tokens_per_microbatch * workload.grad_accum
+    reasons, warnings = [], []
+    if workload.epochs is not None:
+        workload = replace(workload, steps=max(1, int(workload.epochs * tokens // per_step)))
+        reasons.append(f"steps {workload.steps}: {workload.epochs:g} epoch(s) of {tokens:,} tokens at {per_step:,} "
+                       "tokens per optimizer step (seq x micro-batch x grad-accum)")
+    needed = workload.steps * per_step
+    repeat = bool((workload.data or {}).get("repeat"))
+    allowed = math.inf if repeat else (math.ceil(workload.epochs) if workload.epochs is not None else 1)
+    passes = needed / tokens
+    reasons.append(f"data: this plan reads {needed:,} tokens of the {tokens:,} the dataset holds ({passes:.2f} passes"
+                   + (", repetition allowed" if repeat else "") + ")")
+    sure, most = longer_than(profile, workload.seq_len)
+    if most:
+        count = f"{sure:,}" if sure == most else f"{sure:,}-{most:,}"
+        warnings.append(f"{count} of {profile['rows']:,} examples are longer than seq {workload.seq_len:,} tokens: "
+                        "packing always splits them across rows, so their later tokens train on a cut context")
+    refusal = None
+    if passes > allowed:
+        if tokens < per_step:
+            why = (f"the dataset holds {tokens:,} tokens, less than one optimizer step reads ({per_step:,} = seq x "
+                   "micro-batch x grad-accum)")
+        else:
+            why = (f"the dataset holds {tokens:,} tokens; this plan reads {needed:,} ({passes:.2f} passes) and "
+                   "repeating it is not allowed")
+        suggestions = []
+        if tokens >= per_step:
+            suggestions.append(f"--steps {tokens // per_step} reads it once")
+        suggestions += ["--epochs N reads it N times, on purpose", "--repeat-data allows repeating it"]
+        if tokens < per_step:
+            suggestions.insert(0, "a shorter seq, micro-batch or grad-accum")
+        refusal = ([why], suggestions)
+    return workload, reasons, warnings, refusal
+
+
 def plan(topology, hardware, workload: Workload, constraints: Constraints = Constraints(), *, backends=None,
-         observations=()) -> ExecutionPlan:
+         observations=(), data_profile: dict | None = None) -> ExecutionPlan:
+    """The ExecutionPlan for ``workload`` on ``hardware``. ``data_profile`` is the training data's profile
+    (``data.encode_dataset``), read before planning; with it the plan states what the data holds and refuses data that
+    cannot cover the plan, and ``epochs`` resolve to steps."""
     backends = BACKENDS if backends is None else backends
     if constraints.objective not in OBJECTIVES:
         raise ValueError(f"objective must be one of {OBJECTIVES}")
     gpu = hardware.gpu(constraints.device)
-    warnings, reasons = [], []
+    workload, reasons, warnings, data_refusal = resolve_data(workload, data_profile)
     if workload.data is not None:
         warnings.append("Data preparation buffers and temporary token-file disk space are not included in the "
-                        "training memory estimate; data is validated before model loading. A feasible plan is "
-                        "an estimate, not a guarantee against out-of-memory errors.")
+                        "training memory estimate; data is validated before "
+                        + ("planning and checked again before model loading" if data_profile else "model loading")
+                        + ". A feasible plan is an estimate, not a guarantee against out-of-memory errors.")
     dev_budget = constraints.vram_budget
     dev_src = "user"
     if dev_budget is None:
@@ -327,13 +379,15 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
     if host_headroom:
         budget["host_headroom"] = int(host_headroom)
     common = dict(model=_model_dict(topology), hardware=_hw_dict(hardware, gpu), workload=workload,
-                  constraints=constraints, budget=budget)
+                  constraints=constraints, budget=budget, data_profile=data_profile)
 
     def refuse(why, **extra):
         return ExecutionPlan(status="refused", selected=None, alternatives=extra.pop("alternatives", ()),
                              reasons=tuple(reasons), warnings=tuple(warnings),
                              refusal={"reasons": list(why), **extra}, **common)
 
+    if data_refusal is not None:                # the cheapest answer: nothing about the machine or model changes it
+        return refuse(data_refusal[0], suggestions=data_refusal[1])
     if gpu is None:
         return refuse([f"no GPU at index {constraints.device}: every installed backend needs one"])
     if topology.loader_refusal:

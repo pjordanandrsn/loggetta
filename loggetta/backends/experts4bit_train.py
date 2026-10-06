@@ -98,8 +98,12 @@ def run(plan, *, seed: int = 0, warmup: int = 2, log=print, adapter_dir: str | N
     tok = AutoTokenizer.from_pretrained(plan.model["model"], revision=plan.model.get("revision"))
     t_data = time.perf_counter()
     n_blocks = plan.workload.steps * plan.workload.grad_accum * plan.workload.micro_batch
+    epochs = getattr(plan.workload, "epochs", None)
+    # a plan made from a data profile re-reads the data and refuses to go on if it is not what was planned
     with prepare_data(tok, n_blocks, plan.workload.seq_len, spec, seed=seed,
-                      cache_dir=str(target.parent) if target is not None else None) as prepared:
+                      cache_dir=str(target.parent) if target is not None else None,
+                      expect=getattr(plan, "data_profile", None),
+                      max_passes=math.ceil(epochs) if epochs and not spec.repeat else None) as prepared:
         data_seconds = time.perf_counter() - t_data
         log(f"Data ready: {prepared.info['tokens']} tokens from {prepared.info['examples_used']} rows; "
             f"{prepared.info['passes']} pass(es); full-sequence loss.", flush=True)
