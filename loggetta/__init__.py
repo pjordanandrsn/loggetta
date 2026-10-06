@@ -21,4 +21,4 @@ from .planner import plan
 
 __all__ = ["HardwareProfile", "probe", "describe_model", "Constraints", "ExecutionPlan", "Workload", "plan",
            "execute", "load_observations", "PlanNotExecutable"]
-__version__ = "0.1.1"
+__version__ = "0.1.2"
