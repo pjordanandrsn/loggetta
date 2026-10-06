@@ -147,6 +147,34 @@ def reserve_fraction(gpu, setup, observations, default, model=None, kind="train"
     return default[0], default[1], default[2]
 
 
+_GIB_RE = r"([0-9.]+) (GiB|MiB)"
+
+
+def _oom_numbers(error: str):
+    """``(tried, capacity)`` in bytes from a CUDA out-of-memory message (``Tried to allocate X``, ``total capacity of
+    Y``); None where absent."""
+    import re
+
+    def grab(pat):
+        m = re.search(pat, error or "")
+        return int(float(m.group(1)) * (GiB if m.group(2) == "GiB" else 1 << 20)) if m else None
+    return grab(r"Tried to allocate " + _GIB_RE), grab(r"total capacity of " + _GIB_RE)
+
+
+def usable_capacity(gpu, observations):
+    """``(bytes, run_id)``: the smallest device capacity a CUDA out-of-memory message reported for this GPU class, or
+    None. The driver's total over-states what a process gets: lane SV5's RTX 4090 reports 24,564 MiB and gave the
+    process 23.52 GiB, and a plan sized against 24 GiB ran out of memory."""
+    best = None
+    for o in observations:
+        if o.get("hardware", {}).get("gpu", {}).get("name") != gpu.name:
+            continue
+        _tried, cap = _oom_numbers(o.get("error") or "")
+        if cap and (best is None or cap < best[0]):
+            best = (cap, o.get("run_id"))
+    return best
+
+
 def learned_serve_overheads(backend, topology, setup, observations, key):
     """Two overheads a serve plan learns from serve receipts of THIS model, when there are any:
 
@@ -161,10 +189,17 @@ def learned_serve_overheads(backend, topology, setup, observations, key):
 
     out, best, best_key, grow = [], None, None, None
     for o in observations:
-        if o.get("workload", {}).get("kind") != "serve" or o.get("status") != "OK" \
+        if o.get("workload", {}).get("kind") != "serve" or o.get("status") not in ("OK", "OOM") \
                 or o.get("model", {}).get("model") != topology.model:
             continue
-        m, rs = o.get("measured", {}), o.get("setup", {})
+        m, rs = o.get("measured", {}), dict(o.get("setup", {}))
+        if o.get("status") == "OOM":
+            # an out-of-memory run's allocator peak plus the allocation that failed is a LOWER bound on that setup's
+            # need: charged where it exceeds today's estimate, like a residual (lane SV5)
+            tried, _cap = _oom_numbers(o.get("error") or "")
+            if not (m.get("device_peak_bytes") and tried):
+                continue
+            m = {"device_peak_bytes": m["device_peak_bytes"] + tried}
         if m.get("device_peak_bytes"):
             try:
                 raw, _, refusals = backend.estimate(topology, rs, Workload(kind="serve"))
@@ -178,7 +213,7 @@ def learned_serve_overheads(backend, topology, setup, observations, key):
                     best_key = (r, o.get("run_id"))          # same placement / graphs / prefill graph: their pools too
         # serving's own peak where the receipt has one: a load can peak above everything after it (the int4 repack's
         # host buffers, handed back before serving), and that is the load's to price, not growth while serving
-        peak = m.get("host_anon_serving_peak_bytes") or m.get("host_anon_peak_bytes")
+        peak = m.get("host_anon_serving_peak_bytes") or m.get("host_anon_peak_bytes")      # (absent on an OOM)
         if peak and m.get("host_anon_after_load_bytes") and all(rs.get(k) == setup.get(k) for k in key):
             g = peak - m["host_anon_after_load_bytes"]
             if grow is None or g > grow[0]:
@@ -269,6 +304,13 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
     elif gpu and gpu.memory_free.value is not None and dev_budget > gpu.memory_free.value:
         warnings.append(f"device budget {dev_budget / GiB:.2f} GiB exceeds what the driver reports free now "
                         f"({gpu.memory_free.value / GiB:.2f} GiB): another process holds the difference")
+    cap = usable_capacity(gpu, observations or ()) if gpu else None
+    if cap:
+        others = max(0, (gpu.memory_total.value or 0) - (gpu.memory_free.value or 0)) if gpu.memory_free.value is not None else 0
+        if dev_budget > cap[0] - others:
+            dev_budget = cap[0] - others
+            dev_src += (f"; capped at the {cap[0] / GiB:.2f} GiB a CUDA process got on this GPU class "
+                        f"(receipt {cap[1]}'s out-of-memory message)")
     if gpu and gpu.memory_total.value and gpu.memory_free.value is not None:
         used = gpu.memory_total.value - gpu.memory_free.value
         if used > 1 * GiB:

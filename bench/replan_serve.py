@@ -36,6 +36,8 @@ def main():
     fixed = {"graphs": r["setup"]["graphs"]}
     if r["setup"].get("prefill_graph") is not None:
         fixed["prefill_graph"] = str(r["setup"]["prefill_graph"])
+    if r["setup"].get("buckets") is not None:               # the run's own decode-graph buckets
+        fixed["buckets"] = tuple(int(b) for b in r["setup"]["buckets"])
     for lever in ("exp_int4", "attn_int4"):                 # the int4 serving levers, as the run set them
         if r["setup"].get(lever) is not None:
             fixed[lever] = r["setup"][lever] in (True, "1", "true", "True")

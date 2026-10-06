@@ -225,6 +225,11 @@ def explain(sel, feasible, infeasible, budget, status, constraints, workload) ->
                    "serve_paged resolves them (reported at /health)")
         if constraints.objective == "speed" and any(c.setup.get("graphs") for c in feasible + infeasible):
             out += [f"ordering, {k}: {v}" for k, v in SERVE_EVIDENCE.items()]
+        from experts4bit_qlora.serve_recipe import DEFAULT_BUCKETS
+        if s.get("graphs") and "buckets" not in constraints.fixed and tuple(s.get("buckets", ())) != tuple(DEFAULT_BUCKETS):
+            out.append(f"decode-graph buckets {list(s['buckets'])}: none above {s['max_seqs']} sequences, since a step "
+                       "never carries more rows than sequences; each bucket costs a graph, and the largest sizes the "
+                       "scratch slots (per-slot state on a hybrid model)")
         if s.get("prefill_graph") == "0" and "prefill_graph" not in constraints.fixed:
             out.append("first-chunk prefill graph off (the server's default is auto): its private pool is not priced "
                        "(SC2b measured +3.3 GiB at Qwen3-30B), so the plan's memory would not bound the process; fix "
@@ -296,6 +301,11 @@ def _serve_candidates(workload, constraints, status):
         return []
     base = {**ServeSetup().to_dict(), "max_seqs": workload.concurrency or 1,
             "max_tokens_per_seq": workload.context_len or 4096}
+    try:                                    # the server's own rule (experts4bit-qlora#1234) where it has one
+        from experts4bit_qlora.serve_recipe import usable_buckets as _usable
+    except ImportError:
+        _usable = usable_buckets
+    base["buckets"] = _usable(base["max_seqs"], base["buckets"])
     if "prefill_graph" in base:
         base["prefill_graph"] = "0"                # its pool is not priced: a plan bounds memory by what it priced
     residency = constraints.expert_residency or ("device", "host")
@@ -310,6 +320,16 @@ def _serve_candidates(workload, constraints, status):
         out.append({**base, "graphs": False, "vram_gb": 0.0, "dram_gb": 0.0, "hot_rows": "auto", **fixed,
                     "placement": "solver"})
     return out
+
+
+def usable_buckets(max_seqs: int, buckets) -> tuple:
+    """The decode-graph buckets a server of ``max_seqs`` sequences can use. A decode step never carries more rows than
+    sequences, and the runner pads a step to the next bucket, so a bucket above ``max_seqs`` never runs. It still
+    costs what every bucket costs: a captured graph, and the scratch slots the largest bucket sizes (a hybrid model's
+    linear-attention state is per slot: ~62 MiB each on Qwen3.6-35B). The planner keeps the buckets below
+    ``max_seqs`` and ends at ``max_seqs`` itself, capped at the largest bucket (a wider step runs in chunks of it)."""
+    keep = {int(b) for b in buckets if int(b) < max_seqs}
+    return tuple(sorted(keep | {min(int(max_seqs), max(int(b) for b in buckets))}))
 
 
 def _serve_setup(cls, setup: dict):

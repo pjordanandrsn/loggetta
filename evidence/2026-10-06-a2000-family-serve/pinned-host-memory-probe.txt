@@ -1,0 +1,19 @@
+=== olmoe 04:30:06
+PHASE start                        shmem       10 MiB  anon      411 MiB  host_alloc {"allocated_bytes.current": 0, "allocated_bytes.peak": 0, "reserved_bytes.current": 0, "reserved_bytes.peak": 0}
+PHASE after load_moe_4bit_streaming shmem      276 MiB  anon      482 MiB  host_alloc {"allocated_bytes.current": 0, "allocated_bytes.peak": 277090304, "reserved_bytes.current": 277090304, "reserved_bytes.peak": 277090304}
+PHASE after enable_hybrid_tier     shmem      280 MiB  anon     1629 MiB  host_alloc {"allocated_bytes.current": 4194304, "allocated_bytes.peak": 281284616, "reserved_bytes.current": 281284616, "reserved_bytes.peak": 281284616}
+PHASE after Fp8PagedKV             shmem      280 MiB  anon     1629 MiB  host_alloc {"allocated_bytes.current": 4194304, "allocated_bytes.peak": 281284616, "reserved_bytes.current": 281284616, "reserved_bytes.peak": 281284616}
+PHASE after PagedModelRunner       shmem      280 MiB  anon     1629 MiB  host_alloc {"allocated_bytes.current": 4194304, "allocated_bytes.peak": 281284616, "reserved_bytes.current": 281284616, "reserved_bytes.peak": 281284616}
+PHASE after build_engine           shmem      280 MiB  anon     1553 MiB  host_alloc {"allocated_bytes.current": 4194304, "allocated_bytes.peak": 281284616, "reserved_bytes.current": 281284616, "reserved_bytes.peak": 281284616}
+PHASE after serving one request    shmem      516 MiB  anon     2297 MiB  host_alloc {"allocated_bytes.current": 25198592, "allocated_bytes.peak": 302288909, "reserved_bytes.current": 302288909, "reserved_bytes.peak": 302288909}
+=== bake qwen3 04:31:17
+=== qwen3 04:40:33
+PHASE start                        shmem       10 MiB  anon      410 MiB  host_alloc {"allocated_bytes.current": 0, "allocated_bytes.peak": 0, "reserved_bytes.current": 0, "reserved_bytes.peak": 0}
+PHASE after load_moe_4bit_streaming shmem     1054 MiB  anon      565 MiB  host_alloc {"allocated_bytes.current": 0, "allocated_bytes.peak": 1093144832, "reserved_bytes.current": 1093144832, "reserved_bytes.peak": 1093144832}
+PHASE after enable_hybrid_tier     shmem     1314 MiB  anon    10806 MiB  host_alloc {"allocated_bytes.current": 4194304, "allocated_bytes.peak": 1365774600, "reserved_bytes.current": 1365774600, "reserved_bytes.peak": 1365774600}
+PHASE after Fp8PagedKV             shmem     1314 MiB  anon    10806 MiB  host_alloc {"allocated_bytes.current": 4194304, "allocated_bytes.peak": 1365774600, "reserved_bytes.current": 1365774600, "reserved_bytes.peak": 1365774600}
+PHASE after PagedModelRunner       shmem     1314 MiB  anon    10806 MiB  host_alloc {"allocated_bytes.current": 4194304, "allocated_bytes.peak": 1365774600, "reserved_bytes.current": 1365774600, "reserved_bytes.peak": 1365774600}
+PHASE after build_engine           shmem     1314 MiB  anon     9823 MiB  host_alloc {"allocated_bytes.current": 4194304, "allocated_bytes.peak": 1365774600, "reserved_bytes.current": 1365774600, "reserved_bytes.peak": 1365774600}
+PHASE after serving one request    shmem     1442 MiB  anon    10621 MiB  host_alloc {"allocated_bytes.current": 25296896, "allocated_bytes.peak": 1370099981, "reserved_bytes.current": 1370099981, "reserved_bytes.peak": 1370099981}
+--- with experts4bit-qlora#1241 (release_cached_pinned_memory at the end of build_engine), Qwen3-30B-A3B tiered:
+PHASE after build_engine           shmem       14 MiB  host_alloc reserved 4194304 (was 1365774600)

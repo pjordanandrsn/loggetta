@@ -1,0 +1,572 @@
+{
+ "schema": "execution-receipt/1",
+ "run_id": "a2000-ernie-4.5-21b-4x4096",
+ "plan": {
+  "alternatives": [
+   {
+    "backend": "experts4bit",
+    "bounds": {},
+    "device_bytes": 18759958323,
+    "feasible": false,
+    "host_bytes": 4182769664,
+    "label_text": "serve all-vram, fp8 paged KV, 4 seqs x 4096 tokens",
+    "lines": [
+     {
+      "basis": "derived",
+      "bytes": 11466180288,
+      "detail": "27 layers x all experts, nf4 blocksize 64 (packed + absmax)",
+      "name": "frozen expert stacks (all VRAM)",
+      "where": "device"
+     },
+     {
+      "basis": "derived",
+      "bytes": 536870912,
+      "detail": "ColdTier(hot_rows=64) pins hot_rows x 6635520 B; PyTorch's pinned allocator rounds the request up to a power of two (grouped-nf4-gemm pinned_request_cost)",
+      "name": "cold tier landing (pinned)",
+      "where": "host"
+     },
+     {
+      "basis": "derived",
+      "bytes": 424673280,
+      "detail": "a 64-row pageable tier for the one-shot reads that build the resident stacks; closed after construction, counted in full: measured shared memory on OLMoE never fell below the total that includes it",
+      "name": "setup tier (while the stacks are built)",
+      "where": "host"
+     },
+     {
+      "basis": "derived",
+      "bytes": 2882240896,
+      "detail": "embeddings, attention, norms, routers, dense/shared MLPs; no adapters under an arena load",
+      "name": "dense weights (bf16)",
+      "where": "device"
+     },
+     {
+      "basis": "derived",
+      "bytes": 506577344,
+      "detail": "28 layers x (4 seqs x 4096 tokens + 0 graph scratch slots), fp8 payload + fp32 scales (Fp8PagedKV's arithmetic)",
+      "name": "FP8 paged KV pool",
+      "where": "device"
+     },
+     {
+      "basis": "derived",
+      "bytes": 264241152,
+      "detail": "a prompt's K/V for every attention layer stays bf16 until the prompt completes (paged_attention's staging buffer); at most 4608 tokens staged at once (one prompt of up to 4096 tokens finishing while the next starts a 512-token chunk); its ceiling, since prompt lengths are the caller's",
+      "name": "prefill staging (bf16 K/V of prompts mid-prefill)",
+      "where": "device"
+     },
+     {
+      "basis": "heuristic",
+      "bytes": 66666496,
+      "detail": "a 512-token prefill chunk's hidden states and routed expert activations + fp32 logits for 4 sequences",
+      "name": "prefill/decode working set",
+      "where": "device"
+     },
+     {
+      "basis": "inferred",
+      "bytes": 3037181235,
+      "detail": "default 20% of the allocator estimate; no serve receipt on file measured this GPU",
+      "name": "allocator reserve (cached, unallocated blocks)",
+      "where": "device"
+     },
+     {
+      "basis": "inferred",
+      "bytes": 536870912,
+      "detail": "default; no receipt on file measured this GPU + driver",
+      "name": "CUDA context + library workspaces",
+      "where": "device"
+     },
+     {
+      "basis": "inferred",
+      "bytes": 3221225472,
+      "detail": "default; no receipt on file measured this host",
+      "name": "process baseline (torch, CUDA, libraries, model objects)",
+      "where": "host"
+     }
+    ],
+    "rank": [
+     0,
+     1
+    ],
+    "rank_note": "objective speed: ordered by measured evidence (see Why)",
+    "rejected": [
+     "device 17.47 + headroom 0.53 GiB > budget 10.65 GiB"
+    ],
+    "setup": {
+     "attn_int4": false,
+     "buckets": [
+      1,
+      2,
+      4
+     ],
+     "chunk_tokens": 512,
+     "dram_gb": 6.0,
+     "exp_int4": false,
+     "graphs": false,
+     "hot_rows": 64,
+     "kv_groups": "auto",
+     "max_seqs": 4,
+     "max_tokens_per_seq": 4096,
+     "placement": "all-vram",
+     "prefill_graph": "0",
+     "vram_gb": 1.2
+    },
+    "unmodelled": [
+     "the bulk KV flush transient (E4B_PAGED_BULK_KV, on by default since SC2c/SC2d): one prompt's K/V staged for the single bulk write; lane SC2d recorded 168 MiB on gpt-oss-20b"
+    ]
+   }
+  ],
+  "budget": {
+   "device": 11437867008,
+   "device_source": "reported: free now",
+   "headroom": 571893350,
+   "host": 27070652416,
+   "host_headroom": 1353532620,
+   "host_source": "reported: available now"
+  },
+  "constraints": {
+   "device": 0,
+   "expert_residency": null,
+   "fixed": {},
+   "headroom": null,
+   "objective": "speed",
+   "ram_budget": null,
+   "target_s_per_step": null,
+   "vram_budget": null
+  },
+  "hardware": {
+   "cpu": "Intel(R) Xeon(R) W-1250 CPU @ 3.30GHz",
+   "cpus": 2.0,
+   "gpu": {
+    "compute_capability": [
+     8,
+     6
+    ],
+    "driver": "575.64.05",
+    "index": 0,
+    "memory_free": 11437867008,
+    "memory_free_source": "reported",
+    "memory_total": 12878610432,
+    "name": "NVIDIA RTX A2000 12GB",
+    "pcie": [
+     1,
+     8,
+     3,
+     16
+    ],
+    "uuid": "GPU-01aa94f1-4004-9932-0b37-2051081a2a9d"
+   },
+   "gpus": 1,
+   "platform": "Linux x86_64",
+   "ram_available": 27070652416,
+   "ram_available_source": "reported",
+   "ram_limit": 30064771072
+  },
+  "model": {
+   "convention": "qwen2_moe",
+   "dense_params": 1441120448,
+   "expert_params": 20384317440,
+   "loader_refusal": null,
+   "model": "baidu/ERNIE-4.5-21B-A3B-PT",
+   "model_type": "ernie4_5_moe",
+   "moe_layers": 27,
+   "n_experts": 64,
+   "n_layers": 28,
+   "provenance": {
+    "config": "baidu/ERNIE-4.5-21B-A3B-PT",
+    "int4_attention_linears": "engines.int4_attn.attention_linears (the serving swap's rule) on the meta tree",
+    "kv": "serve_paged._kv_geometry + paged_runner.kv_layers over decoder_layers (the paged server's rules)",
+    "paged_state_refusal": "engines.paged_runner.paged_state_refusal (the runner's own rules) on the meta tree",
+    "structure": "module tree built on meta from the config (no weights read)",
+    "tied_embeddings": "config tie_word_embeddings (the loader's rule when no lm_head.weight ships)",
+    "top_k": "config: first of ROUTED_TOP_K_KEYS present",
+    "transformers": "5.18.0"
+   },
+   "revision": null,
+   "summary": "baidu/ERNIE-4.5-21B-A3B-PT (ernie4_5_moe, qwen2_moe): 27/28 MoE layers, E=64 H=2560 I=1536, top-6; 20.38B expert + 1.44B dense params",
+   "top_k": 6
+  },
+  "performance": {
+   "estimate": null,
+   "statement": "not predicted: no performance model is calibrated for this backend yet; the ordering below rests on measured relative speeds, not on a time estimate"
+  },
+  "provenance": {
+   "backend_versions": {
+    "bitsandbytes": "0.50.2",
+    "experts4bit-qlora": "0.44.0",
+    "grouped-nf4-gemm": "0.37.0",
+    "torch": "2.8.0+cu128",
+    "transformers": "5.18.0"
+   }
+  },
+  "reasons": [
+   "experts4bit: kernel paged_graphs not usable here: the fused FP8 KV append casts to e4m3 in Triton, which needs sm_89+; this device is sm_86",
+   "experts4bit: vram_gb sized to 4.554, the largest the device budget allows",
+   "experts4bit: dram_gb sized to 10.678, the largest the host budget allows",
+   "experts split across tiers (placement solver): 4.55 GiB in VRAM, 6.13 GiB in DRAM (computed on the CPU), 0.00 GiB on NVMe (streamed through the cold tier); all-VRAM needs 17.47 GiB + headroom, over the 10.65 GiB budget",
+   "tier budgets: VRAM filled to the device budget, then DRAM to the host budget less its headroom (E4B_PAGED_VRAM_GB / E4B_PAGED_DRAM_GB); routing is assumed uniform, as serve_paged runs the solver without a profile",
+   "cold tier: hot_rows 1, the fewest the split can serve with (a cold layer's routed experts per step); its pinned landing, cold view and setup tier scale with it, so the server's default of 64 would cost host memory the DRAM tier can use",
+   "kernels: grouped-nf4-gemm's native CPU kernels (the solver's DRAM tier computes on the CPU)",
+   "KV pool 0.47 GiB for 4 sequences x 4096 tokens; it scales linearly in both",
+   "kernels: paged FP8 KV pool + attention, f32 compute (fp8 compute needs sm_89+, fp8_paged_attn.fp8_compute_unsupported); grouped NF4 / int4 decode routes as serve_paged resolves them (reported at /health)",
+   "first-chunk prefill graph off (the server's default is auto): its private pool is not priced (SC2b measured +3.3 GiB at Qwen3-30B), so the plan's memory would not bound the process; fix prefill_graph=auto to let the server engage it when that much is free",
+   "int4 levers off: exp_int4 and attn_int4 change the served weights (round-to-nearest int4), so the planner prices them only when fixed",
+   "not planned yet: a measured routing profile for the solver, decode speed",
+   "to serve it: E4B_PAGED_BUCKETS=1,2,4 E4B_PAGED_CHUNK_TOKENS=512 E4B_PAGED_DRAM_GB=10.678 E4B_PAGED_GRAPHS=0 E4B_PAGED_HOT_ROWS=1 E4B_PAGED_KV_GROUPS=auto E4B_PAGED_MAX_SEQS=4 E4B_PAGED_MAX_TOKENS_PER_SEQ=4096 E4B_PAGED_PLACEMENT=solver E4B_PAGED_PREFILL_GRAPH=0 E4B_PAGED_VRAM_GB=4.554 E4B_SERVE_ATTN_INT4=0 E4B_SERVE_EXP_INT4=0 python -m experts4bit_qlora.serve_paged (with the model's arena and calibration)"
+  ],
+  "refusal": null,
+  "schema": "execution-plan/1",
+  "selected": {
+   "backend": "experts4bit",
+   "bounds": {},
+   "device_bytes": 10861033241,
+   "feasible": true,
+   "host_bytes": 9865134080,
+   "label_text": "serve solver, fp8 paged KV, 4 seqs x 4096 tokens, tiers VRAM 4.55 / DRAM 10.68 GiB",
+   "lines": [
+    {
+     "basis": "derived",
+     "bytes": 4883742720,
+     "detail": "736 of 1728 expert rows x 6635520 B; solve_placement with the server's budgets (4.554 / 10.678 GiB) and no routing profile, as build_engine calls it: VRAM fills first, then DRAM, then NVMe",
+     "name": "expert stacks, VRAM tier",
+     "where": "device"
+    },
+    {
+     "basis": "derived",
+     "bytes": 6582435840,
+     "detail": "992 rows, pageable host memory, fp32 absmax",
+     "name": "expert stacks, DRAM tier (computed on the CPU)",
+     "where": "host"
+    },
+    {
+     "basis": "derived",
+     "bytes": 0,
+     "detail": "0 rows streamed from the arena on demand",
+     "name": "expert rows on NVMe (read through the cold tier)",
+     "where": "nvme"
+    },
+    {
+     "basis": "derived",
+     "bytes": 8388608,
+     "detail": "ColdTier(hot_rows=1) pins hot_rows x 6635520 B; PyTorch's pinned allocator rounds the request up to a power of two (grouped-nf4-gemm pinned_request_cost)",
+     "name": "cold tier landing (pinned)",
+     "where": "host"
+    },
+    {
+     "basis": "derived",
+     "bytes": 53084160,
+     "detail": "a 8-row pageable tier for the one-shot reads that build the resident stacks; closed after construction, counted in full: measured shared memory on OLMoE never fell below the total that includes it",
+     "name": "setup tier (while the stacks are built)",
+     "where": "host"
+    },
+    {
+     "basis": "derived",
+     "bytes": 2882240896,
+     "detail": "embeddings, attention, norms, routers, dense/shared MLPs; no adapters under an arena load",
+     "name": "dense weights (bf16)",
+     "where": "device"
+    },
+    {
+     "basis": "derived",
+     "bytes": 506577344,
+     "detail": "28 layers x (4 seqs x 4096 tokens + 0 graph scratch slots), fp8 payload + fp32 scales (Fp8PagedKV's arithmetic)",
+     "name": "FP8 paged KV pool",
+     "where": "device"
+    },
+    {
+     "basis": "derived",
+     "bytes": 264241152,
+     "detail": "a prompt's K/V for every attention layer stays bf16 until the prompt completes (paged_attention's staging buffer); at most 4608 tokens staged at once (one prompt of up to 4096 tokens finishing while the next starts a 512-token chunk); its ceiling, since prompt lengths are the caller's",
+     "name": "prefill staging (bf16 K/V of prompts mid-prefill)",
+     "where": "device"
+    },
+    {
+     "basis": "heuristic",
+     "bytes": 66666496,
+     "detail": "a 512-token prefill chunk's hidden states and routed expert activations + fp32 logits for 4 sequences",
+     "name": "prefill/decode working set",
+     "where": "device"
+    },
+    {
+     "basis": "inferred",
+     "bytes": 1720693721,
+     "detail": "default 20% of the allocator estimate; no serve receipt on file measured this GPU",
+     "name": "allocator reserve (cached, unallocated blocks)",
+     "where": "device"
+    },
+    {
+     "basis": "inferred",
+     "bytes": 536870912,
+     "detail": "default; no receipt on file measured this GPU + driver",
+     "name": "CUDA context + library workspaces",
+     "where": "device"
+    },
+    {
+     "basis": "inferred",
+     "bytes": 3221225472,
+     "detail": "default; no receipt on file measured this host",
+     "name": "process baseline (torch, CUDA, libraries, model objects)",
+     "where": "host"
+    }
+   ],
+   "rank": [
+    1,
+    1
+   ],
+   "rank_note": "objective speed: ordered by measured evidence (see Why)",
+   "rejected": [],
+   "setup": {
+    "attn_int4": false,
+    "buckets": [
+     1,
+     2,
+     4
+    ],
+    "chunk_tokens": 512,
+    "dram_gb": 10.678,
+    "exp_int4": false,
+    "graphs": false,
+    "hot_rows": 1,
+    "kv_groups": "auto",
+    "max_seqs": 4,
+    "max_tokens_per_seq": 4096,
+    "placement": "solver",
+    "prefill_graph": "0",
+    "vram_gb": 4.554
+   },
+   "unmodelled": [
+    "the CPU tier's compute buffers",
+    "the bulk KV flush transient (E4B_PAGED_BULK_KV, on by default since SC2c/SC2d): one prompt's K/V staged for the single bulk write; lane SC2d recorded 168 MiB on gpt-oss-20b"
+   ]
+  },
+  "status": "feasible",
+  "warnings": [
+   "1.34 GiB of NVIDIA RTX A2000 12GB is already in use by other processes"
+  ],
+  "workload": {
+   "concurrency": 4,
+   "context_len": 4096,
+   "grad_accum": 1,
+   "kind": "serve",
+   "micro_batch": 1,
+   "optimizer": "adamw",
+   "phase": null,
+   "seq_len": 512,
+   "steps": 20
+  }
+ },
+ "model": {
+  "model": "baidu/ERNIE-4.5-21B-A3B-PT",
+  "revision": null
+ },
+ "workload": {
+  "kind": "serve",
+  "context_len": 4096,
+  "concurrency": 4,
+  "prompt_tokens": 1024,
+  "new_tokens": 32
+ },
+ "provenance": {
+  "argv": [
+   "bench/serve_validate.py",
+   "baidu/ERNIE-4.5-21B-A3B-PT",
+   "--arena",
+   "../runs/arenas/ernie-4.5-21b-a3b.nf4",
+   "--calib",
+   "../runs/serve-validate/calib-p39.json",
+   "--context",
+   "4096",
+   "--concurrency",
+   "4",
+   "--prompt-tokens",
+   "1024",
+   "--new-tokens",
+   "32",
+   "--env",
+   "E4B_PAGED_TORCH_THREADS=2",
+   "--out",
+   "../runs/serve-families",
+   "--run-id",
+   "a2000-ernie-4.5-21b-4x4096"
+  ],
+  "python": "3.11.2",
+  "sources": {
+   "experts4bit_qlora": {
+    "file": "/home/node/work/loggetta-ws/e4b/experts4bit_qlora/__init__.py",
+    "commit": "dfc5bdafd19ea659365eafe0663686ca238eac55",
+    "branch": "fix/serve-arena-layer-ids",
+    "dirty": true
+   },
+   "nf4_grouped": {
+    "file": "/home/node/work/loggetta-ws/gnf4/kernel/nf4_grouped.py",
+    "commit": "b630f121db7f704b42b8b679d101127785445da5",
+    "branch": "feat/bake-fused-marker",
+    "dirty": false
+   },
+   "loggetta": {
+    "file": "/home/node/work/loggetta-ws/loggetta/bench/../loggetta/__init__.py",
+    "commit": "46272073dfd690e2063f84c3d6d4209dad2f7c4a",
+    "branch": "main",
+    "dirty": false
+   }
+  },
+  "versions": {
+   "torch": "2.8.0+cu128",
+   "triton": "3.4.0",
+   "transformers": "5.18.0",
+   "bitsandbytes": "0.50.2",
+   "accelerate": "1.15.0",
+   "experts4bit-qlora": "0.44.0",
+   "grouped-nf4-gemm": "0.37.0"
+  },
+  "started_at": "2026-10-06T02:45:36Z",
+  "arena": "../runs/arenas/ernie-4.5-21b-a3b.nf4",
+  "arena_head_sha256": "c70e9fbfc48a22c6ab20e5eace18f71f02177d5676a92b06308013290e237360",
+  "calib": "../runs/serve-validate/calib-p39.json",
+  "calib_sha256": "15b79a103958dac240f35d46c2b86efecc100d5d683db925f6158099d007ecc2",
+  "baked": null,
+  "changed_during_run": []
+ },
+ "status": "OK",
+ "setup": {
+  "placement": "solver",
+  "max_seqs": 4,
+  "max_tokens_per_seq": 4096,
+  "chunk_tokens": 512,
+  "graphs": false,
+  "buckets": [
+   1,
+   2,
+   4
+  ],
+  "kv_groups": "auto",
+  "prefill_graph": "0",
+  "vram_gb": 4.554,
+  "dram_gb": 10.678,
+  "hot_rows": 1,
+  "exp_int4": false,
+  "attn_int4": false,
+  "torch_threads": "2"
+ },
+ "env": {
+  "E4B_PAGED_PLACEMENT": "solver",
+  "E4B_PAGED_MAX_SEQS": "4",
+  "E4B_PAGED_MAX_TOKENS_PER_SEQ": "4096",
+  "E4B_PAGED_CHUNK_TOKENS": "512",
+  "E4B_PAGED_GRAPHS": "0",
+  "E4B_PAGED_BUCKETS": "1,2,4",
+  "E4B_PAGED_KV_GROUPS": "auto",
+  "E4B_PAGED_PREFILL_GRAPH": "0",
+  "E4B_PAGED_VRAM_GB": "4.554",
+  "E4B_PAGED_DRAM_GB": "10.678",
+  "E4B_PAGED_HOT_ROWS": "1",
+  "E4B_SERVE_EXP_INT4": "0",
+  "E4B_SERVE_ATTN_INT4": "0",
+  "E4B_PAGED_TORCH_THREADS": "2",
+  "E4B_PAGED_MODEL": "baidu/ERNIE-4.5-21B-A3B-PT",
+  "E4B_PAGED_ARENA": "../runs/arenas/ernie-4.5-21b-a3b.nf4",
+  "E4B_PAGED_CALIB": "../runs/serve-validate/calib-p39.json"
+ },
+ "planned": true,
+ "placement": {
+  "tiers": {
+   "vram": 736,
+   "dram": 992,
+   "nvme": 0
+  },
+  "bytes_per_expert": 6635520,
+  "vram_gb": 4.554,
+  "dram_gb": 10.678,
+  "hot_rows": 1,
+  "masses": {
+   "vram_frac": 0.0,
+   "dram_frac": 0.0,
+   "nvme_frac": 0.0,
+   "target_gpu_cpu_ratio": 3.165686432484692,
+   "achieved_gpu_cpu_ratio": null
+  }
+ },
+ "info": {
+  "moe_layers": 27,
+  "experts": 64,
+  "top_k": 6,
+  "model_type": "ernie4_5_moe",
+  "int4_expert_layers": 0,
+  "int4_store_kinds": [],
+  "int4_attn_projections": 0,
+  "kv": {
+   "n_kv_heads": 4,
+   "head_dim": 128,
+   "k_groups": "auto",
+   "scratch_slots": 0,
+   "blocks_per_seq": 256
+  },
+  "grouping": {
+   "device_grouping": false,
+   "force_singleton_groups": false
+  },
+  "prefill_graph": "0",
+  "levers_env": {
+   "E4B_SERVE_EXP_INT4": "0",
+   "E4B_SERVE_ATTN_INT4": "0"
+  },
+  "exp_int4_layers_enabled": 0,
+  "attn_int4_rtn_projections": 0,
+  "attn_int4_calib_projections": 0,
+  "fuse_qkv_n": 0,
+  "fuse_t1_glue_n": 0,
+  "fuse_t1_glue_r2_n": [
+   0,
+   0
+  ],
+  "fuse_router_epilogue_n": 0,
+  "host_heap_trimmed": true
+ },
+ "hardware": {
+  "gpu": {
+   "name": "NVIDIA RTX A2000 12GB",
+   "driver": "575.64.05",
+   "memory_total": 12878610432
+  }
+ },
+ "measured": {
+  "host_baseline_bytes": 795402240,
+  "load_seconds": 43.8,
+  "load_device_peak_bytes": 8351729664,
+  "load_reserved_peak_bytes": 8453619712,
+  "host_anon_after_load_bytes": 7191183360,
+  "device_peak_bytes": 8960399360,
+  "device_reserved_peak_bytes": 9414115328,
+  "driver_process_peak_bytes": 9548333056,
+  "driver_samples": 589,
+  "cuda_context_bytes": 134217728,
+  "host_required_peak_bytes": 8955764736,
+  "scheduler_steps": 39,
+  "generate_seconds": 140.67,
+  "tokens_per_s": 0.9,
+  "host_anon_peak_bytes": 8301715456,
+  "host_shmem_peak_bytes": 707133440,
+  "host_file_peak_bytes": 2494824448,
+  "host_anon_serving_peak_bytes": 8301715456,
+  "expert_routes_seen": {
+   "nf4_mtile_host|gt256": 224,
+   "nf4_singleton|le256": 44,
+   "nf4_mtile_host|le256": 400
+  }
+ },
+ "estimate": {
+  "device_lines": {
+   "expert stacks, VRAM tier": 4883742720,
+   "dense weights (bf16)": 2882240896,
+   "FP8 paged KV pool": 506577344,
+   "prefill staging (bf16 K/V of prompts mid-prefill)": 264241152,
+   "prefill/decode working set": 66666496,
+   "allocator reserve (cached, unallocated blocks)": 1720693721,
+   "CUDA context + library workspaces": 536870912
+  },
+  "allocator_estimate_bytes": 8603468608,
+  "device_total_bytes": 10861033241
+ },
+ "comparison": {
+  "allocator_peak_minus_estimate_gib": 0.332,
+  "driver_peak_minus_plan_total_gib": -1.223
+ }
+}

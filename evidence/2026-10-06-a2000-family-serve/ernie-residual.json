@@ -1,0 +1,269 @@
+{
+ "schema": "serve-residual/1",
+ "model": "baidu/ERNIE-4.5-21B-A3B-PT",
+ "setup": {
+  "placement": "solver",
+  "max_seqs": 4,
+  "max_tokens_per_seq": 4096,
+  "chunk_tokens": 512,
+  "graphs": false,
+  "buckets": [
+   1,
+   2,
+   4,
+   8,
+   16
+  ],
+  "kv_groups": "auto",
+  "prefill_graph": "0",
+  "vram_gb": 4.554,
+  "dram_gb": 10.678,
+  "hot_rows": 1,
+  "exp_int4": false,
+  "attn_int4": false
+ },
+ "estimate_device": {
+  "expert stacks, VRAM tier": 4883742720,
+  "dense weights (bf16)": 2882240896,
+  "FP8 paged KV pool": 506577344,
+  "prefill staging (bf16 K/V of prompts mid-prefill)": 264241152,
+  "prefill/decode working set": 66666496
+ },
+ "load_peak_bytes": 8351729664,
+ "run_peak_bytes": 8960399360,
+ "replayed_peak_bytes": 8887999968,
+ "trace_events": 433799,
+ "mark": 1116,
+ "groups": [
+  {
+   "frame": "e4b/experts4bit_qlora/engines/nvme_experts.py:207 _build_hot",
+   "bytes": 4883742720,
+   "count": 48
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/loader.py:1418 _read",
+   "bytes": 2891091712,
+   "count": 308
+  },
+  {
+   "frame": "gnf4/kernel/row_pool.py:67 __init__",
+   "bytes": 506462208,
+   "count": 2
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hybrid.py:633 _dram_on_gpu",
+   "bytes": 251658240,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hybrid.py:636 _dram_on_gpu",
+   "bytes": 125829120,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hybrid.py:653 _dram_on_gpu",
+   "bytes": 62914560,
+   "count": 2
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hot_residency.py:1188 forward",
+   "bytes": 31457280,
+   "count": 1
+  },
+  {
+   "frame": "transformers/models/ernie4_5_moe/modeling_ernie4_5_moe.py:250 forward",
+   "bytes": 28311552,
+   "count": 54
+  },
+  {
+   "frame": "transformers/models/ernie4_5_moe/modeling_ernie4_5_moe.py:178 apply_rotary_pos_emb",
+   "bytes": 28311552,
+   "count": 54
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hybrid.py:634 _dram_on_gpu",
+   "bytes": 15728640,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hybrid.py:639 _dram_on_gpu",
+   "bytes": 15728640,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hot_residency.py:955 _fused_over_stack",
+   "bytes": 15728640,
+   "count": 1
+  },
+  {
+   "frame": "transformers/models/ernie4_5_moe/modeling_ernie4_5_moe.py:131 forward",
+   "bytes": 8519680,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hybrid.py:637 _dram_on_gpu",
+   "bytes": 7864320,
+   "count": 1
+  },
+  {
+   "frame": "transformers/models/ernie4_5_moe/modeling_ernie4_5_moe.py:520 forward",
+   "bytes": 2621440,
+   "count": 1
+  },
+  {
+   "frame": "transformers/models/ernie4_5_moe/modeling_ernie4_5_moe.py:446 forward",
+   "bytes": 2621440,
+   "count": 1
+  },
+  {
+   "frame": "transformers/models/ernie4_5_moe/modeling_ernie4_5_moe.py:440 forward",
+   "bytes": 2621440,
+   "count": 1
+  },
+  {
+   "frame": "transformers/models/ernie4_5_moe/modeling_ernie4_5_moe.py:60 forward",
+   "bytes": 2621440,
+   "count": 1
+  },
+  {
+   "frame": "transformers/models/ernie4_5_moe/modeling_ernie4_5_moe.py:79 forward",
+   "bytes": 2621440,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hot_residency.py:1011 _row_index",
+   "bytes": 270336,
+   "count": 11
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hot_residency.py:1012 _row_index",
+   "bytes": 270336,
+   "count": 11
+  },
+  {
+   "frame": "transformers/models/ernie4_5_moe/modeling_ernie4_5_moe.py:133 forward",
+   "bytes": 262144,
+   "count": 1
+  },
+  {
+   "frame": "transformers/models/ernie4_5_moe/modeling_ernie4_5_moe.py:134 forward",
+   "bytes": 262144,
+   "count": 1
+  },
+  {
+   "frame": "transformers/models/ernie4_5_moe/modeling_ernie4_5_moe.py:358 forward",
+   "bytes": 131072,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/fp8_paged_kv.py:317 __init__",
+   "bytes": 114688,
+   "count": 1
+  },
+  {
+   "frame": "transformers/models/ernie4_5_moe/modeling_ernie4_5_moe.py:360 forward",
+   "bytes": 24576,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hot_residency.py:1176 forward",
+   "bytes": 24576,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hot_residency.py:1177 forward",
+   "bytes": 24576,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hot_residency.py:1227 forward",
+   "bytes": 24576,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hybrid.py:699 _cold_contrib",
+   "bytes": 24576,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hybrid.py:651 _dram_on_gpu",
+   "bytes": 24576,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hybrid.py:652 _dram_on_gpu",
+   "bytes": 24576,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hot_residency.py:1151 _finish_ids",
+   "bytes": 13824,
+   "count": 27
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hybrid.py:650 _dram_on_gpu",
+   "bytes": 12288,
+   "count": 1
+  },
+  {
+   "frame": "gnf4/kernel/nf4_grouped.py:409 stage",
+   "bytes": 8352,
+   "count": 8
+  },
+  {
+   "frame": "transformers/models/ernie4_5_moe/modeling_ernie4_5_moe.py:365 forward",
+   "bytes": 6144,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/paged_runner.py:229 run_prefill",
+   "bytes": 4096,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/paged_runner.py:231 run_prefill",
+   "bytes": 4096,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hot_residency.py:1178 forward",
+   "bytes": 3072,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hybrid.py:697 _cold_contrib",
+   "bytes": 3072,
+   "count": 1
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hot_residency.py:1149 _finish_ids",
+   "bytes": 1728,
+   "count": 27
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hybrid.py:247 __init__",
+   "bytes": 1728,
+   "count": 27
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/hybrid.py:250 __init__",
+   "bytes": 1728,
+   "count": 27
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/loader.py:1846 load_moe_4bit_streaming",
+   "bytes": 512,
+   "count": 2
+  },
+  {
+   "frame": "e4b/experts4bit_qlora/engines/fp8_paged_kv.py:319 __init__",
+   "bytes": 448,
+   "count": 1
+  },
+  {
+   "frame": "gnf4/kernel/nf4_grouped.py:1275 _lut",
+   "bytes": 64,
+   "count": 1
+  }
+ ]
+}

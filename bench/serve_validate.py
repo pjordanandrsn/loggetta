@@ -31,13 +31,13 @@ def _sha256(path, limit=None):
     return h.hexdigest()
 
 
-def bake(model, arena, log=print):
+def bake(model, arena, log=print, **kw):
     from huggingface_hub import snapshot_download
     from nvme_bake_nf4 import bake_nf4
 
     snap = snapshot_download(model, local_files_only=True, allow_patterns=["*.json", "*.safetensors"])
     t0 = time.time()
-    bake_nf4(snap, arena, log=log)
+    bake_nf4(snap, arena, log=log, **kw)
     return {"snapshot": snap, "seconds": round(time.time() - t0, 1)}
 
 
@@ -47,6 +47,9 @@ def main():
     ap.add_argument("--arena", required=True)
     ap.add_argument("--calib", required=True)
     ap.add_argument("--bake", action="store_true")
+    ap.add_argument("--bake-kw", action="append", default=[], help="KEY=VALUE passed to bake_nf4, a comma making a "
+                    "tuple (GraniteMoe: fused_marker=.block_sparse_moe. and "
+                    "fused_proj=input_linear.weight,output_linear.weight)")
     ap.add_argument("--context", type=int, default=4096)
     ap.add_argument("--concurrency", type=int, default=4)
     ap.add_argument("--prompt-tokens", type=int, default=1024, help="per request; > chunk exercises chunked prefill")
@@ -73,7 +76,8 @@ def main():
     if not os.path.exists(a.arena):
         if not a.bake:
             sys.exit(f"{a.arena} does not exist (pass --bake to write it)")
-        baked = bake(a.model, a.arena)
+        kw = {k: (tuple(v.split(",")) if "," in v else v) for k, v in (x.split("=", 1) for x in a.bake_kw)}
+        baked = {**bake(a.model, a.arena, **kw), "bake_kw": kw}
     hw = HardwareProfile.from_dict(json.load(open(a.hardware)), origin=a.hardware) if a.hardware else probe()
     obs = [o for d in a.observations for o in load_observations(d)]
     w = Workload(kind="serve", context_len=a.context, concurrency=a.concurrency)

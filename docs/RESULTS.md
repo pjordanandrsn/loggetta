@@ -370,6 +370,40 @@ VRAM tier at long contexts, so the 8192 × 8 rows shifted, and Qwen3-30B at 8192
 - **gpt-oss-20b on 12 GB is a correct refusal.** Its per-expert biases do not ride the arena, so the hybrid tier
   cannot serve it, and all-VRAM needs 13.9 GiB + headroom.
 
+**Update, 2026-10-06: serving three more families showed the sweep was too generous.** I tried to serve
+granite-3.1-3b, LFM2-8B and granite-4.0-h-tiny on the A2000 through `bench/serve_validate.py`. All three were
+planned feasible above; none could be served as planned.
+- **LFM2-8B and granite-4.0-h-tiny are refused by the server.**
+  - LFM2's `conv` layers are a type the paged runner keeps no state for.
+  - granite-4.0-h's Mamba layers are labelled `linear_attention`, but the per-slot pool drives Gated DeltaNet only.
+  - experts4bit-qlora#1215 states the runner's own rules (`paged_state_refusal`), and the estimate now refuses both
+    on every card (`evidence/serve-family-sweep-hybrids.*`).
+- **granite-3.1-3b could not be baked.** gnf4's `bake_nf4` found fused expert stacks only under an `.experts.` name,
+  and GraniteMoe's are `block_sparse_moe.input_linear` / `output_linear`.
+  - grouped-nf4-gemm#488 adds `fused_marker`: the arena baked in 47 s.
+  - The planned serve then ran: **allocator peak 2.959 GiB against 2.997 estimated (−1.3%)**
+    (`evidence/2026-10-06-a2000-family-serve/`).
+  - That makes Granite the third family checked serving, after OLMoE and Qwen3-30B. `--bake-kw` passes the
+    layout to the harness.
+- **Qwen3.6-35B's linear-attention state is now priced** (experts4bit-qlora#1219). It is a bf16 conv window and an
+  fp32 recurrent state, ~2.06 MiB per layer per slot. Its RTX 5090 plans grew from 22.40 to 23.44 GiB (4096 × 1)
+  and from 23.13 to 24.59 GiB (8192 × 8).
+- **Decode-graph buckets are capped at the sequences.** Most of that 4096 × 1 growth came from 16 scratch slots a
+  single-user server never uses. A decode step never carries more rows than sequences, so serve plans now keep the
+  buckets up to `max_seqs` (`[1]` for one user).
+- Not checked by the planner: whether a model's checkpoint layout can be baked at all. That is the bake's knowledge,
+  not the topology's.
+- **ERNIE-4.5-21B-A3B: two server bugs, then a fourth served family** (`evidence/2026-10-06-a2000-family-serve/`).
+  ERNIE's layer 0 is dense, and DeepSeek-V2's first layer is too.
+  - The arena keyed rows by checkpoint layer (1–27) while the server asked by MoE ordinal (`KeyError: (0, 0)`).
+  - The KV pool was sized by MoE layers (27), not decoder layers (28).
+  - Both are fixed in experts4bit-qlora#1228. The planned tiered serve (736 rows in VRAM, 992 in DRAM) then ran.
+  - It peaked 0.33 GiB over the estimate. An allocator-history replay (`ernie-residual-attribution.txt`) put
+    457.5 MiB in the DRAM tier's prefill on the GPU, which #1229 now prices; it lands 117 MiB over.
+- **DeepSeek-V2-Lite is refused.** Its multi-head latent attention hands the pool keys of 192 and values of 128
+  against a 64-wide pool. The first prompt failed after the whole model had loaded. #1233 refuses it from the config,
+  before loading, and in the estimate.
+
 ## 6d. SV1: the graphs, measured on a rented RTX 5090
 
 Lane SV1 is experts4bit-qlora#1152, registered before the box in #1153 and read in #1161.
@@ -456,7 +490,8 @@ All values GiB unless marked.
 
 ## 6f. SV2: the int4 levers on Qwen3-30B-A3B, decode graphs on, a rented RTX 5090
 
-Lane SV2 is experts4bit-qlora#1207 (owner-approved, $5 cap), registered before the box in #1208 and read in #1210.
+Lane SV2 is experts4bit-qlora#1207 (owner-approved, $5 cap), registered in #1208 and read in #1210. The box launched
+before its registration was reviewed; see "How SV2–SV5 ran" below 6i.
 - **The box:** `sv2-5090-1`, one RTX 5090, **$0.45**, teardown proven. Announced on the session bus before launch and
   reported there after.
 - **The build:** `serve_paged` built in-process with the environment `ServeSetup.to_env()` gives, all-VRAM, decode
@@ -487,6 +522,126 @@ All values GiB. Plans use FP1's RTX 5090 profile (`bench/replan_serve.py`; "befo
   back, which is why they end below NF4. Trimming after every build is a separate e4b change.
 - **The host plan stays conservative** (10.3 GiB planned against ~6.5 GiB measured at the repack). The repack price is
   a ceiling, and the planner still sums it with serving's growth, though the two do not coincide.
+
+## 6g. SV3: the hybrid state pool and gpt-oss on a rented RTX 5090
+
+Lane SV3 is experts4bit-qlora#1224 ($10 cap, within the owner's $50 approval), registered in #1225, read in #1232. The
+box launched before its registration merged; see "How SV2–SV5 ran" below 6i.
+- **The box:** `sv3-5090-1`, one RTX 5090, **$0.51**, teardown proven, announced on the bus before launch.
+- **The arenas:** baked on the box through the loader.
+
+| arm | estimate | allocator peak | driver peak | plan total before SV3 | after |
+|---|---|---|---|---|---|
+| Qwen3.6, 16 seqs, eager | 23.217 | 23.408 | 24.082 | 24.183 | 24.239 |
+| Qwen3.6, 16 seqs, graphs | 24.187 | 24.423 | 25.568 | 25.614 | 25.593 |
+| Qwen3.6, 1 seq, bucket 1 | 21.720 | 21.948 | 22.732 | 23.077 | 22.818 |
+| gpt-oss-20b, 16 seqs, graphs | 15.391 | 15.673 | 17.109 | **16.567** | 17.162 |
+
+All values GiB.
+
+- **The linear-attention state pool matched its price to the byte** in all four Qwen3.6 arms: 16, 32, 17 and 2
+  slots, 30 layers. That is #1219's per-slot arithmetic on the full model.
+- **The estimate held:** every peak sat 0.8–1.8% over its estimate, inside ±5%. That is the allocator residual
+  earlier runs measured, and the planner learns it.
+- **Six families now served beside the estimate:** OLMoE, Qwen3-30B, granite-3.1, ERNIE-4.5, Qwen3.6 and
+  gpt-oss-20b.
+- **gpt-oss-20b was under-planned until now.** Before SV3 its plan was **0.54 GiB under** the driver peak: its 4.9%
+  slack exceeds what it borrowed from other models' receipts. With its own receipt, +0.05 GiB.
+- **The bucket cap's reading is an ALARM, and a finding.**
+  - With one sequence and the default buckets, buckets 2–16 failed to capture on Qwen3.6, so that arm is not used.
+    `bench/import_sv3.py` marks it `ALARM`, and the planner does not learn from it.
+  - The server now captures only the buckets its sequences can use (experts4bit-qlora#1234). The planner defers to
+    that rule.
+
+## 6h. SV4: 30B on a real 24 GB card, at all-VRAM and on the solver's tiers
+
+Lane SV4 is experts4bit-qlora#1236 ($10 cap within the owner's $50), registered in #1239, read in #1240. The box
+launched before review; see "How SV2–SV5 ran" below 6i.
+- **The box:** `sv4-4090-1`, one RTX 4090 (sm_89), **$0.15**, teardown proven.
+
+| arm | estimate | allocator peak | the server's split (VRAM / DRAM / NVMe rows) | slack |
+|---|---|---|---|---|
+| all-VRAM, 1 × 4096, graphs | 18.685 | 18.668 (−0.1%) | — | 0.42% |
+| the planner's tiers, 8 × 8192 | 18.264 | 17.471 (−4.3%) | 4,422 / 1,722 / 0, as priced | 4.08% |
+| tiers 8 / 3 GiB, 4 × 4096 | 12.528 | 12.131 (−3.2%) | 3,236 / 1,213 / 1,695, as priced | 6.68% |
+
+All values GiB.
+
+- **The estimate held at 30B on all three placements.** The server split the experts exactly as priced, including
+  4.2 GiB streamed from NVMe.
+- **Tiered slack at 30B is 4–7%, not the 15% the planner had borrowed** from OLMoE's tiered runs on an A2000.
+- **Measured slack changes the plan, not just the reserve.** With these receipts, the planner's 8 × 8192 serve on a
+  24 GB card moves from tiers (11.7 GiB in VRAM, 15.2 GiB in DRAM) to **all-VRAM with decode graphs, 22.74 GiB of
+  24** (`evidence/2026-10-06-sv4-rtx4090/replan-24gb-before-after.txt`). SV5 checks that plan on the same card class.
+- **The pinned-memory reading missed, then got fixed.**
+  - Every arm pinned 1.1–1.3 GB beyond the priced cold-tier landing.
+  - A phase probe on the A2000 (`2026-10-06-a2000-family-serve/pinned-host-memory-probe.txt`) traced it to torch's
+    caching host allocator. It kept the loader's freed pinned staging: 1.09 GB after loading Qwen3-30B, 1.37 GB after
+    the hybrid tier, 4 MB of it in use.
+  - experts4bit-qlora#1241 releases it at the end of the build: pinned memory after the build went from 1,314 MiB to
+    14 MiB.
+
+## 6i. SV5: the plan SV4 produced, checked on its card, ran out of memory
+
+Lane SV5 is experts4bit-qlora#1242 ($5 cap within the owner's $50). The box launched from #1243's unreviewed head 37 s
+after it opened. #1243 then merged after review, with consequences and a reducer written after the data. Under its
+"What this file licenses", the read (#1257) is **exploratory** and licenses no change in experts4bit-qlora or here.
+Through the reducer:
+- Z1 MISSED;
+- Z2 MISSED, on a lower bound;
+- Z3 NO_READING;
+- Z4 HELD.
+
+This planner's own change after SV5 (`usable_capacity`, OOM lower bounds) is loggetta's decision, not licensed by
+that read.
+- **The box:** `sv5-4090-1`, one RTX 4090, **$0.13**, teardown proven.
+- **The plan under test:** after SV4, the planner moved Qwen3-30B at 8 × 8192 on a 24 GB card to all-VRAM with
+  decode graphs, 22.74 GiB planned. SV5 served exactly that plan.
+
+| arm | estimate | allocator peak | driver peak | outcome |
+|---|---|---|---|---|
+| 8 × 1,024-token prompts | 22.150 | 21.734 | 22.477 | OK, under the plan |
+| 8 × 8,000-token prompts | 22.150 | 22.59 at failure (+32 MiB requested) | — | **out of memory** |
+
+All values GiB.
+
+- **The plan was wrong twice.**
+  - **The bulk KV flush was unpriced.** Its finished prompt's K/V across all 48 layers is quantized and held until one
+    write, 526 MiB at a full 8,192-token slot. Short prompts never reach it. experts4bit-qlora#1247 prices it from
+    the pool's own bound, reviewed on its code rather than on this read; the estimate becomes 22.664 GiB. The failed
+    arm's 22.62 GiB is only where it stopped, a floor on its need, so an estimate above it does not show the
+    estimate covers the peak.
+  - **The card was smaller than stated.** The RTX 4090 reports 24,564 MiB and gave the process 23.52 GiB. The
+    planner now caps a GPU class's budget at the capacity a receipt's out-of-memory message reports
+    (`usable_capacity`).
+  - It also reads an out-of-memory receipt as a lower bound on that setup's need (allocated + requested), charged
+    where today's estimate falls short.
+- **Replanned with the fixes** (`evidence/2026-10-06-sv5-rtx4090/replan-24gb-with-fixes.txt`): with SV4's receipts
+  alone the planner already returns to tiers (13.06 GiB in VRAM); with SV5's too, the budget is 23.52 GiB and the
+  VRAM tier 12.63 GiB. Neither repeats the failing plan.
+- **The check.** A plan that changed on new evidence was run on the card it targets before anyone relied on it, and
+  it failed in a way that names two causes.
+
+### How SV2–SV5 ran
+
+All four boxes launched before their registrations had merged after review:
+- SV2 launched one minute after a change request;
+- SV4 launched 1 min 41 s after its registration opened;
+- SV5 launched 37 s after its registration opened.
+
+experts4bit-qlora's maintainer posted the requirements on each work item before the registration PR. This session
+skipped them each time:
+- the registration merges first;
+- registered consequences;
+- a reducer with a self-test;
+- host-only exit codes.
+
+The maintainer's dated notes (experts4bit-qlora#1213, #1237, #1244, and the review on #1243) record that SV2–SV4's
+reads license no change to that package. SV5's read (#1257) is exploratory under #1243's merged text.
+
+The planner consumes these receipts as data, by design: they are measurements, and the estimate items they inform are
+re-priced in experts4bit-qlora only through PRs reviewed on their code. Weigh SV2–SV5 as measurements taken outside
+the registration process, not as pre-registered tests.
 
 ## 7. Not measured, said plainly
 

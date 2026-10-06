@@ -1,0 +1,42 @@
+[02:50:46]   checkpoint: baidu/ERNIE-4.5-21B-A3B-PT @ 87db95487941cb39592ee0abca3b9155a6d19c5c (requested main, unpinned)
+[02:50:46]   fusing + quantizing experts (up to 28x64) to nf4 (streaming)...
+[02:50:46]   quantized experts on 27/28 MoE layers (64 experts each)
+[02:50:46]   loading non-expert weights (attention/embeddings/router/norms/dense-mlp)...
+[02:50:47]   skipped 12 checkpoint tensor(s) the text model does not build (Ernie4_5_MoeForCausalLM._keys_to_ignore_on_load_unexpected), e.g. model.mtp_block.0.input_layernorm.weight
+[02:50:47]   applied 27 transformers checkpoint-key renaming(s) (this checkpoint's layout differs from the module tree)
+[02:50:47]   experts deferred to the arena: 27 module(s), 135 unmaterialized buffer(s) — call nvme_experts.enable_nvme_residency() before running this model
+[02:51:22]   hybrid tier active on 27 module(s): vram/dram/nvme masses 0.00/0.00/0.00
+[serve_paged] fusions (fold flags set: none): {'fuse_qkv_n': 0, 'fuse_t1_glue_n': 0, 'fuse_t1_glue_r2_n': [0, 0], 'fuse_router_epilogue_n': 0}
+[serve_paged] ready: {"moe_layers": 27, "experts": 64, "top_k": 6, "model_type": "ernie4_5_moe", "int4_expert_layers": 0, "int4_store_kinds": [], "int4_attn_projections": 0, "kv": {"n_kv_heads": 4, "head_dim": 128, "k_groups": "auto", "scratch_slots": 0, "blocks_per_seq": 256}, "graph_status": null, "grouping": {"device_grouping": false, "force_singleton_groups": false}, "prefill_graph": "0", "levers_env": {"E4B_SERVE_EXP_INT4": "0", "E4B_SERVE_ATTN_INT4": "0"}, "exp_int4_layers_enabled": 0, "attn_int4_rtn_projections": 0, "attn_int4_calib_projections": 0, "fuse_qkv_n": 0, "fuse_t1_glue_n": 0, "fuse_t1_glue_r2_n": [0, 0], "fuse_router_epilogue_n": 0, "host_heap_trimmed": true}
+estimate 8.013 GiB | load peak 7.778 | run peak 8.345 | replayed peak 8.278 | residual 340 MiB | generate 167.4s
+live at the generation peak, by allocating frame:
+     4657.5 MiB  x48    e4b/experts4bit_qlora/engines/nvme_experts.py:207 _build_hot
+     2757.2 MiB  x308   e4b/experts4bit_qlora/loader.py:1418 _read
+      483.0 MiB  x2     gnf4/kernel/row_pool.py:67 __init__
+      240.0 MiB  x1     e4b/experts4bit_qlora/engines/hybrid.py:633 _dram_on_gpu
+      120.0 MiB  x1     e4b/experts4bit_qlora/engines/hybrid.py:636 _dram_on_gpu
+       60.0 MiB  x2     e4b/experts4bit_qlora/engines/hybrid.py:653 _dram_on_gpu
+       30.0 MiB  x1     e4b/experts4bit_qlora/engines/hot_residency.py:1188 forward
+       27.0 MiB  x54    transformers/models/ernie4_5_moe/modeling_ernie4_5_moe.py:250 forward
+       27.0 MiB  x54    transformers/models/ernie4_5_moe/modeling_ernie4_5_moe.py:178 apply_rotary_pos_emb
+       15.0 MiB  x1     e4b/experts4bit_qlora/engines/hybrid.py:634 _dram_on_gpu
+       15.0 MiB  x1     e4b/experts4bit_qlora/engines/hybrid.py:639 _dram_on_gpu
+       15.0 MiB  x1     e4b/experts4bit_qlora/engines/hot_residency.py:955 _fused_over_stack
+        8.1 MiB  x1     transformers/models/ernie4_5_moe/modeling_ernie4_5_moe.py:131 forward
+        7.5 MiB  x1     e4b/experts4bit_qlora/engines/hybrid.py:637 _dram_on_gpu
+        2.5 MiB  x1     transformers/models/ernie4_5_moe/modeling_ernie4_5_moe.py:520 forward
+        2.5 MiB  x1     transformers/models/ernie4_5_moe/modeling_ernie4_5_moe.py:446 forward
+        2.5 MiB  x1     transformers/models/ernie4_5_moe/modeling_ernie4_5_moe.py:440 forward
+        2.5 MiB  x1     transformers/models/ernie4_5_moe/modeling_ernie4_5_moe.py:60 forward
+        2.5 MiB  x1     transformers/models/ernie4_5_moe/modeling_ernie4_5_moe.py:79 forward
+        0.3 MiB  x11    e4b/experts4bit_qlora/engines/hot_residency.py:1011 _row_index
+        0.3 MiB  x11    e4b/experts4bit_qlora/engines/hot_residency.py:1012 _row_index
+        0.2 MiB  x1     transformers/models/ernie4_5_moe/modeling_ernie4_5_moe.py:133 forward
+        0.2 MiB  x1     transformers/models/ernie4_5_moe/modeling_ernie4_5_moe.py:134 forward
+        0.1 MiB  x1     transformers/models/ernie4_5_moe/modeling_ernie4_5_moe.py:358 forward
+        0.1 MiB  x1     e4b/experts4bit_qlora/engines/fp8_paged_kv.py:317 __init__
+        0.0 MiB  x1     transformers/models/ernie4_5_moe/modeling_ernie4_5_moe.py:360 forward
+        0.0 MiB  x1     e4b/experts4bit_qlora/engines/hot_residency.py:1176 forward
+        0.0 MiB  x1     e4b/experts4bit_qlora/engines/hot_residency.py:1177 forward
+        0.0 MiB  x1     e4b/experts4bit_qlora/engines/hot_residency.py:1227 forward
+        0.0 MiB  x1     e4b/experts4bit_qlora/engines/hybrid.py:699 _cold_contrib
