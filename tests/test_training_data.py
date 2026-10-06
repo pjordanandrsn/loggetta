@@ -99,6 +99,29 @@ def test_chat_uses_training_template_and_does_not_duplicate_eos():
         encode_example(Tokenizer(), {"messages": []}, TrainingData(format="chat"), "chat")
 
 
+def test_chat_accepts_a_tokenizer_that_returns_a_dict():
+    # transformers >= 5: apply_chat_template(tokenize=True) returns a BatchEncoding unless return_dict=False
+    class DictTokenizer(Tokenizer):
+        def apply_chat_template(self, messages, **kwargs):
+            return {"input_ids": [1, 2, self.eos_token_id], "attention_mask": [1, 1, 1]}
+
+    messages = [{"role": "user", "content": "Hello"}, {"role": "assistant", "content": "Hi"}]
+    assert encode_example(DictTokenizer(), {"messages": messages}, TrainingData(format="chat"), "chat") == [1, 2, 0]
+
+
+def test_chat_with_a_real_transformers_tokenizer():
+    tokenizers = pytest.importorskip("tokenizers")
+    transformers = pytest.importorskip("transformers")
+    vocab = {"[UNK]": 0, "<eos>": 1, "user": 2, "assistant": 3, "hello": 4, "hi": 5}
+    core = tokenizers.Tokenizer(tokenizers.models.WordLevel(vocab, unk_token="[UNK]"))
+    core.pre_tokenizer = tokenizers.pre_tokenizers.WhitespaceSplit()
+    tok = transformers.PreTrainedTokenizerFast(tokenizer_object=core, eos_token="<eos>", unk_token="[UNK]")
+    tok.chat_template = "{% for m in messages %}{{ m['role'] }} {{ m['content'] }} <eos> {% endfor %}"
+    messages = [{"role": "user", "content": "hello"}, {"role": "assistant", "content": "hi"}]
+    ids = encode_example(tok, {"messages": messages}, TrainingData(format="chat"), "chat")
+    assert ids == [2, 4, 1, 3, 5, 1]
+
+
 def test_text_column_can_be_selected_explicitly(tmp_path):
     file = jsonl(tmp_path, [{"body": "abc"}])
     with prepare_data(Tokenizer(), 1, 4, TrainingData(str(file), format="text", text_field="body")) as data:

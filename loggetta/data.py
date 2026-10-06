@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import tempfile
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -129,6 +130,9 @@ def encode_example(tokenizer, ex: dict, spec: TrainingData, fmt: str) -> list[in
         if not getattr(tokenizer, "chat_template", None):
             raise ValueError("chat data requires a tokenizer chat template; supply preformatted text instead")
         ids = tokenizer.apply_chat_template(messages, tokenize=True, add_generation_prompt=False)
+        # transformers >= 5 returns a BatchEncoding here by default (return_dict=True); 4.x returned the ids
+        if isinstance(ids, Mapping):
+            ids = ids.get("input_ids", ())
     else:
         value = text(spec.text_field) if fmt == "text" else (
             f"### Instruction:\n{text(spec.instruction_field)}\n\n### Input:\n{text(spec.input_field, optional=True)}"

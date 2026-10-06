@@ -11,6 +11,8 @@
 - Record artifact paths and export failures in run reports, separately from training-step measurements.
 - Keep the complete `pip install loggetta` installation, simplify the README, and document the Accelerate comparison.
 - Add CPU data, CLI, persistence, and real-LoRA round-trip coverage plus an optional tiny local MoE CUDA test.
+- Chat data works with transformers 5, whose `apply_chat_template(tokenize=True)` returns a `BatchEncoding` by
+  default; a test now encodes through a real `PreTrainedTokenizerFast`.
 
 Limitations: full-sequence loss only; no automatic held-out evaluation, optimizer resume, PEFT-format export,
 first-class dense planning, or server-launch command. CPU tests are not GPU-family validation.
