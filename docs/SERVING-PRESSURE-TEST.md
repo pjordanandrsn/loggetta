@@ -56,10 +56,10 @@ choose among those mechanisms before loading, to say why, and to record the choi
 - `Candidate.setup` is a dict, and ranking is a backend function. A serving backend adds its own fields (for
   example `hot_per_layer`, `kv_dtype`, `decode_route`) without touching the planner.
 - The leaks were `Candidate.label()` and the planner's "why" text, which read training field names. Serving v1
-  moved both into the backend (`label(setup)`, `explain(...)`). The planner still names setup fields in four
-  places: receipt matching for reserve slack (`expert_residency`, `expert_kernel`), the PCIe-width warning, the
-  "allow host-backed experts" suggestion, and the serve suggestion's context/concurrency search. Each is a small
-  leak a third backend would have to match or move.
+  moved both into the backend (`label(setup)`, `explain(...)`). Three more moved later: slack matching uses the
+  backend's `SLACK_KEYS` only, and the PCIe-width warning and the "allow host-backed experts" suggestion are the
+  backend's `plan_warnings` and `relaxed_candidates`. The planner still names setup fields in one place: the serve
+  suggestion's context/concurrency search (`max_tokens_per_seq`, `max_seqs`).
 
 **3. Multi-GPU is not assumed away.** `HardwareProfile.gpus` is a list and `Constraints.device` an index. A
 multi-GPU plan would add per-device budgets; nothing assumes there is exactly one.

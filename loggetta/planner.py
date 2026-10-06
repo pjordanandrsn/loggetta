@@ -37,10 +37,24 @@ def host_headroom_policy(budget: int) -> int:
     return max(GiB, int(HEADROOM_FRAC * budget))
 
 
-def _overheads(hardware, gpu, observations):
+def _receipt_residency(obs, backends):
+    """Where a receipt's frozen weights lived, asked of the backend whose plan it ran (the first backend that can say,
+    for a receipt without its plan)."""
+    setup = obs.get("setup") or {}
+    ran = ((obs.get("plan") or {}).get("selected") or {}).get("backend")
+    for b in backends:
+        if ran is None or b.NAME == ran:
+            where = getattr(b, "residency", lambda s: None)(setup)
+            if where is not None or ran is not None:
+                return where
+    return None
+
+
+def _overheads(hardware, gpu, observations, backends=()):
     """Runtime costs the backends' estimates exclude, preferring measurements from receipts for this GPU + driver:
     the CUDA context (device), the allocator's reserved-but-unallocated blocks as a fraction of the allocator peak
-    (device), and the process's own host baseline. Returns (device lines, host lines, reserve fraction, its line meta)."""
+    (device), and the process's own host baseline (anonymous RSS after load, from a run whose frozen weights were all on
+    the device). Returns (device lines, host lines, reserve fraction, its line meta)."""
     key = (gpu.name if gpu else None, gpu.driver.value if gpu else None)
     for obs in observations:
         m = obs.get("measured", {})
@@ -50,7 +64,7 @@ def _overheads(hardware, gpu, observations):
         src = f"receipt {obs.get('run_id')}"
         alloc, reserved = m.get("device_peak_bytes"), m.get("device_reserved_peak_bytes")
         frac = (reserved - alloc) / alloc if alloc and reserved else DEFAULT_RESERVE_FRAC
-        base = m.get("host_anon_after_load_bytes") if obs.get("setup", {}).get("expert_residency") == "device" else None
+        base = m.get("host_anon_after_load_bytes") if _receipt_residency(obs, backends) == "device" else None
         return ([MemoryLine("CUDA context + library workspaces", "device", max(0, int(m["cuda_context_bytes"])),
                             "measured", f"{src}: driver-reported process peak minus allocator reserved peak")],
                 [MemoryLine("process baseline (torch, CUDA, libraries, model objects)", "host",
@@ -70,8 +84,7 @@ def _overheads(hardware, gpu, observations):
 PCIE_LANE_GBPS = {1: 0.25, 2: 0.5, 3: 0.985, 4: 1.969, 5: 3.938, 6: 7.563}
 
 
-def reserve_fraction(gpu, setup, observations, default, model=None, kind="train",
-                     key=("expert_residency", "expert_kernel")):
+def reserve_fraction(gpu, setup, observations, default, model=None, kind="train", key=()):
     """Allocator reserve slack (reserved peak / allocated peak - 1) for one candidate, from receipts. Returns
     (fraction, basis, source).
 
@@ -256,14 +269,6 @@ def _observed(observations, model, setup, workload, gpu):
     return None
 
 
-def _model_dict(topo) -> dict:
-    return {"model": topo.model, "model_type": topo.model_type, "revision": topo.revision,
-            "convention": topo.convention, "summary": topo.summary(), "n_layers": topo.n_layers,
-            "moe_layers": len(topo.expert_stacks), "n_experts": topo.n_experts, "top_k": topo.top_k,
-            "expert_params": topo.expert_numel, "dense_params": topo.dense_numel,
-            "loader_refusal": topo.loader_refusal, "provenance": topo.provenance}
-
-
 def _hw_dict(hardware, gpu) -> dict:
     h = hardware.host
     g = None if gpu is None else {
@@ -326,8 +331,12 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
               "host_source": host_src, "headroom": int(headroom)}
     if host_headroom:
         budget["host_headroom"] = int(host_headroom)
-    common = dict(model=_model_dict(topology), hardware=_hw_dict(hardware, gpu), workload=workload,
-                  constraints=constraints, budget=budget)
+    # each backend says whether it can plan for this description at all (its own admission), before anything is priced
+    refusals = [(b, b.refusal(topology)) for b in backends]
+    admitted = [b for b, why in refusals if why is None]
+    owner = admitted[0] if admitted else (backends[0] if backends else None)
+    common = dict(model=owner.summary(topology) if owner else {"model": getattr(topology, "model", None)},
+                  hardware=_hw_dict(hardware, gpu), workload=workload, constraints=constraints, budget=budget)
 
     def refuse(why, **extra):
         return ExecutionPlan(status="refused", selected=None, alternatives=extra.pop("alternatives", ()),
@@ -336,14 +345,14 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
 
     if gpu is None:
         return refuse([f"no GPU at index {constraints.device}: every installed backend needs one"])
-    if topology.loader_refusal:
-        return refuse([f"the model-family layer cannot load this model: {topology.loader_refusal}"])
-    usable = [b for b in backends if workload.kind in b.WORKLOADS]
+    if backends and not admitted:
+        return refuse([why if len(refusals) == 1 else f"{b.NAME}: {why}" for b, why in refusals])
+    usable = [b for b in admitted if workload.kind in b.WORKLOADS]
     if not usable:
         return refuse([f"no installed backend plans {workload.kind!r} workloads yet "
                        f"(backends: {', '.join(b.NAME for b in backends)}; they plan {sorted({w for b in backends for w in b.WORKLOADS})})"])
 
-    dev_over, host_over, reserve_frac, reserve_meta = _overheads(hardware, gpu, observations)
+    dev_over, host_over, reserve_frac, reserve_meta = _overheads(hardware, gpu, observations, backends)
     link_gbps, link_basis, link_src = link_bandwidth(gpu, observations)
     cands, statuses = [], {}
     for b in usable:
@@ -357,7 +366,7 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
         for k, (ok, why) in sorted(st.kernels.items()):
             if not ok and (wanted is None or k in wanted):
                 reasons.append(f"{b.NAME}: kernel {k} not usable here: {why}")
-        slack_key = getattr(b, "SLACK_KEYS", {}).get(workload.kind, ("expert_residency", "expert_kernel"))
+        slack_key = getattr(b, "SLACK_KEYS", {}).get(workload.kind, ())
         # a receipt written before the backend grew a setup field ran with that field's default: read it so, or a
         # key that names the field would never match the receipts that predate it
         key_defaults = getattr(b, "SLACK_DEFAULTS", {}).get(workload.kind, {})
@@ -475,10 +484,7 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
     st = statuses[sel.backend]
     b = next(x for x in usable if x.NAME == sel.backend)
     reasons += b.explain(sel, feasible, infeasible, budget, st, constraints, workload)
-    if sel.setup.get("expert_residency") == "host" and gpu.pcie_width_current.value and gpu.pcie_width_max.value and \
-            gpu.pcie_width_current.value < gpu.pcie_width_max.value:
-        warnings.append(f"host-resident experts stream over PCIe, and the driver reports the link at "
-                        f"x{gpu.pcie_width_current.value} of x{gpu.pcie_width_max.value} right now")
+    warnings += getattr(b, "plan_warnings", lambda *a: [])(sel.setup, gpu)
     return ExecutionPlan(status="feasible", selected=sel, alternatives=tuple(feasible[1:]) + tuple(infeasible),
                          reasons=tuple(reasons), warnings=tuple(warnings), performance=perf,
                          provenance={"backend_versions": st.versions}, **common)
@@ -495,21 +501,18 @@ def _suggest(topology, workload, constraints, budget, closest, backends, statuse
                    "processes hold)")
     if closest.host_bytes > budget["host"]:
         out.append(f"{(closest.host_bytes - budget['host']) / GiB:.2f} GiB more host memory")
-    if constraints.expert_residency and "host" not in constraints.expert_residency:
-        relaxed = Constraints(**{**constraints.__dict__, "expert_residency": None})
-        for b in backends:
-            for setup in b.candidates(topology, workload, relaxed, statuses[b.NAME]):
-                if setup.get("expert_residency") != "host":
-                    continue
-                raw, _, refusals = b.estimate(topology, setup, workload)
-                dev = int((1 + reserve_frac) * sum(r[2] for r in raw if r[1] == "device")) + sum(x.bytes for x in dev_over)
-                host = sum(r[2] for r in raw if r[1] == "host") + sum(x.bytes for x in host_over)
-                if not refusals and dev + budget["headroom"] <= budget["device"] and host <= budget["host"]:
-                    out.append(f"allow host-backed experts: {dev / GiB:.2f} GiB device + {host / GiB:.2f} GiB host fits")
-                    break
-            else:
-                continue
-            break
+    for b in backends:
+        for words, setup in getattr(b, "relaxed_candidates", lambda *a: [])(topology, workload, constraints,
+                                                                            statuses[b.NAME]):
+            raw, _, refusals = b.estimate(topology, setup, workload)
+            dev = int((1 + reserve_frac) * sum(r[2] for r in raw if r[1] == "device")) + sum(x.bytes for x in dev_over)
+            host = sum(r[2] for r in raw if r[1] == "host") + sum(x.bytes for x in host_over)
+            if not refusals and dev + budget["headroom"] <= budget["device"] and host <= budget["host"]:
+                out.append(f"{words}: {dev / GiB:.2f} GiB device + {host / GiB:.2f} GiB host fits")
+                break
+        else:
+            continue
+        break
     # the largest power-of-two token count at which the closest setup fits the device budget
     b = next((x for x in backends if x.NAME == closest.backend), None)
     if b is not None and dev_short > 0:
