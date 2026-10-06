@@ -175,20 +175,42 @@ def train_loop(model, trainable, model_id, w, smi, meas, *, revision=None, seed=
     if is_cuda:
         torch.cuda.reset_peak_memory_stats()
     smi_floor = smi.peak
-    losses, step_s, k = [], [], 0
+    # a loss mask (1 = trained) beside the blocks; None trains every token, exactly as before masks existed
+    masks = getattr(prepared_data, "mask", None) if prepared_data is not None else None
+    losses, step_s, k, skipped = [], [], 0, 0
     for step in range(w.steps):
         sync()
         ts = time.time()
         opt.zero_grad(set_to_none=True)
         acc = 0.0
-        for _ in range(w.grad_accum):
+        counts = total = None
+        if masks is not None:
+            # trained targets per micro-batch (a row's first token is never a target: labels shift by one). The step's
+            # gradient is the mean over all of them, so each micro-batch's mean loss is weighted by its share
+            counts = [int(masks[k + i * w.micro_batch:k + (i + 1) * w.micro_batch, 1:].sum())
+                      for i in range(w.grad_accum)]
+            total = sum(counts)
+            if total == 0:                                   # nothing in this step trains: no update
+                k += w.grad_accum * w.micro_batch
+                skipped += 1
+                continue
+        for i in range(w.grad_accum):
             ids = torch.tensor(blocks[k:k + w.micro_batch], dtype=torch.long, device=device)
+            if masks is not None and counts[i] == 0:
+                k += w.micro_batch
+                continue
+            labels = ids if masks is None else ids.masked_fill(
+                torch.tensor(masks[k:k + w.micro_batch], device=device) == 0, -100)
             k += w.micro_batch
-            loss = model(input_ids=ids, labels=ids).loss
+            loss = model(input_ids=ids, labels=labels).loss
             if not torch.isfinite(loss):
                 raise ValueError(f"non-finite loss at step {step + 1}; training stopped before an optimizer update")
-            (loss / w.grad_accum).backward()
-            acc += float(loss.detach()) / w.grad_accum
+            if masks is None:
+                (loss / w.grad_accum).backward()
+                acc += float(loss.detach()) / w.grad_accum
+            else:
+                (loss * (counts[i] / total)).backward()
+                acc += float(loss.detach()) * counts[i] / total
         torch.nn.utils.clip_grad_norm_(trainable, 1.0, error_if_nonfinite=True)
         opt.step()
         sync()
@@ -197,6 +219,8 @@ def train_loop(model, trainable, model_id, w, smi, meas, *, revision=None, seed=
         if step == 0 or (step + 1) % 5 == 0 or step + 1 == w.steps:
             log(f"  step {step + 1}/{w.steps}  loss {acc:.4f}  {step_s[-1]:.2f}s  "
                 f"peak {(torch.cuda.max_memory_allocated() / GiB if is_cuda else 0):.2f} GiB", flush=True)
+    if not losses:
+        raise ValueError("no optimizer step had a token to train on under the loss mask")
     meas.update(device_peak_bytes=torch.cuda.max_memory_allocated() if is_cuda else None,
                 device_reserved_peak_bytes=torch.cuda.max_memory_reserved() if is_cuda else None)
     time.sleep(2 * smi.interval)                          # let the sampler see the end state
@@ -229,6 +253,7 @@ def train_loop(model, trainable, model_id, w, smi, meas, *, revision=None, seed=
         "adapter_B_norm_before": b_norm_before,
         "adapter_B_norm_after": b_norm_after,
         "adapters_moved": b_norm_after > b_norm_before,
+        "steps_without_trained_tokens": skipped,
     }
     ok = correctness["all_finite"] and correctness["frozen_expert_bytes_unchanged"] and correctness["adapters_moved"]
     return {"measured": meas, "correctness": correctness, "data": data_info, "status": "OK" if ok else "ALARM"}
