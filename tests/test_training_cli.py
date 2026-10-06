@@ -1,9 +1,6 @@
 """The CLI saves data choices in plans and routes execution outputs without loading a model in these tests."""
 import json
 from dataclasses import replace
-from pathlib import Path
-
-import pytest
 
 import loggetta
 from loggetta.cli import main
@@ -11,15 +8,20 @@ from loggetta.execution import execute
 from loggetta.backends import experts4bit
 from loggetta.plan import ExecutionPlan
 from test_execution import a_plan, hw
+from test_training_data import Tokenizer
 
 
 def stub_planner(monkeypatch):
     seen = {}
-    monkeypatch.setattr(loggetta, "describe_model", lambda *a, **k: object())
+    def describe(*a, **k):
+        seen["described"] = True
+        return object()
+    monkeypatch.setattr(loggetta, "describe_model", describe)
     monkeypatch.setattr(loggetta, "probe", hw)
-    def plan(topology, hardware, workload, constraints, *, observations):
-        seen["workload"] = workload
-        return replace(a_plan(), workload=workload, constraints=constraints)
+    monkeypatch.setattr(loggetta.data, "load_tokenizer", lambda *a, **k: Tokenizer())
+    def plan(topology, hardware, workload, constraints, *, observations, data_profile=None):
+        seen.update(workload=workload, data_profile=data_profile)
+        return replace(a_plan(), workload=workload, constraints=constraints, data_profile=data_profile)
     monkeypatch.setattr(loggetta, "plan", plan)
     return seen
 
@@ -81,3 +83,31 @@ def test_cli_execute_forwards_output_without_replanning(monkeypatch, tmp_path):
     assert main(["execute", str(saved), "--out", str(tmp_path), "--adapter-out", str(tmp_path / "adapter"),
                  "--seed", "17"]) == 0
     assert seen["adapter_dir"] == str(tmp_path / "adapter") and seen["seed"] == 17
+
+
+def test_cli_profiles_the_dataset_before_planning_and_saves_the_profile(monkeypatch, tmp_path):
+    seen = stub_planner(monkeypatch)
+    data = tmp_path / "train.jsonl"
+    data.write_text("".join(json.dumps({"text": "x" * n}) + "\n" for n in (10, 20, 30)))
+    output = tmp_path / "plan.json"
+    assert main(["plan", "org/Model", "--dataset", str(data), "--epochs", "2", "--out", str(output)]) == 0
+    assert seen["data_profile"]["rows"] == 3 and seen["data_profile"]["tokens"] == 63
+    assert seen["workload"].epochs == 2
+    saved = ExecutionPlan.from_dict(json.loads(output.read_text()))
+    assert saved.data_profile == seen["data_profile"]
+
+
+def test_cli_a_bad_row_fails_before_the_model_is_described(monkeypatch, tmp_path, capsys):
+    seen = stub_planner(monkeypatch)
+    data = tmp_path / "train.jsonl"
+    data.write_text(json.dumps({"text": "fine"}) + "\n" + json.dumps({"text": ""}) + "\n")
+    assert main(["plan", "org/Model", "--dataset", str(data)]) == 2
+    assert "dataset row 1" in capsys.readouterr().err and "described" not in seen
+
+
+def test_cli_takes_steps_or_epochs_not_both(monkeypatch, tmp_path, capsys):
+    stub_planner(monkeypatch)
+    data = tmp_path / "train.jsonl"
+    data.write_text(json.dumps({"text": "fine"}) + "\n")
+    assert main(["plan", "org/Model", "--dataset", str(data), "--steps", "5", "--epochs", "1"]) == 2
+    assert "not both" in capsys.readouterr().err

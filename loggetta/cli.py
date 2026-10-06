@@ -46,7 +46,8 @@ def _common(p):
     p.add_argument("--seq", type=int, default=512)
     p.add_argument("--micro-batch", type=int, default=1)
     p.add_argument("--grad-accum", type=int, default=1)
-    p.add_argument("--steps", type=int, default=20)
+    p.add_argument("--steps", type=int, help="optimizer steps (default 20; with --epochs the planner derives them)")
+    p.add_argument("--epochs", type=float, help="passes over --dataset; the planner derives --steps from its tokens")
     p.add_argument("--context", type=int, help="serve: tokens per sequence, prompt + output (default 4096)")
     p.add_argument("--concurrency", type=int, help="serve: sequences decoded together (default 1)")
     p.add_argument("--optimizer", default="adamw", choices=("adamw", "adamw_8bit"))
@@ -67,9 +68,37 @@ def _common(p):
 
 
 def _plan(a):
-    from . import Constraints, Workload, describe_model, plan, probe
+    """Cheapest checks first: the workload and the dataset (read and tokenized, no weights), then the model's config,
+    then the plan."""
+    from . import Constraints, Workload, data as data_mod, describe_model, plan, probe
     from .execution import load_observations
 
+    data = None
+    if a.dataset:
+        source = a.dataset
+        if Path(source).expanduser().exists() or source.startswith((".", "~", "/")):
+            source = str(Path(source).expanduser().absolute())
+        data = data_mod.TrainingData(source=source, format=a.format, split=a.split, config=a.dataset_config,
+                                     revision=a.dataset_revision, text_field=a.text_field,
+                                     messages_field=a.messages_field, instruction_field=a.instruction_field,
+                                     input_field=a.input_field, output_field=a.output_field,
+                                     shuffle=a.shuffle_data, repeat=a.repeat_data).to_dict()
+    elif (a.dataset_config or a.dataset_revision or a.format != "auto" or a.split != "train"
+          or a.shuffle_data or a.repeat_data or a.text_field != "text" or a.messages_field != "messages"
+          or a.instruction_field != "instruction" or a.input_field != "input" or a.output_field != "output"):
+        raise ValueError("dataset options require --dataset; omit them all for the Alpaca demonstration")
+    if a.epochs is not None and a.steps is not None:
+        raise ValueError("use --steps or --epochs, not both: with --epochs the planner derives the steps")
+    w = Workload(kind=a.workload, seq_len=a.seq, micro_batch=a.micro_batch, grad_accum=a.grad_accum,
+                 steps=a.steps if a.steps is not None else 20, epochs=a.epochs,
+                 optimizer=a.optimizer, context_len=a.context or (4096 if a.workload == "serve" else None),
+                 concurrency=a.concurrency or (1 if a.workload == "serve" else None),
+                 data=data, learning_rate=a.learning_rate)
+    profile = None
+    if data is not None:                     # every row validated and tokenized before the model is looked at
+        tokenizer = data_mod.load_tokenizer(a.model, revision=a.revision, trust_remote_code=a.trust_remote_code)
+        with data_mod.encode_dataset(tokenizer, data_mod.TrainingData.from_dict(data)) as encoded:
+            profile = encoded.profile
     topo = describe_model(a.model, revision=a.revision, trust_remote_code=a.trust_remote_code)
     if a.hardware:
         from .hardware import HardwareProfile
@@ -78,29 +107,10 @@ def _plan(a):
             hw = HardwareProfile.from_dict(json.load(f), origin=a.hardware)
     else:
         hw = probe()
-    from .data import TrainingData
-
-    data = None
-    if a.dataset:
-        source = a.dataset
-        if Path(source).expanduser().exists() or source.startswith((".", "~", "/")):
-            source = str(Path(source).expanduser().absolute())
-        data = TrainingData(source=source, format=a.format, split=a.split, config=a.dataset_config,
-                            revision=a.dataset_revision, text_field=a.text_field, messages_field=a.messages_field,
-                            instruction_field=a.instruction_field, input_field=a.input_field, output_field=a.output_field,
-                            shuffle=a.shuffle_data, repeat=a.repeat_data).to_dict()
-    elif (a.dataset_config or a.dataset_revision or a.format != "auto" or a.split != "train"
-          or a.shuffle_data or a.repeat_data or a.text_field != "text" or a.messages_field != "messages"
-          or a.instruction_field != "instruction" or a.input_field != "input" or a.output_field != "output"):
-        raise ValueError("dataset options require --dataset; omit them all for the Alpaca demonstration")
-    w = Workload(kind=a.workload, seq_len=a.seq, micro_batch=a.micro_batch, grad_accum=a.grad_accum, steps=a.steps,
-                 optimizer=a.optimizer, context_len=a.context or (4096 if a.workload == "serve" else None),
-                 concurrency=a.concurrency or (1 if a.workload == "serve" else None),
-                 data=data, learning_rate=a.learning_rate)
     c = Constraints(device=a.device, vram_budget=_gib(a.vram), ram_budget=_gib(a.ram), headroom=_gib(a.headroom),
                     expert_residency=None if a.experts == "any" else (a.experts,), fixed=_parse_fixed(a.fix),
                     objective=a.objective, target_s_per_step=a.target_s_per_step)
-    return plan(topo, hw, w, c, observations=load_observations(a.observations))
+    return plan(topo, hw, w, c, observations=load_observations(a.observations), data_profile=profile)
 
 
 def main(argv=None) -> int:
@@ -153,7 +163,7 @@ def main(argv=None) -> int:
     else:
         try:
             p = _plan(a)
-        except ValueError as e:
+        except (ValueError, OSError) as e:      # OSError: a dataset, tokenizer or hardware file that cannot be read
             print(f"invalid plan: {e}", file=sys.stderr)
             return 2
     if a.cmd == "plan":

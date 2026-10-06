@@ -601,3 +601,19 @@ def test_an_out_of_memory_receipt_is_a_lower_bound_the_plan_respects(topo):
              Constraints(fixed={"graphs": setup["graphs"]}), observations=[rec])
     res = next(ln for ln in p.selected.lines if ln.name.startswith("allocator residual"))
     assert abs(res.bytes - ((300 << 20) + (32 << 20))) < (1 << 20) and "receipt oomed" in res.detail
+
+
+def test_a_data_profile_resolves_epochs_and_travels_with_the_plan(topo):
+    from loggetta.data import TrainingData
+
+    data = TrainingData("train.jsonl").to_dict()
+    profile = {"schema": "data-profile/1", "rows": 200, "tokens": 51_200, "histogram": [[192, 256, 200]],
+               "options": data, "format": "text", "split": "train", "source": {"kind": "local", "sha256": "ab" * 32},
+               "lengths": {"min": 256, "p50": 256, "p90": 256, "p99": 256, "max": 256, "mean": 256.0}}
+    p = plan(topo, hw(), Workload(seq_len=512, data=data, epochs=1), Constraints(), data_profile=profile)
+    assert p.status == "feasible" and p.workload.steps == 100 and p.workload.epochs == 1
+    assert any(r.startswith("steps 100: 1 epoch(s) of 51,200 tokens") for r in p.reasons)
+    assert "200 examples, 51,200 tokens" in p.render()
+    assert ExecutionPlan.from_dict(json.loads(p.to_json())).to_json() == p.to_json()
+    assert p.to_json() == plan(topo, hw(), Workload(seq_len=512, data=data, epochs=1), Constraints(),
+                               data_profile=profile).to_json()

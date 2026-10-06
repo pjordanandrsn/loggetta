@@ -1,11 +1,12 @@
-"""User data is validated and fingerprinted before model loading; tests need no network or GPU."""
+"""User data is validated, profiled before planning and fingerprinted before model loading; tests need no network
+or GPU."""
 import hashlib
 import json
 
 import numpy as np
 import pytest
 
-from loggetta.data import TrainingData, encode_example, prepare_data, resolve_format
+from loggetta.data import TrainingData, encode_dataset, encode_example, longer_than, prepare_data
 from loggetta.plan import ExecutionPlan, Workload
 
 
@@ -160,9 +161,84 @@ def test_workload_extension_round_trip_and_legacy_wire_shape():
     from dataclasses import replace
     old = a_plan().to_dict()
     assert "data" not in old["workload"] and "learning_rate" not in old["workload"]
+    assert "epochs" not in old["workload"] and "data_profile" not in old
     assert ExecutionPlan.from_dict(old).to_dict() == old
     plan = replace(a_plan(), workload=Workload(data=TrainingData("org/corpus").to_dict(), learning_rate=1e-4))
     assert ExecutionPlan.from_dict(plan.to_dict()).to_json() == plan.to_json()
     assert "org/corpus" in plan.render()
     with pytest.raises(ValueError, match="serving"):
         Workload(kind="serve", data=TrainingData().to_dict())
+
+
+def test_profiling_reads_every_row_before_planning(tmp_path):
+    file = jsonl(tmp_path, [{"text": "abcdefg"}] * 3 + [{"text": ""}])
+    with prepare_data(Tokenizer(), 1, 4, TrainingData(str(file))) as data:     # the budget never reaches the bad row
+        assert data.info["examples_used"] == 1
+    with pytest.raises(ValueError, match="dataset row 3: .*non-empty text"):
+        encode_dataset(Tokenizer(), TrainingData(str(file)))
+
+
+def test_the_profile_counts_what_the_planner_needs_and_is_deterministic(tmp_path):
+    file = jsonl(tmp_path, [{"text": "x" * n} for n in (3, 63, 64, 200, 20000)])     # + EOS each
+    with encode_dataset(Tokenizer(), TrainingData(str(file))) as enc:
+        p = enc.profile
+        assert len(enc) == 5 and list(enc.ids(0)) == [ord("x") % 15 + 1] * 3 + [0]
+    assert p["schema"] == "data-profile/1" and p["rows"] == 5 and p["tokens"] == 4 + 64 + 65 + 201 + 20001
+    assert p["lengths"]["min"] == 4 and p["lengths"]["max"] == 20001 and p["lengths"]["p50"] == 65
+    assert p["histogram"] == [[0, 64, 2], [64, 128, 1], [192, 256, 1], [16384, 32768, 1]]
+    assert p["source"]["sha256"] == hashlib.sha256(file.read_bytes()).hexdigest()
+    assert "dataset_fingerprint" not in p["source"]
+    assert p["tokenizer"]["eos_token_id"] == 0 and p["options"] == TrainingData(str(file)).to_dict()
+    with encode_dataset(Tokenizer(), TrainingData(str(file))) as again:
+        assert json.dumps(again.profile, sort_keys=True) == json.dumps(p, sort_keys=True)
+    assert longer_than(p, 64) == (3, 3) and longer_than(p, 4096) == (1, 1) and longer_than(p, 100) == (2, 3)
+
+
+@pytest.mark.parametrize("shuffle,seed,blocks,repeat", [(False, 0, 3, False), (True, 4, 10, False),
+                                                         (True, 9, 10, False), (False, 0, 40, True),
+                                                         (True, 7, 40, True)])
+def test_profiled_packing_gives_the_streamed_token_stream(tmp_path, shuffle, seed, blocks, repeat):
+    file = jsonl(tmp_path, [{"text": f"row-{i:02d}"} for i in range(30)])
+    spec = TrainingData(str(file), shuffle=shuffle, repeat=repeat)
+    with encode_dataset(Tokenizer(), spec) as enc:
+        profile = enc.profile
+    with prepare_data(Tokenizer(), blocks, 4, spec, seed=seed) as streamed, \
+            prepare_data(Tokenizer(), blocks, 4, spec, seed=seed, expect=profile) as profiled:
+        assert np.array_equal(streamed.blocks, profiled.blocks)
+        for key in ("token_stream_sha256", "examples_used", "passes", "discarded_tail_tokens", "tokens"):
+            assert streamed.info[key] == profiled.info[key], key
+        assert profiled.info["verified_against_plan"] and profiled.info["encoded_sha256"] == profile["encoded_sha256"]
+
+
+def test_execution_refuses_data_that_changed_since_planning(tmp_path):
+    file = jsonl(tmp_path, [{"text": "abcdefg"}, {"text": "hijklmn"}])
+    with encode_dataset(Tokenizer(), TrainingData(str(file))) as enc:
+        planned = enc.profile
+    file.write_text(json.dumps({"text": "abcdefg"}) + "\n" + json.dumps({"text": "hijklmX"}) + "\n")
+    with pytest.raises(ValueError, match="changed since the plan was made .*encoded_sha256"):
+        prepare_data(Tokenizer(), 2, 4, TrainingData(str(file)), expect=planned)
+
+
+def test_epochs_allow_exactly_the_passes_they_imply(tmp_path):
+    file = jsonl(tmp_path, [{"text": "abc"}])                                       # 4 tokens with EOS
+    with encode_dataset(Tokenizer(), TrainingData(str(file))) as enc:
+        profile = enc.profile
+    with pytest.raises(ValueError, match="in 1 pass"):
+        prepare_data(Tokenizer(), 2, 4, TrainingData(str(file)), expect=profile)
+    with prepare_data(Tokenizer(), 2, 4, TrainingData(str(file)), expect=profile, max_passes=2) as data:
+        assert data.info["passes"] == 2
+    with pytest.raises(ValueError, match="in 2 pass"):
+        prepare_data(Tokenizer(), 3, 4, TrainingData(str(file)), expect=profile, max_passes=2)
+
+
+def test_epochs_round_trip_and_need_a_dataset():
+    from dataclasses import replace
+
+    from test_execution import a_plan
+    w = Workload(data=TrainingData("org/corpus").to_dict(), epochs=1.5)
+    plan = replace(a_plan(), workload=w, data_profile={"schema": "data-profile/1", "rows": 1})
+    assert ExecutionPlan.from_dict(json.loads(plan.to_json())).to_json() == plan.to_json()
+    with pytest.raises(ValueError, match="need a dataset"):
+        Workload(epochs=1.0)
+    with pytest.raises(ValueError, match="finite and positive"):
+        Workload(data=TrainingData("org/corpus").to_dict(), epochs=0)

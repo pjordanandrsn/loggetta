@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- **Read the dataset before planning.** Every row of `--dataset` is validated and tokenized before the model is
+  described. The plan carries the resulting `data-profile/1`:
+  - examples and tokens;
+  - length quantiles and a histogram;
+  - the tokenizer's identity;
+  - a hash of the encoded examples.
+- **Plans use the profile.**
+  - A plan that would read past the data without `--repeat-data` is refused, with the steps that read it once.
+  - `--epochs N` derives the steps.
+  - Examples longer than `--seq` are counted, because packing splits them.
+- **`execute` re-tokenizes and checks.** It refuses data or a tokenizer that changed since planning, before any
+  weights load. The packed token stream is identical to 0.2.0's for the same seed.
+- Plans without a profile (older plans, the Alpaca demonstration) keep the 0.2.0 behaviour and wire shape.
+
 ## 0.2.0
 
 - Accept local JSON/JSONL/CSV/Parquet/TXT files and Hub datasets, with split/config/revision selection.
