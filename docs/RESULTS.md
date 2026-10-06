@@ -370,6 +370,30 @@ VRAM tier at long contexts, so the 8192 × 8 rows shifted, and Qwen3-30B at 8192
 - **gpt-oss-20b on 12 GB is a correct refusal.** Its per-expert biases do not ride the arena, so the hybrid tier
   cannot serve it, and all-VRAM needs 13.9 GiB + headroom.
 
+**Update, 2026-10-06: serving three more families showed the sweep was too generous.** I tried to serve
+granite-3.1-3b, LFM2-8B and granite-4.0-h-tiny on the A2000 through `bench/serve_validate.py`. All three were
+planned feasible above; none could be served as planned.
+- **LFM2-8B and granite-4.0-h-tiny are refused by the server.**
+  - LFM2's `conv` layers are a type the paged runner keeps no state for.
+  - granite-4.0-h's Mamba layers are labelled `linear_attention`, but the per-slot pool drives Gated DeltaNet only.
+  - experts4bit-qlora#1215 states the runner's own rules (`paged_state_refusal`), and the estimate now refuses both
+    on every card (`evidence/serve-family-sweep-hybrids.*`).
+- **granite-3.1-3b could not be baked.** gnf4's `bake_nf4` found fused expert stacks only under an `.experts.` name,
+  and GraniteMoe's are `block_sparse_moe.input_linear` / `output_linear`.
+  - grouped-nf4-gemm#488 adds `fused_marker`: the arena baked in 47 s.
+  - The planned serve then ran: **allocator peak 2.959 GiB against 2.997 estimated (−1.3%)**
+    (`evidence/2026-10-06-a2000-family-serve/`).
+  - That makes Granite the third family checked serving, after OLMoE and Qwen3-30B. `--bake-kw` passes the
+    layout to the harness.
+- **Qwen3.6-35B's linear-attention state is now priced** (experts4bit-qlora#1219). It is a bf16 conv window and an
+  fp32 recurrent state, ~2.06 MiB per layer per slot. Its RTX 5090 plans grew from 22.40 to 23.44 GiB (4096 × 1)
+  and from 23.13 to 24.59 GiB (8192 × 8).
+- **Decode-graph buckets are capped at the sequences.** Most of that 4096 × 1 growth came from 16 scratch slots a
+  single-user server never uses. A decode step never carries more rows than sequences, so serve plans now keep the
+  buckets up to `max_seqs` (`[1]` for one user).
+- Not checked by the planner: whether a model's checkpoint layout can be baked at all. That is the bake's knowledge,
+  not the topology's.
+
 ## 6d. SV1: the graphs, measured on a rented RTX 5090
 
 Lane SV1 is experts4bit-qlora#1152, registered before the box in #1153 and read in #1161.

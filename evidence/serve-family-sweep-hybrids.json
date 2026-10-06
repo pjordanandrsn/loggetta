@@ -1,0 +1,607 @@
+{
+ "schema": "serve-family-sweep/1",
+ "workloads": [
+  [
+   4096,
+   1
+  ],
+  [
+   8192,
+   8
+  ]
+ ],
+ "rows": [
+  {
+   "model": "Qwen/Qwen3.6-35B-A3B",
+   "model_type": "qwen3_5_moe",
+   "card": "RTX A2000 12GB (seat, probed)",
+   "context": 4096,
+   "concurrency": 1,
+   "status": "feasible",
+   "placement": "solver",
+   "graphs": false,
+   "vram_tier_gib": 5.02,
+   "dram_tier_gib": 11.85,
+   "nvme_gib": 0.0,
+   "kv_gib": 0.04,
+   "device_gib": 11.39,
+   "host_gib": 12.57,
+   "budget_gib": 11.99,
+   "host_budget_gib": 21.87,
+   "refusal": null,
+   "suggestions": null,
+   "kernel_notes": [
+    "experts4bit: kernel paged_graphs not usable here: the fused FP8 KV append casts to e4m3 in Triton, which needs sm_89+; this device is sm_86"
+   ]
+  },
+  {
+   "model": "Qwen/Qwen3.6-35B-A3B",
+   "model_type": "qwen3_5_moe",
+   "card": "RTX A2000 12GB (seat, probed)",
+   "context": 8192,
+   "concurrency": 8,
+   "status": "feasible",
+   "placement": "solver",
+   "graphs": false,
+   "vram_tier_gib": 3.88,
+   "dram_tier_gib": 13.0,
+   "nvme_gib": 0.0,
+   "kv_gib": 0.67,
+   "device_gib": 11.39,
+   "host_gib": 13.71,
+   "budget_gib": 11.99,
+   "host_budget_gib": 21.87,
+   "refusal": null,
+   "suggestions": null,
+   "kernel_notes": [
+    "experts4bit: kernel paged_graphs not usable here: the fused FP8 KV append casts to e4m3 in Triton, which needs sm_89+; this device is sm_86"
+   ]
+  },
+  {
+   "model": "Qwen/Qwen3.6-35B-A3B",
+   "model_type": "qwen3_5_moe",
+   "card": "RTX 5090 32GB (FP1's box)",
+   "context": 4096,
+   "concurrency": 1,
+   "status": "feasible",
+   "placement": "all-vram",
+   "graphs": true,
+   "vram_tier_gib": 16.88,
+   "dram_tier_gib": 0.0,
+   "nvme_gib": 0.0,
+   "kv_gib": 0.04,
+   "device_gib": 23.44,
+   "host_gib": 1.23,
+   "budget_gib": 31.84,
+   "host_budget_gib": 64.0,
+   "refusal": null,
+   "suggestions": null,
+   "kernel_notes": []
+  },
+  {
+   "model": "Qwen/Qwen3.6-35B-A3B",
+   "model_type": "qwen3_5_moe",
+   "card": "RTX 5090 32GB (FP1's box)",
+   "context": 8192,
+   "concurrency": 8,
+   "status": "feasible",
+   "placement": "all-vram",
+   "graphs": true,
+   "vram_tier_gib": 16.88,
+   "dram_tier_gib": 0.0,
+   "nvme_gib": 0.0,
+   "kv_gib": 0.67,
+   "device_gib": 24.59,
+   "host_gib": 1.23,
+   "budget_gib": 31.84,
+   "host_budget_gib": 64.0,
+   "refusal": null,
+   "suggestions": null,
+   "kernel_notes": []
+  },
+  {
+   "model": "Qwen/Qwen3.6-35B-A3B",
+   "model_type": "qwen3_5_moe",
+   "card": "RTX 4090 24GB (stated)",
+   "context": 4096,
+   "concurrency": 1,
+   "status": "feasible",
+   "placement": "all-vram",
+   "graphs": false,
+   "vram_tier_gib": 16.88,
+   "dram_tier_gib": 0.0,
+   "nvme_gib": 0.0,
+   "kv_gib": 0.04,
+   "device_gib": 22.62,
+   "host_gib": 3.23,
+   "budget_gib": 24.0,
+   "host_budget_gib": 64.0,
+   "refusal": null,
+   "suggestions": null,
+   "kernel_notes": []
+  },
+  {
+   "model": "Qwen/Qwen3.6-35B-A3B",
+   "model_type": "qwen3_5_moe",
+   "card": "RTX 4090 24GB (stated)",
+   "context": 8192,
+   "concurrency": 8,
+   "status": "feasible",
+   "placement": "solver",
+   "graphs": false,
+   "vram_tier_gib": 13.47,
+   "dram_tier_gib": 3.4,
+   "nvme_gib": 0.0,
+   "kv_gib": 0.67,
+   "device_gib": 22.8,
+   "host_gib": 6.42,
+   "budget_gib": 24.0,
+   "host_budget_gib": 64.0,
+   "refusal": null,
+   "suggestions": null,
+   "kernel_notes": []
+  },
+  {
+   "model": "Qwen/Qwen3.6-35B-A3B",
+   "model_type": "qwen3_5_moe",
+   "card": "RTX 3090 24GB (stated)",
+   "context": 4096,
+   "concurrency": 1,
+   "status": "feasible",
+   "placement": "all-vram",
+   "graphs": false,
+   "vram_tier_gib": 16.88,
+   "dram_tier_gib": 0.0,
+   "nvme_gib": 0.0,
+   "kv_gib": 0.04,
+   "device_gib": 22.62,
+   "host_gib": 3.23,
+   "budget_gib": 24.0,
+   "host_budget_gib": 64.0,
+   "refusal": null,
+   "suggestions": null,
+   "kernel_notes": [
+    "experts4bit: kernel paged_graphs not usable here: the fused FP8 KV append casts to e4m3 in Triton, which needs sm_89+; this device is sm_86"
+   ]
+  },
+  {
+   "model": "Qwen/Qwen3.6-35B-A3B",
+   "model_type": "qwen3_5_moe",
+   "card": "RTX 3090 24GB (stated)",
+   "context": 8192,
+   "concurrency": 8,
+   "status": "feasible",
+   "placement": "solver",
+   "graphs": false,
+   "vram_tier_gib": 13.47,
+   "dram_tier_gib": 3.4,
+   "nvme_gib": 0.0,
+   "kv_gib": 0.67,
+   "device_gib": 22.8,
+   "host_gib": 6.42,
+   "budget_gib": 24.0,
+   "host_budget_gib": 64.0,
+   "refusal": null,
+   "suggestions": null,
+   "kernel_notes": [
+    "experts4bit: kernel paged_graphs not usable here: the fused FP8 KV append casts to e4m3 in Triton, which needs sm_89+; this device is sm_86"
+   ]
+  },
+  {
+   "model": "ibm-granite/granite-4.0-h-tiny",
+   "model_type": "granitemoehybrid",
+   "card": "RTX A2000 12GB (seat, probed)",
+   "context": 4096,
+   "concurrency": 1,
+   "status": "refused",
+   "placement": "all-vram",
+   "graphs": false,
+   "vram_tier_gib": 0.0,
+   "dram_tier_gib": 0.0,
+   "nvme_gib": 0.0,
+   "kv_gib": 0.0,
+   "device_gib": 0.12,
+   "host_gib": 0.7,
+   "budget_gib": 11.99,
+   "host_budget_gib": 21.87,
+   "refusal": [
+    "the paged server refuses this model: config.layer_types names linear-attention layers [0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22, 23, 24, 26, 27, 28, 29, 30, 31, 32, 33, 34, 36, 37, 38, 39], but the per-slot state pool drives [] (Gated DeltaNet only); the others would run without their state"
+   ],
+   "suggestions": [
+    "the weights alone exceed the budget: no context or concurrency fits"
+   ],
+   "kernel_notes": [
+    "experts4bit: kernel paged_graphs not usable here: the fused FP8 KV append casts to e4m3 in Triton, which needs sm_89+; this device is sm_86"
+   ]
+  },
+  {
+   "model": "ibm-granite/granite-4.0-h-tiny",
+   "model_type": "granitemoehybrid",
+   "card": "RTX A2000 12GB (seat, probed)",
+   "context": 8192,
+   "concurrency": 8,
+   "status": "refused",
+   "placement": "all-vram",
+   "graphs": false,
+   "vram_tier_gib": 0.0,
+   "dram_tier_gib": 0.0,
+   "nvme_gib": 0.0,
+   "kv_gib": 0.0,
+   "device_gib": 0.12,
+   "host_gib": 0.7,
+   "budget_gib": 11.99,
+   "host_budget_gib": 21.87,
+   "refusal": [
+    "the paged server refuses this model: config.layer_types names linear-attention layers [0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22, 23, 24, 26, 27, 28, 29, 30, 31, 32, 33, 34, 36, 37, 38, 39], but the per-slot state pool drives [] (Gated DeltaNet only); the others would run without their state"
+   ],
+   "suggestions": [
+    "the weights alone exceed the budget: no context or concurrency fits"
+   ],
+   "kernel_notes": [
+    "experts4bit: kernel paged_graphs not usable here: the fused FP8 KV append casts to e4m3 in Triton, which needs sm_89+; this device is sm_86"
+   ]
+  },
+  {
+   "model": "ibm-granite/granite-4.0-h-tiny",
+   "model_type": "granitemoehybrid",
+   "card": "RTX 5090 32GB (FP1's box)",
+   "context": 4096,
+   "concurrency": 1,
+   "status": "refused",
+   "placement": "all-vram",
+   "graphs": true,
+   "vram_tier_gib": 0.0,
+   "dram_tier_gib": 0.0,
+   "nvme_gib": 0.0,
+   "kv_gib": 0.0,
+   "device_gib": 0.62,
+   "host_gib": 1.0,
+   "budget_gib": 31.84,
+   "host_budget_gib": 64.0,
+   "refusal": [
+    "the paged server refuses this model: config.layer_types names linear-attention layers [0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22, 23, 24, 26, 27, 28, 29, 30, 31, 32, 33, 34, 36, 37, 38, 39], but the per-slot state pool drives [] (Gated DeltaNet only); the others would run without their state"
+   ],
+   "suggestions": [
+    "the weights alone exceed the budget: no context or concurrency fits"
+   ],
+   "kernel_notes": []
+  },
+  {
+   "model": "ibm-granite/granite-4.0-h-tiny",
+   "model_type": "granitemoehybrid",
+   "card": "RTX 5090 32GB (FP1's box)",
+   "context": 8192,
+   "concurrency": 8,
+   "status": "refused",
+   "placement": "all-vram",
+   "graphs": true,
+   "vram_tier_gib": 0.0,
+   "dram_tier_gib": 0.0,
+   "nvme_gib": 0.0,
+   "kv_gib": 0.0,
+   "device_gib": 0.62,
+   "host_gib": 1.0,
+   "budget_gib": 31.84,
+   "host_budget_gib": 64.0,
+   "refusal": [
+    "the paged server refuses this model: config.layer_types names linear-attention layers [0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22, 23, 24, 26, 27, 28, 29, 30, 31, 32, 33, 34, 36, 37, 38, 39], but the per-slot state pool drives [] (Gated DeltaNet only); the others would run without their state"
+   ],
+   "suggestions": [
+    "the weights alone exceed the budget: no context or concurrency fits"
+   ],
+   "kernel_notes": []
+  },
+  {
+   "model": "ibm-granite/granite-4.0-h-tiny",
+   "model_type": "granitemoehybrid",
+   "card": "RTX 4090 24GB (stated)",
+   "context": 4096,
+   "concurrency": 1,
+   "status": "refused",
+   "placement": "all-vram",
+   "graphs": true,
+   "vram_tier_gib": 0.0,
+   "dram_tier_gib": 0.0,
+   "nvme_gib": 0.0,
+   "kv_gib": 0.0,
+   "device_gib": 0.5,
+   "host_gib": 3.0,
+   "budget_gib": 24.0,
+   "host_budget_gib": 64.0,
+   "refusal": [
+    "the paged server refuses this model: config.layer_types names linear-attention layers [0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22, 23, 24, 26, 27, 28, 29, 30, 31, 32, 33, 34, 36, 37, 38, 39], but the per-slot state pool drives [] (Gated DeltaNet only); the others would run without their state"
+   ],
+   "suggestions": [
+    "the weights alone exceed the budget: no context or concurrency fits"
+   ],
+   "kernel_notes": []
+  },
+  {
+   "model": "ibm-granite/granite-4.0-h-tiny",
+   "model_type": "granitemoehybrid",
+   "card": "RTX 4090 24GB (stated)",
+   "context": 8192,
+   "concurrency": 8,
+   "status": "refused",
+   "placement": "all-vram",
+   "graphs": true,
+   "vram_tier_gib": 0.0,
+   "dram_tier_gib": 0.0,
+   "nvme_gib": 0.0,
+   "kv_gib": 0.0,
+   "device_gib": 0.5,
+   "host_gib": 3.0,
+   "budget_gib": 24.0,
+   "host_budget_gib": 64.0,
+   "refusal": [
+    "the paged server refuses this model: config.layer_types names linear-attention layers [0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22, 23, 24, 26, 27, 28, 29, 30, 31, 32, 33, 34, 36, 37, 38, 39], but the per-slot state pool drives [] (Gated DeltaNet only); the others would run without their state"
+   ],
+   "suggestions": [
+    "the weights alone exceed the budget: no context or concurrency fits"
+   ],
+   "kernel_notes": []
+  },
+  {
+   "model": "ibm-granite/granite-4.0-h-tiny",
+   "model_type": "granitemoehybrid",
+   "card": "RTX 3090 24GB (stated)",
+   "context": 4096,
+   "concurrency": 1,
+   "status": "refused",
+   "placement": "all-vram",
+   "graphs": false,
+   "vram_tier_gib": 0.0,
+   "dram_tier_gib": 0.0,
+   "nvme_gib": 0.0,
+   "kv_gib": 0.0,
+   "device_gib": 0.5,
+   "host_gib": 3.0,
+   "budget_gib": 24.0,
+   "host_budget_gib": 64.0,
+   "refusal": [
+    "the paged server refuses this model: config.layer_types names linear-attention layers [0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22, 23, 24, 26, 27, 28, 29, 30, 31, 32, 33, 34, 36, 37, 38, 39], but the per-slot state pool drives [] (Gated DeltaNet only); the others would run without their state"
+   ],
+   "suggestions": [
+    "the weights alone exceed the budget: no context or concurrency fits"
+   ],
+   "kernel_notes": [
+    "experts4bit: kernel paged_graphs not usable here: the fused FP8 KV append casts to e4m3 in Triton, which needs sm_89+; this device is sm_86"
+   ]
+  },
+  {
+   "model": "ibm-granite/granite-4.0-h-tiny",
+   "model_type": "granitemoehybrid",
+   "card": "RTX 3090 24GB (stated)",
+   "context": 8192,
+   "concurrency": 8,
+   "status": "refused",
+   "placement": "all-vram",
+   "graphs": false,
+   "vram_tier_gib": 0.0,
+   "dram_tier_gib": 0.0,
+   "nvme_gib": 0.0,
+   "kv_gib": 0.0,
+   "device_gib": 0.5,
+   "host_gib": 3.0,
+   "budget_gib": 24.0,
+   "host_budget_gib": 64.0,
+   "refusal": [
+    "the paged server refuses this model: config.layer_types names linear-attention layers [0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22, 23, 24, 26, 27, 28, 29, 30, 31, 32, 33, 34, 36, 37, 38, 39], but the per-slot state pool drives [] (Gated DeltaNet only); the others would run without their state"
+   ],
+   "suggestions": [
+    "the weights alone exceed the budget: no context or concurrency fits"
+   ],
+   "kernel_notes": [
+    "experts4bit: kernel paged_graphs not usable here: the fused FP8 KV append casts to e4m3 in Triton, which needs sm_89+; this device is sm_86"
+   ]
+  },
+  {
+   "model": "LiquidAI/LFM2-8B-A1B",
+   "model_type": "lfm2_moe",
+   "card": "RTX A2000 12GB (seat, probed)",
+   "context": 4096,
+   "concurrency": 1,
+   "status": "refused",
+   "placement": "all-vram",
+   "graphs": false,
+   "vram_tier_gib": 0.0,
+   "dram_tier_gib": 0.0,
+   "nvme_gib": 0.0,
+   "kv_gib": 0.0,
+   "device_gib": 0.12,
+   "host_gib": 0.7,
+   "budget_gib": 11.99,
+   "host_budget_gib": 21.87,
+   "refusal": [
+    "the paged server refuses this model: layer types ['conv'] carry state the paged runner does not keep"
+   ],
+   "suggestions": [
+    "the weights alone exceed the budget: no context or concurrency fits"
+   ],
+   "kernel_notes": [
+    "experts4bit: kernel paged_graphs not usable here: the fused FP8 KV append casts to e4m3 in Triton, which needs sm_89+; this device is sm_86"
+   ]
+  },
+  {
+   "model": "LiquidAI/LFM2-8B-A1B",
+   "model_type": "lfm2_moe",
+   "card": "RTX A2000 12GB (seat, probed)",
+   "context": 8192,
+   "concurrency": 8,
+   "status": "refused",
+   "placement": "all-vram",
+   "graphs": false,
+   "vram_tier_gib": 0.0,
+   "dram_tier_gib": 0.0,
+   "nvme_gib": 0.0,
+   "kv_gib": 0.0,
+   "device_gib": 0.12,
+   "host_gib": 0.7,
+   "budget_gib": 11.99,
+   "host_budget_gib": 21.87,
+   "refusal": [
+    "the paged server refuses this model: layer types ['conv'] carry state the paged runner does not keep"
+   ],
+   "suggestions": [
+    "the weights alone exceed the budget: no context or concurrency fits"
+   ],
+   "kernel_notes": [
+    "experts4bit: kernel paged_graphs not usable here: the fused FP8 KV append casts to e4m3 in Triton, which needs sm_89+; this device is sm_86"
+   ]
+  },
+  {
+   "model": "LiquidAI/LFM2-8B-A1B",
+   "model_type": "lfm2_moe",
+   "card": "RTX 5090 32GB (FP1's box)",
+   "context": 4096,
+   "concurrency": 1,
+   "status": "refused",
+   "placement": "all-vram",
+   "graphs": true,
+   "vram_tier_gib": 0.0,
+   "dram_tier_gib": 0.0,
+   "nvme_gib": 0.0,
+   "kv_gib": 0.0,
+   "device_gib": 0.62,
+   "host_gib": 1.0,
+   "budget_gib": 31.84,
+   "host_budget_gib": 64.0,
+   "refusal": [
+    "the paged server refuses this model: layer types ['conv'] carry state the paged runner does not keep"
+   ],
+   "suggestions": [
+    "the weights alone exceed the budget: no context or concurrency fits"
+   ],
+   "kernel_notes": []
+  },
+  {
+   "model": "LiquidAI/LFM2-8B-A1B",
+   "model_type": "lfm2_moe",
+   "card": "RTX 5090 32GB (FP1's box)",
+   "context": 8192,
+   "concurrency": 8,
+   "status": "refused",
+   "placement": "all-vram",
+   "graphs": true,
+   "vram_tier_gib": 0.0,
+   "dram_tier_gib": 0.0,
+   "nvme_gib": 0.0,
+   "kv_gib": 0.0,
+   "device_gib": 0.62,
+   "host_gib": 1.0,
+   "budget_gib": 31.84,
+   "host_budget_gib": 64.0,
+   "refusal": [
+    "the paged server refuses this model: layer types ['conv'] carry state the paged runner does not keep"
+   ],
+   "suggestions": [
+    "the weights alone exceed the budget: no context or concurrency fits"
+   ],
+   "kernel_notes": []
+  },
+  {
+   "model": "LiquidAI/LFM2-8B-A1B",
+   "model_type": "lfm2_moe",
+   "card": "RTX 4090 24GB (stated)",
+   "context": 4096,
+   "concurrency": 1,
+   "status": "refused",
+   "placement": "all-vram",
+   "graphs": true,
+   "vram_tier_gib": 0.0,
+   "dram_tier_gib": 0.0,
+   "nvme_gib": 0.0,
+   "kv_gib": 0.0,
+   "device_gib": 0.5,
+   "host_gib": 3.0,
+   "budget_gib": 24.0,
+   "host_budget_gib": 64.0,
+   "refusal": [
+    "the paged server refuses this model: layer types ['conv'] carry state the paged runner does not keep"
+   ],
+   "suggestions": [
+    "the weights alone exceed the budget: no context or concurrency fits"
+   ],
+   "kernel_notes": []
+  },
+  {
+   "model": "LiquidAI/LFM2-8B-A1B",
+   "model_type": "lfm2_moe",
+   "card": "RTX 4090 24GB (stated)",
+   "context": 8192,
+   "concurrency": 8,
+   "status": "refused",
+   "placement": "all-vram",
+   "graphs": true,
+   "vram_tier_gib": 0.0,
+   "dram_tier_gib": 0.0,
+   "nvme_gib": 0.0,
+   "kv_gib": 0.0,
+   "device_gib": 0.5,
+   "host_gib": 3.0,
+   "budget_gib": 24.0,
+   "host_budget_gib": 64.0,
+   "refusal": [
+    "the paged server refuses this model: layer types ['conv'] carry state the paged runner does not keep"
+   ],
+   "suggestions": [
+    "the weights alone exceed the budget: no context or concurrency fits"
+   ],
+   "kernel_notes": []
+  },
+  {
+   "model": "LiquidAI/LFM2-8B-A1B",
+   "model_type": "lfm2_moe",
+   "card": "RTX 3090 24GB (stated)",
+   "context": 4096,
+   "concurrency": 1,
+   "status": "refused",
+   "placement": "all-vram",
+   "graphs": false,
+   "vram_tier_gib": 0.0,
+   "dram_tier_gib": 0.0,
+   "nvme_gib": 0.0,
+   "kv_gib": 0.0,
+   "device_gib": 0.5,
+   "host_gib": 3.0,
+   "budget_gib": 24.0,
+   "host_budget_gib": 64.0,
+   "refusal": [
+    "the paged server refuses this model: layer types ['conv'] carry state the paged runner does not keep"
+   ],
+   "suggestions": [
+    "the weights alone exceed the budget: no context or concurrency fits"
+   ],
+   "kernel_notes": [
+    "experts4bit: kernel paged_graphs not usable here: the fused FP8 KV append casts to e4m3 in Triton, which needs sm_89+; this device is sm_86"
+   ]
+  },
+  {
+   "model": "LiquidAI/LFM2-8B-A1B",
+   "model_type": "lfm2_moe",
+   "card": "RTX 3090 24GB (stated)",
+   "context": 8192,
+   "concurrency": 8,
+   "status": "refused",
+   "placement": "all-vram",
+   "graphs": false,
+   "vram_tier_gib": 0.0,
+   "dram_tier_gib": 0.0,
+   "nvme_gib": 0.0,
+   "kv_gib": 0.0,
+   "device_gib": 0.5,
+   "host_gib": 3.0,
+   "budget_gib": 24.0,
+   "host_budget_gib": 64.0,
+   "refusal": [
+    "the paged server refuses this model: layer types ['conv'] carry state the paged runner does not keep"
+   ],
+   "suggestions": [
+    "the weights alone exceed the budget: no context or concurrency fits"
+   ],
+   "kernel_notes": [
+    "experts4bit: kernel paged_graphs not usable here: the fused FP8 KV append casts to e4m3 in Triton, which needs sm_89+; this device is sm_86"
+   ]
+  }
+ ]
+}
