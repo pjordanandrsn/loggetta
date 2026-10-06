@@ -1,0 +1,18 @@
+without SV6: feasible | serve solver, fp8 paged KV, 8 seqs x 8192 tokens, tiers VRAM 12.63 / DRAM 15.19 GiB | dev 22.343 host 6.635
+     12.629 GiB expert stacks, VRAM tier [derived] 5109 of 6144 expert rows x 2654208 B; solve_placement with the server's budgets (12.631 / 15.187 GiB) and no r
+      2.558 GiB expert stacks, DRAM tier (computed on the CPU) [derived] 1035 rows, pageable host memory, fp32 absmax
+      1.367 GiB allocator reserve (cached, unallocated blocks) [measured] receipt sv4-4090-1/t4_deep4 (this GPU, setup and model; largest of 2) = 0.067
+      1.053 GiB host growth while serving [measured] receipt sv4-4090-1/t4_plan8: anonymous host memory gained after load (largest on file for this model and place
+      0.500 GiB CUDA context + library workspaces [inferred] default; no receipt on file measured this GPU + driver
+with SV6 (scoped: reserve, context): feasible | serve solver, fp8 paged KV, 8 seqs x 8192 tokens, tiers VRAM 12.63 / DRAM 15.19 GiB | dev 21.744 host 6.635
+     12.629 GiB expert stacks, VRAM tier [derived] 5109 of 6144 expert rows x 2654208 B; solve_placement with the server's budgets (12.631 / 15.187 GiB) and no r
+      2.558 GiB expert stacks, DRAM tier (computed on the CPU) [derived] 1035 rows, pageable host memory, fp32 absmax
+      0.769 GiB allocator reserve (cached, unallocated blocks) [measured] receipt sv6-4090-3/b6_long (this GPU, setup and model; largest of 4) = 0.038
+      1.053 GiB host growth while serving [measured] receipt sv4-4090-1/t4_plan8: anonymous host memory gained after load (largest on file for this model and place
+      0.500 GiB CUDA context + library workspaces [inferred] default; no receipt on file measured this GPU + driver
+with SV6 unscoped (NOT licensed): feasible | serve solver, fp8 paged KV, 8 seqs x 8192 tokens, tiers VRAM 12.63 / DRAM 15.19 GiB | dev 21.744 host 9.034
+     12.629 GiB expert stacks, VRAM tier [derived] 5109 of 6144 expert rows x 2654208 B; solve_placement with the server's budgets (12.631 / 15.187 GiB) and no r
+      2.558 GiB expert stacks, DRAM tier (computed on the CPU) [derived] 1035 rows, pageable host memory, fp32 absmax
+      0.769 GiB allocator reserve (cached, unallocated blocks) [measured] receipt sv6-4090-3/b6_long (this GPU, setup and model; largest of 4) = 0.038
+      3.452 GiB host growth while serving [measured] receipt sv6-4090-3/b6_long: anonymous host memory gained after load (largest on file for this model and placem
+      0.500 GiB CUDA context + library workspaces [inferred] default; no receipt on file measured this GPU + driver

@@ -3,6 +3,12 @@ Qwen3-30B-A3B all-VRAM and on the solver's tiers) into planner observations of k
 readings X1-X5 against bench/sv4/SV4-PREREG.md.
 
     python bench/import_sv4.py RUN_DIR/tc1 --run-id sv4-4090-1 --out evidence/2026-10-06-sv4-rtx4090
+
+Other lanes that write ``sv4-arm/1`` receipts import the same way with ``--lane``; ``--licensed-for`` records the uses
+their registration licenses (``loggetta.planner.OVERHEAD_USES``), and the planner learns only those from them:
+
+    python bench/import_sv4.py RUN_DIR/tc1 --run-id sv6-4090-3 --lane SV6 --licensed-for reserve,context \
+        --out evidence/2026-10-06-sv6-rtx4090
 """
 import argparse
 import glob
@@ -17,7 +23,18 @@ def main():
     ap.add_argument("fetched", help="the fetched box directory (holds receipts/ and forensics.txt)")
     ap.add_argument("--run-id", required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--lane", default="SV4")
+    ap.add_argument("--licensed-for", default=None, help="comma-separated uses the lane's registration licenses")
     a = ap.parse_args()
+    scope = None
+    if a.licensed_for is not None:
+        import sys
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+        from loggetta.planner import OVERHEAD_USES
+        scope = [u for u in a.licensed_for.split(",") if u]
+        bad = [u for u in scope if u not in OVERHEAD_USES]
+        if bad:
+            ap.error(f"--licensed-for: unknown use(s) {bad}; known: {', '.join(OVERHEAD_USES)}")
     forensics = open(os.path.join(a.fetched, "forensics.txt")).read().splitlines()[0].split(",")
     gpu = {"name": forensics[0].strip(), "memory_total": forensics[1].strip(), "driver": forensics[2].strip()}
     launcher = os.path.join(os.path.dirname(os.path.abspath(a.fetched)), "receipt.json")
@@ -36,7 +53,7 @@ def main():
             # setup's, so the planner must not learn from it
             "schema": "execution-receipt/1", "run_id": f"{a.run_id}/{tag}",
             "status": "ALARM" if any(v != "graph" for v in (r.get("graph_status") or {}).values()) else r.get("status"),
-            "source": f"experts4bit-qlora lane SV4 ({a.run_id}), arm {tag}",
+            "source": f"experts4bit-qlora lane {a.lane} ({a.run_id}), arm {tag}",
             "model": {"model": r["args"]["model"], "revision": r["args"]["revision"]},
             "workload": {"kind": "serve", "context_len": r["setup"]["max_tokens_per_seq"],
                          "concurrency": r["setup"]["max_seqs"], "prompt_tokens": r["args"]["prompt_tokens"],
@@ -52,6 +69,8 @@ def main():
             "expert_routes_seen": r.get("expert_routes_seen"), "info": r.get("info"), "linear_state": r.get("linear_state"), "server_tiers": r.get("server_tiers"), "error": r.get("error"),
             "provenance": {"started_at": started, "imported_from": os.path.abspath(f), "versions": r.get("versions")},
         }
+        if scope is not None:
+            obs["licensed_for"] = scope
         if m.get("driver_process_peak_bytes") and m.get("device_reserved_peak_bytes"):
             obs["measured"]["cuda_context_bytes"] = m["driver_process_peak_bytes"] - m["device_reserved_peak_bytes"]
         with open(os.path.join(a.out, f"{a.run_id}-{tag}.json"), "w") as fh:

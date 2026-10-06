@@ -439,6 +439,31 @@ def test_serve_plans_learn_the_residual_and_host_growth_from_this_models_receipt
     assert not any(ln.name.startswith(("allocator residual", "host growth")) for ln in other.selected.lines)
 
 
+def test_a_receipt_licensed_for_some_uses_teaches_only_those(topo):
+    """Lane SV6 (experts4bit-qlora#1275) licenses its receipts as same-setup evidence for the allocator reserve and the
+    CUDA context on its card class, and nothing more: its host growth and residual are not learned. A receipt without
+    ``licensed_for`` teaches every use, as before."""
+    from loggetta.planner import licensed
+    first = _serve(topo, 4096, 1, cap=(12, 0))
+    planner_lines = ("allocator reserve", "CUDA context", "allocator residual")
+    setup, est = first.selected.setup, sum(ln.bytes for ln in first.selected.lines if ln.where == "device"
+                                          and not ln.name.startswith(planner_lines))
+    rec = {"run_id": "scoped", "status": "OK", "model": {"model": topo.model}, "workload": {"kind": "serve"},
+           "setup": {**setup, "buckets": list(setup["buckets"])}, "hardware": {"gpu": {"name": "Test GPU", "driver": "1"}},
+           "measured": {"device_peak_bytes": est + (200 << 20), "device_reserved_peak_bytes": est + (400 << 20),
+                        "host_anon_after_load_bytes": 2 * GiB, "host_anon_serving_peak_bytes": 2 * GiB + (700 << 20)},
+           "licensed_for": ["reserve", "context"]}
+    assert licensed(rec, "reserve") and not licensed(rec, "host_growth") and licensed({}, "host_growth")
+    run = (topo, hw(cap=(12, 0)), Workload(kind="serve", context_len=4096, concurrency=1),
+           Constraints(fixed={"graphs": setup["graphs"]}))
+    lines = {ln.name: ln for ln in plan(*run, observations=[rec]).selected.lines}
+    assert "receipt scoped" in lines["allocator reserve (cached, unallocated blocks)"].detail
+    assert not any(n.startswith(("allocator residual", "host growth")) for n in lines)
+    full = {k: v for k, v in rec.items() if k != "licensed_for"}
+    lines = {ln.name: ln for ln in plan(*run, observations=[full]).selected.lines}
+    assert lines["host growth while serving"].bytes == 700 << 20 and "allocator residual" in " ".join(lines)
+
+
 def test_serve_slack_is_borrowed_across_cards_only_for_serving(topo):
     def rec(rid, kind, setup):
         return {"run_id": rid, "status": "OK", "model": {"model": "other/model"}, "workload": {"kind": kind},

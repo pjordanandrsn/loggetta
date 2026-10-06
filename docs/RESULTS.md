@@ -643,6 +643,45 @@ The planner consumes these receipts as data, by design: they are measurements, a
 re-priced in experts4bit-qlora only through PRs reviewed on their code. Weigh SV2–SV5 as measurements taken outside
 the registration process, not as pre-registered tests.
 
+## 6j. SV6: the revised 24 GB plan, run at the longest prompts, registered first
+
+Lane SV6 is experts4bit-qlora#1267 ($5 cap within the owner's $50). It was the first serving lane run in order:
+- the registration (#1268) and a driver-floor amendment (#1272) merged after review before any data;
+- the box launched from the merge (`af0d95df`) through the launcher's prereg check;
+- the read (#1275) was reviewed before it merged.
+
+- **The box:** `sv6-4090-3`, one RTX 4090, **$0.32**, teardown proven.
+  - Two earlier attempts reached no arm ($0.052). The cheapest verified 4090 runs driver 535, where the image's CUDA
+    12.8 cannot initialise.
+  - The amendment's driver floor turns that into a host refusal the launcher can exclude. adertha-agents#184 tracks
+    an offer-side filter.
+- **The plan under test:** this planner at `dd4783f`. With #1247's bulk flush priced and the 23.52 GiB capacity cap,
+  it refused all-VRAM and planned the solver's tiers: VRAM 12.631 / DRAM 15.187 GiB, eager decode, 22.343 GiB.
+
+| arm | estimate | allocator peak | driver peak | plan |
+|---|---|---|---|---|
+| 8 × 1,024-token prompts | 20.476 | 19.168 (−6.4%) | 20.154 | 22.343 |
+| 8 × 8,000-token prompts | 20.476 | 20.146 (−1.6%) | 21.357 | 22.343 |
+
+All values GiB.
+
+- **The plan held at the longest prompts.** The driver peak was 0.985 GiB under the plan, with no out-of-memory error.
+  The server's tier rows equalled the estimate's (5,109 / 1,035 / 0).
+- **#1247's bulk flush, measured.** Long prompts minus short added 1,001.0 MiB to the allocator peak. The flush and
+  staging formulas give 1,003.9 MiB at those lengths: −0.3%.
+- **What the planner takes from it, and only that.** The registration licenses these receipts as same-setup evidence
+  for the allocator reserve and the CUDA context on this card class, "and nothing more" (the maintainer, #1275).
+  - Receipts can now carry `licensed_for`, and the planner learns only the named uses from them. A receipt without the
+    field teaches every use, as before.
+  - SV6's are imported with `licensed_for: [reserve, context]` (`bench/import_sv4.py --lane SV6 --licensed-for
+    reserve,context`).
+  - Replanned (`evidence/2026-10-06-sv6-rtx4090/replan-24gb-scoped.txt`): the reserve falls from 1.367 GiB (borrowed
+    from SV4's deepest tier arm, 6.7%) to 0.769 GiB (SV6's 3.8%), and the plan from 22.343 to 21.744 GiB.
+  - The tier split does not move. SV6's slack matches only its exact setup, so a larger VRAM tier would still borrow
+    6.7%.
+  - Unscoped, SV6's long arm would also have raised host growth while serving from 1.05 to 3.45 GiB. The scope keeps
+    that out, because nothing registered it.
+
 ## 7. Not measured, said plainly
 
 - **No performance model.** Speed is ordered from evidence, never predicted, apart from the transfer lower bound.

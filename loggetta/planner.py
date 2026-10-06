@@ -37,6 +37,18 @@ def host_headroom_policy(budget: int) -> int:
     return max(GiB, int(HEADROOM_FRAC * budget))
 
 
+#: What a receipt may teach the planner. A receipt whose registration licenses only some uses names them in
+#: ``licensed_for`` (lane SV6, experts4bit-qlora#1275: the allocator reserve and the CUDA context on its card class, and
+#: nothing more); a receipt without the field teaches every use, as receipts always have.
+OVERHEAD_USES = ("context", "reserve", "residual", "host_growth", "baseline", "capacity")
+
+
+def licensed(obs, use):
+    """Whether receipt ``obs`` may teach the planner ``use`` (one of ``OVERHEAD_USES``)."""
+    scope = obs.get("licensed_for")
+    return scope is None or use in scope
+
+
 def _receipt_residency(obs, backends):
     """Where a receipt's frozen weights lived, asked of the backend whose plan it ran (the first backend that can say,
     for a receipt without its plan)."""
@@ -59,19 +71,24 @@ def _overheads(hardware, gpu, observations, backends=()):
     for obs in observations:
         m = obs.get("measured", {})
         g = obs.get("hardware", {}).get("gpu", {})
-        if (g.get("name"), g.get("driver")) != key or m.get("cuda_context_bytes") is None:
+        if (g.get("name"), g.get("driver")) != key or m.get("cuda_context_bytes") is None \
+                or not licensed(obs, "context"):
             continue
         src = f"receipt {obs.get('run_id')}"
         alloc, reserved = m.get("device_peak_bytes"), m.get("device_reserved_peak_bytes")
-        frac = (reserved - alloc) / alloc if alloc and reserved else DEFAULT_RESERVE_FRAC
-        base = m.get("host_anon_after_load_bytes") if _receipt_residency(obs, backends) == "device" else None
+        reserve_ok = bool(alloc and reserved and licensed(obs, "reserve"))
+        frac = (reserved - alloc) / alloc if reserve_ok else DEFAULT_RESERVE_FRAC
+        base = m.get("host_anon_after_load_bytes") if _receipt_residency(obs, backends) == "device" \
+            and licensed(obs, "baseline") else None
+        hb = m.get("host_baseline_bytes") if licensed(obs, "baseline") else None
         return ([MemoryLine("CUDA context + library workspaces", "device", max(0, int(m["cuda_context_bytes"])),
                             "measured", f"{src}: driver-reported process peak minus allocator reserved peak")],
                 [MemoryLine("process baseline (torch, CUDA, libraries, model objects)", "host",
-                            int(base or m.get("host_baseline_bytes") or DEFAULT_HOST_BASELINE),
-                            "measured" if (base or m.get("host_baseline_bytes")) else "inferred",
+                            int(base or hb or DEFAULT_HOST_BASELINE),
+                            "measured" if (base or hb) else "inferred",
                             f"{src}: anonymous RSS after load" if base else src)],
-                frac, ("measured", f"{src}: reserved peak / allocated peak - 1 = {frac:.3f}"))
+                frac, ("measured", f"{src}: reserved peak / allocated peak - 1 = {frac:.3f}") if reserve_ok else
+                ("inferred", f"default {DEFAULT_RESERVE_FRAC:.0%} of the allocator estimate; {src} does not give it"))
     return ([MemoryLine("CUDA context + library workspaces", "device", DEFAULT_CUDA_CONTEXT, "inferred",
                         "default; no receipt on file measured this GPU + driver")],
             [MemoryLine("process baseline (torch, CUDA, libraries, model objects)", "host", DEFAULT_HOST_BASELINE,
@@ -117,7 +134,8 @@ def reserve_fraction(gpu, setup, observations, default, model=None, kind="train"
     def mname(o):
         return o.get("model", {}).get("model")
 
-    usable = [o for o in observations if o.get("status") in ("OK", None) and o.get("measured", {}).get("device_peak_bytes")
+    usable = [o for o in observations if o.get("status") in ("OK", None) and licensed(o, "reserve")
+              and o.get("measured", {}).get("device_peak_bytes")
               and o.get("measured", {}).get("device_reserved_peak_bytes")
               and o.get("workload", {}).get("kind", "train") == kind]
     same_setup = [o for o in usable if {k: o.get("setup", {}).get(k) for k in key} == {k: setup.get(k) for k in key}]
@@ -180,7 +198,7 @@ def usable_capacity(gpu, observations):
     process 23.52 GiB, and a plan sized against 24 GiB ran out of memory."""
     best = None
     for o in observations:
-        if o.get("hardware", {}).get("gpu", {}).get("name") != gpu.name:
+        if o.get("hardware", {}).get("gpu", {}).get("name") != gpu.name or not licensed(o, "capacity"):
             continue
         _tried, cap = _oom_numbers(o.get("error") or "")
         if cap and (best is None or cap < best[0]):
@@ -213,7 +231,7 @@ def learned_serve_overheads(backend, topology, setup, observations, key):
             if not (m.get("device_peak_bytes") and tried):
                 continue
             m = {"device_peak_bytes": m["device_peak_bytes"] + tried}
-        if m.get("device_peak_bytes"):
+        if m.get("device_peak_bytes") and licensed(o, "residual"):
             try:
                 raw, _, refusals = backend.estimate(topology, rs, Workload(kind="serve"))
             except (TypeError, ValueError, KeyError):
@@ -227,7 +245,8 @@ def learned_serve_overheads(backend, topology, setup, observations, key):
         # serving's own peak where the receipt has one: a load can peak above everything after it (the int4 repack's
         # host buffers, handed back before serving), and that is the load's to price, not growth while serving
         peak = m.get("host_anon_serving_peak_bytes") or m.get("host_anon_peak_bytes")      # (absent on an OOM)
-        if peak and m.get("host_anon_after_load_bytes") and all(rs.get(k) == setup.get(k) for k in key):
+        if peak and m.get("host_anon_after_load_bytes") and licensed(o, "host_growth") \
+                and all(rs.get(k) == setup.get(k) for k in key):
             g = peak - m["host_anon_after_load_bytes"]
             if grow is None or g > grow[0]:
                 grow = (g, o.get("run_id"))
