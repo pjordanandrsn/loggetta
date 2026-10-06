@@ -1,0 +1,4 @@
+8192x8 before: serve solver, fp8 paged KV, 8 seqs x 8192 tokens, tiers VRAM 11.74 / DRAM 15.19 GiB | dev 22.80 host 6.47 | reserve 2.85 [heuristic] no receipt on this GPU; the largest slack measured for this setup on any GPU, receipt solv
+8192x8 after : serve all-vram, fp8 paged KV, 8 seqs x 8192 tokens, decode graphs | dev 22.74 host 3.54 | reserve 0.09 [measured] receipt sv4-4090-1/t4_all1 (this GPU, setup and model; largest of 1) = 0.004
+4096x1 before: serve all-vram, fp8 paged KV, 1 seqs x 4096 tokens, decode graphs | dev 20.10 host 3.53 | reserve 0.91 [heuristic] no receipt on this GPU; the largest slack measured for this setup on any GPU, receipt sv3-
+4096x1 after : serve all-vram, fp8 paged KV, 1 seqs x 4096 tokens, decode graphs | dev 19.26 host 3.54 | reserve 0.08 [measured] receipt sv4-4090-1/t4_all1 (this GPU, setup and model; largest of 1) = 0.004

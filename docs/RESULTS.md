@@ -551,6 +551,33 @@ All values GiB.
   - The server now captures only the buckets its sequences can use (experts4bit-qlora#1234). The planner defers to
     that rule.
 
+## 6h. SV4: 30B on a real 24 GB card, at all-VRAM and on the solver's tiers
+
+Lane SV4 is experts4bit-qlora#1236 ($10 cap within the owner's $50), registered in #1239, read in #1240.
+- **The box:** `sv4-4090-1`, one RTX 4090 (sm_89), **$0.15**, teardown proven.
+
+| arm | estimate | allocator peak | the server's split (VRAM / DRAM / NVMe rows) | slack |
+|---|---|---|---|---|
+| all-VRAM, 1 × 4096, graphs | 18.685 | 18.668 (−0.1%) | — | 0.42% |
+| the planner's tiers, 8 × 8192 | 18.264 | 17.471 (−4.3%) | 4,422 / 1,722 / 0, as priced | 4.08% |
+| tiers 8 / 3 GiB, 4 × 4096 | 12.528 | 12.131 (−3.2%) | 3,236 / 1,213 / 1,695, as priced | 6.68% |
+
+All values GiB.
+
+- **The estimate held at 30B on all three placements.** The server split the experts exactly as priced, including
+  4.2 GiB streamed from NVMe.
+- **Tiered slack at 30B is 4–7%, not the 15% the planner had borrowed** from OLMoE's tiered runs on an A2000.
+- **Measured slack changes the plan, not just the reserve.** With these receipts, the planner's 8 × 8192 serve on a
+  24 GB card moves from tiers (11.7 GiB in VRAM, 15.2 GiB in DRAM) to **all-VRAM with decode graphs, 22.74 GiB of
+  24** (`evidence/2026-10-06-sv4-rtx4090/replan-24gb-before-after.txt`). SV5 checks that plan on the same card class.
+- **The pinned-memory reading missed, then got fixed.**
+  - Every arm pinned 1.1–1.3 GB beyond the priced cold-tier landing.
+  - A phase probe on the A2000 (`2026-10-06-a2000-family-serve/pinned-host-memory-probe.txt`) traced it to torch's
+    caching host allocator. It kept the loader's freed pinned staging: 1.09 GB after loading Qwen3-30B, 1.37 GB after
+    the hybrid tier, 4 MB of it in use.
+  - experts4bit-qlora#1241 releases it at the end of the build: pinned memory after the build went from 1,314 MiB to
+    14 MiB.
+
 ## 7. Not measured, said plainly
 
 - **No performance model.** Speed is ordered from evidence, never predicted, apart from the transfer lower bound.
