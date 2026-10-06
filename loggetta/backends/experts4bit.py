@@ -63,6 +63,65 @@ def _version(dist):
         return None
 
 
+def describe(model, *, revision=None, trust_remote_code=False):
+    """The model as experts4bit-qlora sees it (``describe_moe``: config + a meta-device module tree, no weights). A
+    config its loader refuses comes back described, with ``loader_refusal`` set: :func:`refusal` turns that into words."""
+    from ..model import NoModelProvider
+
+    try:
+        from experts4bit_qlora.arch.topology import describe_moe
+    except ImportError as e:
+        raise NoModelProvider("no model-family provider installed: experts4bit-qlora with arch.topology is "
+                              f"required to describe a model ({e})") from e
+    return describe_moe(model, revision=revision, trust_remote_code=trust_remote_code)
+
+
+def refusal(topology) -> str | None:
+    """Why this backend can plan nothing for ``topology``, or None. A description from another backend is not ours."""
+    if not hasattr(topology, "expert_stacks"):
+        return "not a model experts4bit-qlora described"
+    if topology.loader_refusal:
+        return f"the model-family layer cannot load this model: {topology.loader_refusal}"
+    return None
+
+
+def summary(topology) -> dict:
+    """The plan's ``model`` section: identity and the topology facts a reader needs."""
+    t = topology
+    return {"model": t.model, "model_type": t.model_type, "revision": t.revision,
+            "convention": t.convention, "summary": t.summary(), "n_layers": t.n_layers,
+            "moe_layers": len(t.expert_stacks), "n_experts": t.n_experts, "top_k": t.top_k,
+            "expert_params": t.expert_numel, "dense_params": t.dense_numel,
+            "loader_refusal": t.loader_refusal, "provenance": t.provenance}
+
+
+def residency(setup: dict) -> str | None:
+    """Where a setup's frozen weights live: "device", "host" (streamed to the GPU), or None if the setup does not say
+    (a serving setup)."""
+    return setup.get("expert_residency")
+
+
+def plan_warnings(setup: dict, gpu) -> list:
+    """Warnings about running ``setup`` on ``gpu`` right now."""
+    if setup.get("expert_residency") == "host" and gpu.pcie_width_current.value and gpu.pcie_width_max.value and \
+            gpu.pcie_width_current.value < gpu.pcie_width_max.value:
+        return [f"host-resident experts stream over PCIe, and the driver reports the link at "
+                f"x{gpu.pcie_width_current.value} of x{gpu.pcie_width_max.value} right now"]
+    return []
+
+
+def relaxed_candidates(topology, workload, constraints, status) -> list:
+    """Setups outside the caller's constraints whose fit would change a refusal, each with the words for that change:
+    ``[(words, setup)]``, in the order to try them. Here: host-backed experts, when the caller forbade them."""
+    if not constraints.expert_residency or "host" in constraints.expert_residency:
+        return []
+    from dataclasses import replace
+
+    relaxed = replace(constraints, expert_residency=None)
+    return [("allow host-backed experts", s) for s in candidates(topology, workload, relaxed, status)
+            if s.get("expert_residency") == "host"]
+
+
 def probe(gpu) -> BackendStatus:
     """Is this backend importable, and which expert kernels can it use on ``gpu`` (a hardware.GPU, or None)?"""
     try:
