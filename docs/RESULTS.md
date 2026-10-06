@@ -583,9 +583,17 @@ All values GiB.
 
 ## 6i. SV5: the plan SV4 produced, checked on its card, ran out of memory
 
-Lane SV5 is experts4bit-qlora#1242 ($5 cap within the owner's $50). Its registration, #1243, is held in review: the box
-launched from its unreviewed head 37 s after it opened. The read below is this session's and has not been reviewed
-there.
+Lane SV5 is experts4bit-qlora#1242 ($5 cap within the owner's $50). The box launched from #1243's unreviewed head 37 s
+after it opened. #1243 then merged after review, with consequences and a reducer written after the data. Under its
+"What this file licenses", the read (#1257) is **exploratory** and licenses no change in experts4bit-qlora or here.
+Through the reducer:
+- Z1 MISSED;
+- Z2 MISSED, on a lower bound;
+- Z3 NO_READING;
+- Z4 HELD.
+
+This planner's own change after SV5 (`usable_capacity`, OOM lower bounds) is loggetta's decision, not licensed by
+that read.
 - **The box:** `sv5-4090-1`, one RTX 4090, **$0.13**, teardown proven.
 - **The plan under test:** after SV4, the planner moved Qwen3-30B at 8 × 8192 on a 24 GB card to all-VRAM with
   decode graphs, 22.74 GiB planned. SV5 served exactly that plan.
@@ -629,7 +637,7 @@ skipped them each time:
 - host-only exit codes.
 
 The maintainer's dated notes (experts4bit-qlora#1213, #1237, #1244, and the review on #1243) record that SV2–SV4's
-reads license no change to that package. SV5's read waits on #1243.
+reads license no change to that package. SV5's read (#1257) is exploratory under #1243's merged text.
 
 The planner consumes these receipts as data, by design: they are measurements, and the estimate items they inform are
 re-priced in experts4bit-qlora only through PRs reviewed on their code. Weigh SV2–SV5 as measurements taken outside
