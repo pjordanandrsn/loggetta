@@ -124,8 +124,8 @@ python -m loggetta train <model> ...  -> plan and execute in one step
     - int4 experts +24 MiB priced, against +8 MiB at the serving peak and +24 MiB at load.
     - int4 attention costs device memory (each projection keeps a bf16 copy), so it is a speed lever.
     - Measuring it found glibc keeping 2.3–3.6 GB of the levers' freed host heap; the fix in #1182 trims it.
-  - **SV2, on a rented RTX 5090** ($0.45, e4b#1207/#1210, owner-approved, coordinated over the bus): every registered
-    reading held on Qwen3-30B with decode graphs.
+  - **SV2, on a rented RTX 5090** ($0.45, e4b#1207/#1210, owner-approved, coordinated over the bus): every reading
+    held on Qwen3-30B with decode graphs.
     - int4 experts −0.8% against the estimate;
     - the int4 stores +54.0 MiB at load, priced +54;
     - int4 attention +585.2 MiB, priced +585.0;
@@ -138,6 +138,13 @@ python -m loggetta train <model> ...  -> plan and execute in one step
     - Serving them found server bugs, each fixed: arenas of models with leading dense layers (#1228); MLA refused
       before loading (#1233); buckets above the sequences fail to capture (#1234); the DRAM tier's prefill transient
       priced (#1229).
+  - **SV4 and SV5 on a rented RTX 4090 (RESULTS 6h, 6i; $0.15 + $0.13):**
+    - 30B serves beside the estimate at all-VRAM and on the solver's tiers.
+    - The all-VRAM plan SV4's receipts produced ran out of memory at 8,000-token prompts. Two causes: an unpriced bulk
+      KV flush (e4b#1247) and a card that gives the process 23.52 GiB.
+  - **Provenance:** SV2–SV5's boxes all launched before their registrations merged after review (RESULTS, "How SV2–SV5
+    ran"). experts4bit-qlora's maintainer notes say their reads license no change there, and SV5's read is unreviewed.
+    They are measurements, not pre-registered tests.
   - Serving slack is 0.06–1.5% at all-VRAM and 8–15% under the solver, against training's 8–39%.
 
 ## What remains speculative

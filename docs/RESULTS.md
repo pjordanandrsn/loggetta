@@ -490,7 +490,8 @@ All values GiB unless marked.
 
 ## 6f. SV2: the int4 levers on Qwen3-30B-A3B, decode graphs on, a rented RTX 5090
 
-Lane SV2 is experts4bit-qlora#1207 (owner-approved, $5 cap), registered before the box in #1208 and read in #1210.
+Lane SV2 is experts4bit-qlora#1207 (owner-approved, $5 cap), registered in #1208 and read in #1210. The box launched
+before its registration was reviewed; see "How SV2–SV5 ran" below 6i.
 - **The box:** `sv2-5090-1`, one RTX 5090, **$0.45**, teardown proven. Announced on the session bus before launch and
   reported there after.
 - **The build:** `serve_paged` built in-process with the environment `ServeSetup.to_env()` gives, all-VRAM, decode
@@ -524,7 +525,8 @@ All values GiB. Plans use FP1's RTX 5090 profile (`bench/replan_serve.py`; "befo
 
 ## 6g. SV3: the hybrid state pool and gpt-oss on a rented RTX 5090
 
-Lane SV3 is experts4bit-qlora#1224 ($10 cap, within the owner's $50 approval), registered in #1225, read in #1232.
+Lane SV3 is experts4bit-qlora#1224 ($10 cap, within the owner's $50 approval), registered in #1225, read in #1232. The
+box launched before its registration merged; see "How SV2–SV5 ran" below 6i.
 - **The box:** `sv3-5090-1`, one RTX 5090, **$0.51**, teardown proven, announced on the bus before launch.
 - **The arenas:** baked on the box through the loader.
 
@@ -553,7 +555,8 @@ All values GiB.
 
 ## 6h. SV4: 30B on a real 24 GB card, at all-VRAM and on the solver's tiers
 
-Lane SV4 is experts4bit-qlora#1236 ($10 cap within the owner's $50), registered in #1239, read in #1240.
+Lane SV4 is experts4bit-qlora#1236 ($10 cap within the owner's $50), registered in #1239, read in #1240. The box
+launched before review; see "How SV2–SV5 ran" below 6i.
 - **The box:** `sv4-4090-1`, one RTX 4090 (sm_89), **$0.15**, teardown proven.
 
 | arm | estimate | allocator peak | the server's split (VRAM / DRAM / NVMe rows) | slack |
@@ -580,7 +583,9 @@ All values GiB.
 
 ## 6i. SV5: the plan SV4 produced, checked on its card, ran out of memory
 
-Lane SV5 is experts4bit-qlora#1242 ($5 cap within the owner's $50), registered in #1243.
+Lane SV5 is experts4bit-qlora#1242 ($5 cap within the owner's $50). Its registration, #1243, is held in review: the box
+launched from its unreviewed head 37 s after it opened. The read below is this session's and has not been reviewed
+there.
 - **The box:** `sv5-4090-1`, one RTX 4090, **$0.13**, teardown proven.
 - **The plan under test:** after SV4, the planner moved Qwen3-30B at 8 × 8192 on a 24 GB card to all-VRAM with
   decode graphs, 22.74 GiB planned. SV5 served exactly that plan.
@@ -595,7 +600,9 @@ All values GiB.
 - **The plan was wrong twice.**
   - **The bulk KV flush was unpriced.** Its finished prompt's K/V across all 48 layers is quantized and held until one
     write, 526 MiB at a full 8,192-token slot. Short prompts never reach it. experts4bit-qlora#1247 prices it from
-    the pool's own bound; the estimate becomes 22.664 GiB, above the 22.62 GiB the failed arm had reached.
+    the pool's own bound, reviewed on its code rather than on this read; the estimate becomes 22.664 GiB. The failed
+    arm's 22.62 GiB is only where it stopped, a floor on its need, so an estimate above it does not show the
+    estimate covers the peak.
   - **The card was smaller than stated.** The RTX 4090 reports 24,564 MiB and gave the process 23.52 GiB. The
     planner now caps a GPU class's budget at the capacity a receipt's out-of-memory message reports
     (`usable_capacity`).
@@ -604,8 +611,29 @@ All values GiB.
 - **Replanned with the fixes** (`evidence/2026-10-06-sv5-rtx4090/replan-24gb-with-fixes.txt`): with SV4's receipts
   alone the planner already returns to tiers (13.06 GiB in VRAM); with SV5's too, the budget is 23.52 GiB and the
   VRAM tier 12.63 GiB. Neither repeats the failing plan.
-- **This is what the lanes are for.** A plan that changed on new evidence was checked on the card it targets before
-  anyone relied on it, and the check failed loudly enough to name both causes.
+- **The check.** A plan that changed on new evidence was run on the card it targets before anyone relied on it, and
+  it failed in a way that names two causes.
+
+### How SV2–SV5 ran
+
+All four boxes launched before their registrations had merged after review:
+- SV2 launched one minute after a change request;
+- SV4 launched 1 min 41 s after its registration opened;
+- SV5 launched 37 s after its registration opened.
+
+experts4bit-qlora's maintainer posted the requirements on each work item before the registration PR. This session
+skipped them each time:
+- the registration merges first;
+- registered consequences;
+- a reducer with a self-test;
+- host-only exit codes.
+
+The maintainer's dated notes (experts4bit-qlora#1213, #1237, #1244, and the review on #1243) record that SV2–SV4's
+reads license no change to that package. SV5's read waits on #1243.
+
+The planner consumes these receipts as data, by design: they are measurements, and the estimate items they inform are
+re-priced in experts4bit-qlora only through PRs reviewed on their code. Weigh SV2–SV5 as measurements taken outside
+the registration process, not as pre-registered tests.
 
 ## 7. Not measured, said plainly
 
