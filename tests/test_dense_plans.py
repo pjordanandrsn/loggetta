@@ -52,8 +52,10 @@ def test_the_estimate_brackets_dq4s_measured_peaks_at_qwen3_32b(q32, placement, 
     512, SDPA, micro-batch 1: the allocator peak was intercept + 1.2557 GiB per 1,024 tokens, resident and streamed.
     The estimate must not fall below it, and stays within 4% (resident) and 10% (streamed): its gradients and
     dequantization transient are summed as if they met the activation peak, which DQ4's 0.69 GiB shows they do not."""
-    p = plan(q32, hw(200), Workload(seq_len=seq), Constraints(fixed={"base": "nf4", "placement": placement}),
-             backends=(dense,))
+    if q32.chunked_loss_refusal:            # DQ4 ran with the chunked loss; without it the bracket does not apply
+        pytest.skip(f"this experts4bit-qlora cannot chunk Qwen3's loss: {q32.chunked_loss_refusal}")
+    p = plan(q32, hw(200), Workload(seq_len=seq),
+             Constraints(fixed={"base": "nf4", "placement": placement, "loss_chunk": 512}), backends=(dense,))
     measured = intercept + 1.2557 * seq / 1024
     est = allocator(p.selected) / GiB
     assert measured <= est <= measured * (1.04 if placement == "device" else 1.10)
