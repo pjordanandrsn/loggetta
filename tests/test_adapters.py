@@ -186,3 +186,38 @@ def test_failed_export_does_not_leave_a_complete_looking_artifact(tmp_path):
     with pytest.raises(OSError, match="storage failure"):
         save_adapter(TinyModel(), BrokenTokenizer(), target, a_plan(), data={}, report={}, seed=0)
     assert not target.exists()
+
+
+def test_accumulation_weights_micro_batches_by_their_trained_tokens(tmp_path, monkeypatch):
+    """One optimizer step over the same rows must not depend on how they are split into micro-batches. With a loss mask
+    the rows carry different numbers of trained tokens, so the step is the mean over all trained tokens: 1 x 2
+    (micro-batch x grad-accum) and 2 x 1 must move the adapters identically. SGD keeps the update linear in the
+    gradient, so the comparison is exact up to float rounding."""
+    from loggetta.backends import experts4bit_train
+    from test_training_data import chat, fast_tokenizer
+
+    monkeypatch.setattr(experts4bit_train, "_expert_digest", frozen_digest)
+    monkeypatch.setattr(torch.optim, "AdamW", torch.optim.SGD)
+    rows = [chat(("user", "hello"), ("assistant", "hi there fine thanks ok")),
+            chat(("user", "hello hello hello hello"), ("assistant", "ok"))]
+    spec = TrainingData(str(jsonl(tmp_path, rows)), format="chat")
+    sampler = SimpleNamespace(peak=0, interval=0, samples=0, anon_peak=0, shmem_peak=0, file_peak=0, required_peak=0)
+    torch.manual_seed(3)
+    base = TinyModel()
+    with torch.no_grad():
+        base.projection.lora_B.normal_()                                 # a non-zero B, so lora_A has a gradient too
+    moved = []
+    for micro_batch, accum in ((2, 1), (1, 2)):
+        model = copy.deepcopy(base)
+        w = Workload(seq_len=8, micro_batch=micro_batch, grad_accum=accum, steps=1, data=spec.to_dict(),
+                     learning_rate=1.0)
+        with prepare_data(fast_tokenizer(), 2, 8, spec) as prepared:
+            counts = [int(prepared.mask[r, 1:].sum()) for r in range(2)]
+            out = experts4bit_train.train_loop(model, [p for p in model.parameters() if p.requires_grad],
+                                               "no-network", w, sampler, {}, prepared_data=prepared, device="cpu")
+        c = out["correctness"]                  # (status ALARM is possible: B starts non-zero, so its norm may fall)
+        assert c["all_finite"] and c["frozen_expert_bytes_unchanged"] and c["steps_without_trained_tokens"] == 0
+        moved.append([p.detach().clone() for p in model.parameters() if p.requires_grad])
+    assert counts[0] != counts[1]                                        # unequal rows: the case the weighting is for
+    for a, b in zip(*moved):
+        assert torch.allclose(a, b, atol=1e-5, rtol=0)

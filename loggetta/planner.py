@@ -355,6 +355,10 @@ def resolve_data(workload: Workload, profile: dict | None):
     passes = needed / tokens
     reasons.append(f"data: this plan reads {needed:,} tokens of the {tokens:,} the dataset holds ({passes:.2f} passes"
                    + (", repetition allowed" if repeat else "") + ")")
+    if profile.get("loss_mode") == "assistant":
+        share = profile["loss_tokens"] / tokens
+        reasons.append(f"loss on {profile['loss_tokens']:,} of {tokens:,} tokens ({share:.0%}): {profile['loss']}; "
+                       "gradients are averaged over trained tokens across the whole optimizer step")
     sure, most = longer_than(profile, workload.seq_len)
     if most:
         count = f"{sure:,}" if sure == most else f"{sure:,}-{most:,}"
