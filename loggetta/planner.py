@@ -333,9 +333,10 @@ def _rank(objective, setup, dev, host, backend):
 
 
 def resolve_data(workload: Workload, profile: dict | None):
-    """What the training data's profile means for the plan: ``steps`` from ``epochs``, whether the data covers the
-    tokens the plan reads, and the examples packing must split. Pure arithmetic on the profile.
+    """What the training data's profile means for the plan: ``steps`` from ``epochs``, whether the data covers what
+    the plan reads, and the examples packing splits or truncates. Pure arithmetic on the profile.
 
+    Concatenated packing reads tokens; isolated packing reads whole packed rows (the profile's packing at this seq).
     Returns ``(workload, reasons, warnings, refusal)``; ``refusal`` is ``(reasons, suggestions)`` or None."""
     if profile is None or workload.kind != "train":
         return workload, [], [], None
@@ -343,43 +344,85 @@ def resolve_data(workload: Workload, profile: dict | None):
 
     if workload.data is not None and profile.get("options") != workload.data:
         raise ValueError("the data profile was made with other dataset options than the workload's")
-    tokens, per_step = profile["tokens"], workload.tokens_per_microbatch * workload.grad_accum
+    isolated = profile.get("packing_mode") == "isolated"
+    tokens = profile["tokens"]
+    if isolated:
+        packed = profile.get("packed") or {}
+        if packed.get("seq_len") != workload.seq_len:
+            raise ValueError(f"the data profile was packed for seq {packed.get('seq_len')}, not {workload.seq_len}: "
+                             "profile the data again at this seq")
+        supply, per_step, unit = packed["rows"], workload.micro_batch * workload.grad_accum, "packed rows"
+        per_step_text = "rows per optimizer step (micro-batch x grad-accum)"
+        step_parts = "micro-batch or grad-accum"
+    else:
+        supply, per_step, unit = tokens, workload.tokens_per_microbatch * workload.grad_accum, "tokens"
+        per_step_text = "tokens per optimizer step (seq x micro-batch x grad-accum)"
+        step_parts = "seq, micro-batch or grad-accum"
     reasons, warnings = [], []
     if workload.epochs is not None:
-        workload = replace(workload, steps=max(1, int(workload.epochs * tokens // per_step)))
-        reasons.append(f"steps {workload.steps}: {workload.epochs:g} epoch(s) of {tokens:,} tokens at {per_step:,} "
-                       "tokens per optimizer step (seq x micro-batch x grad-accum)")
+        workload = replace(workload, steps=max(1, int(workload.epochs * supply // per_step)))
+        reasons.append(f"steps {workload.steps}: {workload.epochs:g} epoch(s) of {supply:,} {unit} at {per_step:,} "
+                       f"{per_step_text}")
     needed = workload.steps * per_step
     repeat = bool((workload.data or {}).get("repeat"))
     allowed = math.inf if repeat else (math.ceil(workload.epochs) if workload.epochs is not None else 1)
-    passes = needed / tokens
-    reasons.append(f"data: this plan reads {needed:,} tokens of the {tokens:,} the dataset holds ({passes:.2f} passes"
+    passes = needed / supply
+    held = "the dataset holds" if not isolated else "the dataset fills"
+    reasons.append(f"data: this plan reads {needed:,} {unit} of the {supply:,} {held} ({passes:.2f} passes"
                    + (", repetition allowed" if repeat else "") + ")")
+    if isolated:
+        reasons.append(f"isolated packing: {supply:,} rows of {workload.seq_len:,} tokens, {packed['efficiency']:.0%} "
+                       "filled; each example attends only to itself, and its first token is never a target")
     if profile.get("loss_mode") == "assistant":
         share = profile["loss_tokens"] / tokens
         reasons.append(f"loss on {profile['loss_tokens']:,} of {tokens:,} tokens ({share:.0%}): {profile['loss']}; "
                        "gradients are averaged over trained tokens across the whole optimizer step")
-    sure, most = longer_than(profile, workload.seq_len)
-    if most:
-        count = f"{sure:,}" if sure == most else f"{sure:,}-{most:,}"
-        warnings.append(f"{count} of {profile['rows']:,} examples are longer than seq {workload.seq_len:,} tokens: "
-                        "packing always splits them across rows, so their later tokens train on a cut context")
+    if isolated:
+        if packed["truncated_examples"]:
+            warnings.append(f"{packed['truncated_examples']:,} of {profile['rows']:,} examples are longer than seq "
+                            f"{workload.seq_len:,} tokens: isolated packing truncates them, dropping "
+                            f"{packed['truncated_tokens']:,} tokens ({packed['truncated_loss_tokens']:,} of them trained)")
+    else:
+        sure, most = longer_than(profile, workload.seq_len)
+        if most:
+            count = f"{sure:,}" if sure == most else f"{sure:,}-{most:,}"
+            warnings.append(f"{count} of {profile['rows']:,} examples are longer than seq {workload.seq_len:,} tokens: "
+                            "packing always splits them across rows, so their later tokens train on a cut context")
     refusal = None
     if passes > allowed:
-        if tokens < per_step:
-            why = (f"the dataset holds {tokens:,} tokens, less than one optimizer step reads ({per_step:,} = seq x "
-                   "micro-batch x grad-accum)")
+        if supply < per_step:
+            formula = "micro-batch x grad-accum" if isolated else "seq x micro-batch x grad-accum"
+            why = (f"the dataset {'packs into' if isolated else 'holds'} {supply:,} {unit}, less than one optimizer "
+                   f"step reads ({per_step:,} = {formula})")
         else:
-            why = (f"the dataset holds {tokens:,} tokens; this plan reads {needed:,} ({passes:.2f} passes) and "
-                   "repeating it is not allowed")
+            why = (f"the dataset {'packs into' if isolated else 'holds'} {supply:,} {unit}; this plan reads {needed:,} "
+                   f"({passes:.2f} passes) and repeating it is not allowed")
         suggestions = []
-        if tokens >= per_step:
-            suggestions.append(f"--steps {tokens // per_step} reads it once")
+        if supply >= per_step:
+            suggestions.append(f"--steps {supply // per_step} reads it once")
         suggestions += ["--epochs N reads it N times, on purpose", "--repeat-data allows repeating it"]
-        if tokens < per_step:
-            suggestions.insert(0, "a shorter seq, micro-batch or grad-accum")
+        if supply < per_step:
+            suggestions.insert(0, f"a shorter {step_parts}")
         refusal = ([why], suggestions)
     return workload, reasons, warnings, refusal
+
+
+#: bytes per element of a packed row's attention mask: transformers' boolean [rows, 1, seq, seq] mask, plus the bf16
+#: bias SDPA's memory-efficient kernel can turn it into (flash attention cannot take a mask). Measured at seq 2048 on
+#: an RTX A2000 (evidence/2026-10-07-a2000-packing-ab): the allocator peak moved by exactly the boolean mask, 1 B per
+#: element; the bias is charged as well, conservatively, until a longer-seq receipt shows whether it meets the peak
+PACKED_MASK_BYTES = 3
+
+
+def data_memory_lines(workload: Workload, profile: dict | None) -> list:
+    """Device memory the data's packing costs beyond what a backend prices: isolated packing's attention masks."""
+    if profile is None or workload.kind != "train" or profile.get("packing_mode") != "isolated":
+        return []
+    n = workload.micro_batch * workload.seq_len * workload.seq_len * PACKED_MASK_BYTES
+    return [MemoryLine("packed-example attention masks", "device", n, "heuristic",
+                       f"micro-batch x seq^2 x {PACKED_MASK_BYTES} B: a boolean mask transformers builds for packed "
+                       "rows, and the bf16 bias SDPA's memory-efficient kernel makes of it; flash attention cannot run "
+                       "with a mask, so attention is slower (not modelled)")]
 
 
 def plan(topology, hardware, workload: Workload, constraints: Constraints = Constraints(), *, backends=None,
@@ -392,6 +435,7 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
         raise ValueError(f"objective must be one of {OBJECTIVES}")
     gpu = hardware.gpu(constraints.device)
     workload, reasons, warnings, data_refusal = resolve_data(workload, data_profile)
+    data_lines = data_memory_lines(workload, data_profile)
     if workload.data is not None:
         warnings.append("Data preparation buffers and temporary token-file disk space are not included in the "
                         "training memory estimate; data is validated before "
@@ -447,6 +491,12 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
     if backends and not admitted:
         return refuse([why if len(refusals) == 1 else f"{b.NAME}: {why}" for b, why in refusals])
     usable = [b for b in admitted if workload.kind in b.WORKLOADS]
+    if data_profile is not None and data_profile.get("packing_mode") == "isolated" and workload.kind == "train":
+        cannot = [(b, getattr(b, "isolation_refusal", lambda t: None)(topology)) for b in usable]
+        if usable and all(why for _b, why in cannot):
+            return refuse([why if len(cannot) == 1 else f"{b.NAME}: {why}" for b, why in cannot],
+                          suggestions=["--packing concat (attention then crosses examples within a row)"])
+        usable = [b for b, why in cannot if not why]
     if not usable:
         return refuse([f"no installed backend plans {workload.kind!r} workloads yet "
                        f"(backends: {', '.join(b.NAME for b in backends)}; they plan {sorted({w for b in backends for w in b.WORKLOADS})})"])
@@ -475,6 +525,7 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
 
         def price(setup):
             raw, unmodelled, refusals = b.estimate(topology, setup, workload)
+            raw = list(raw) + [(x.name, x.where, x.bytes, x.basis, x.detail) for x in data_lines]
             # matched against receipts as they are read (defaults filled): a backend release whose setup lacks a key
             # field ran with its default too, so the candidate reads the same way
             keyed = {**key_defaults, **setup}

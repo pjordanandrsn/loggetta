@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Isolated packing by default for chat and alpaca data** (`--packing auto|concat|isolated`).
+  - Whole examples go into rows (deterministic best fit), positions restart per example, and an example's first token
+    and the row padding never train. transformers then keeps each example's attention to itself; the loop passes
+    `use_cache=False`, which that isolation requires.
+  - Profiles record the packing at the planned seq (rows, fill, truncation), and plans count rows.
+  - The per-row attention mask is priced (micro-batch × seq² × 3 B). Its speed cost (no flash attention) is stated,
+    not modelled.
+  - Models that mix tokens through a recurrent state are refused isolation.
+  - Earlier plans keep concatenation.
 - **Warmup + cosine learning-rate schedule by default for `train` and `plan`** (`--lr-schedule cosine|constant`,
   `--warmup-steps`).
   - Linear warmup over 3% of the steps, then cosine decay to 10% of the peak.

@@ -131,3 +131,15 @@ def test_cli_loss_choice_is_part_of_the_dataset_options(monkeypatch, tmp_path, c
     assert seen["workload"].data["loss"] == "all" and seen["data_profile"]["loss_mode"] == "all"
     assert main(["plan", "org/Model", "--dataset", str(data), "--loss", "assistant"]) == 2
     assert "plain text has no assistant turns" in capsys.readouterr().err
+
+
+def test_cli_profiles_isolated_packing_at_the_planned_seq(monkeypatch, tmp_path):
+    seen = stub_planner(monkeypatch)
+    data = tmp_path / "train.jsonl"
+    data.write_text(json.dumps({"instruction": "say hi", "output": "hi"}) + "\n")
+    assert main(["plan", "org/Model", "--dataset", str(data), "--seq", "64", "--loss", "all"]) == 0
+    assert seen["workload"].data["packing"] == "auto" and seen["data_profile"]["packing_mode"] == "isolated"
+    assert seen["data_profile"]["packed"]["seq_len"] == 64
+    assert main(["plan", "org/Model", "--dataset", str(data), "--seq", "64", "--loss", "all",
+                 "--packing", "concat"]) == 0
+    assert seen["data_profile"]["packing_mode"] == "concat" and "packed" not in seen["data_profile"]
