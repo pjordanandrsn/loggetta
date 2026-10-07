@@ -1,6 +1,6 @@
 # Train on your data and keep the adapter
 
-Starting with 0.2.0, Loggetta accepts your dataset, includes it in a saved training plan, and exports a reusable
+Since 0.2.0 (on `main`; first published on PyPI in 0.3.0), Loggetta accepts your dataset, includes it in a saved training plan, and exports a reusable
 adapter plus the tokenizer and a measured run report. The installation still includes the runtime and kernels:
 
 ```bash
@@ -52,7 +52,8 @@ config is even fetched. The plan carries the result as a data profile:
 The planner uses the profile to:
 - refuse a plan that would read past the data without permission, saying how many steps read it once;
 - turn `--epochs N` into steps;
-- warn about examples longer than `--seq`, which packing always splits.
+- warn about examples longer than `--seq`: concatenated packing splits them across rows, and isolated packing
+  truncates them (the plan states the tokens dropped and how many of them trained).
 
 `execute` tokenizes the data again and stops before loading any weights if the result differs from the plan's
 profile: the file changed, or the tokenizer did. Plans made before 0.3 have no profile; they, and the Alpaca
@@ -107,8 +108,10 @@ Use `--format alpaca`. `input` is optional. Alternative field names are supporte
 {"messages": [{"role": "user", "content": "What was repaired?"}, {"role": "assistant", "content": "The worn seal was replaced."}]}
 ```
 
-Use `--format chat`, optionally `--messages-field FIELD`. The tokenizer must have a chat template. It is applied
-with `tokenize=True` and `add_generation_prompt=False`. There is no fallback that guesses a chat format.
+Use `--format chat`, optionally `--messages-field FIELD`. The tokenizer must have a chat template, rendered with
+`add_generation_prompt=False`. Under `--loss all` the template tokenizes (`apply_chat_template(tokenize=True)`);
+otherwise the rendered text is tokenized with character offsets, so that assistant spans can be masked, which needs a
+fast tokenizer. There is no fallback that guesses a chat format.
 
 `--format auto` infers a format only when the columns indicate exactly one supported choice. Ambiguity is a
 request to choose a format explicitly, not permission to guess.
@@ -149,7 +152,8 @@ before.
 - **Gradient accumulation averages over trained tokens.** Each micro-batch's mean loss is weighted by its share of
   the optimizer step's trained tokens, so one step does not depend on how its rows are split into micro-batches. A
   micro-batch with nothing to train is skipped, and so is a step with nothing to train; the receipt counts such
-  steps. Full-sequence loss keeps the earlier arithmetic exactly.
+  steps. Full-sequence loss with concatenated packing keeps the earlier arithmetic exactly. Under isolated packing
+  even `--loss all` excludes each example's first token and the row padding, and accumulation is token-weighted.
 
 Not implemented: tool-call and multimodal chat formats, automatic train/evaluation splitting, or a
 validation-loss early-stopping policy.
@@ -196,14 +200,16 @@ The plan consumes exactly:
 steps * gradient_accumulation * micro_batch * sequence_length
 ```
 
-input tokens. This counts input positions, not the number of shifted loss targets. A final example may be cut at
-the token budget; the report records its unused tail. By default user data is read in order. `--shuffle-data` makes
+input tokens. This counts input positions, not the number of shifted loss targets. Under concatenated packing a final
+example may be cut at the token budget, and the report records its unused tail. Under isolated packing rows hold whole
+examples, so nothing is cut at the budget. By default user data is read in order. `--shuffle-data` makes
 the order deterministic for the execution `--seed`.
 
 `--epochs N` (instead of `--steps`) reads the dataset N times. The plan records the derived steps:
 
 ```text
-steps = floor(N * dataset_tokens / (sequence_length * micro_batch * gradient_accumulation)), at least 1
+steps = floor(N * dataset_tokens / (sequence_length * micro_batch * gradient_accumulation)), at least 1   # concatenated
+steps = floor(N * packed_rows / (micro_batch * gradient_accumulation)), at least 1                         # isolated
 ```
 
 A dataset too short for the requested steps is refused by the plan, which suggests the steps that read it once.
@@ -212,8 +218,10 @@ not disguised as more unique examples. Repeated passes use the same selected ord
 as needed and is announced in the log.
 
 Tokens are prepared in a temporary memory-mapped file, normally beside the adapter output's parent, and cleaned
-up afterward. This avoids retaining every training step's tokens as Python objects. Required cache space is eight
-bytes per input token. Dataset-reader buffers, the largest encoded row, and temporary disk capacity are outside
+up afterward. This avoids retaining every training step's tokens as Python objects. Cache space per planned input
+token is 8 bytes (full-sequence loss, concatenated), 9 bytes (masked loss, concatenated) or 13 bytes (isolated packing:
+ids, mask and positions). With `--dataset`, the whole-dataset encoding (8 bytes per dataset token, plus 1 for a loss
+mask) stays open while packing; `plan` writes that encoding to the system temporary directory. Dataset-reader buffers, the largest encoded row, and temporary disk capacity are outside
 the training memory estimator; choose an output filesystem with enough space.
 
 ## What is saved
