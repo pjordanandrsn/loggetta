@@ -266,7 +266,22 @@ trainer's.
   are not a per-family name list.
 - What structure cannot show comes from the package that knows it: the model class's declared attention
   implementations (transformers) and chunked-loss coverage (experts4bit-qlora's `chunked_lm_loss_refusal`).
-- It plans no workload yet (`WORKLOADS = ()`). Its candidates, estimate and executor are the next steps.
+- **It plans adapter training.**
+  - **Candidates:** a bf16 base resident; an NF4 base resident; an NF4 base with its frozen layers streamed from pinned
+    host memory.
+  - **Order:** by measured evidence, with bf16 before NF4 and resident before streamed (experts4bit-qlora DQ1, DQ3,
+    DQ5).
+  - **Estimate:** itemized.
+    - *derived:* bitsandbytes' nested-statistics formula for NF4; embeddings and head; LoRA, gradients and AdamW;
+      experts4bit-qlora's `offload_plan` for the staged slots, pinned host bytes and link bytes.
+    - *heuristic:* activations, whose per-token terms are scaled to DQ4's measured slope; experts4bit-qlora's
+      `chunked_loss_bytes` for the loss.
+  - **Refused:** streaming that would free nothing (`late_bound_4bit_refusal`), an attention implementation that would
+    change the model's semantics, a sequence past its positions, and int8 bases (not priced yet).
+  - **Plan-only:** its `executor` returns None, so a dense plan says it is planned only. The run is the next step.
+- **Receipts and reserve slack:** the planner learns reserve slack only from receipts of the same backend, so a dense
+  plan never borrows a MoE offload run's slack. Receipts that do not name their backend count as the first listed one,
+  experts4bit.
 
 **A new backend.** Add `backends/<name>.py` with the contract in section 4, including `executor` and `run_tag`.
 List it in `BACKENDS`, and give it a `WORKLOADS` tuple.

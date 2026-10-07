@@ -42,8 +42,9 @@ def _backend(name: str):
 def _executor(backend, kind: str = "train"):
     run = backend.executor(kind)
     if run is None:
-        raise PlanNotExecutable(f"{kind!r} plans are planned only: no executor runs them yet (start the server with "
-                                "the plan's setup by hand)")
+        why = getattr(backend, "planned_only_reason", None)
+        raise PlanNotExecutable(why(kind) if why else f"{kind!r} plans are planned only: no executor runs them yet "
+                                                      "(start the server with the plan's setup by hand)")
     return run
 
 

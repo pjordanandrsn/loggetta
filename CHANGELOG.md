@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **Dense adapter-training plans (planned only).** The dense backend now plans `train` for dense models.
+  - **Candidates:** bf16 base resident, NF4 base resident, NF4 base streamed from pinned host memory. Speed order:
+    bf16 before NF4, resident before streamed, per experts4bit-qlora's measured DQ lanes.
+  - **Estimate:** itemized.
+    - *derived:* weights, embeddings/head, LoRA (fp32 r16 α32 on every classified projection by default),
+      gradients, AdamW, and experts4bit-qlora's `offload_plan` for streaming.
+    - *heuristic:* activations scaled to DQ4's measured slope; the chunked-loss workspace from `chunked_loss_bytes`.
+  - **Checked:** against DQ4's measured peaks at Qwen3-32B, the estimate is +1.9 to +3.1% resident and +3.0 to +8.7%
+    streamed, never under.
+  - **Refused, in words:** streaming that would free nothing, attention that would change semantics, a sequence past
+    the model's positions, int8.
+  - **Executing a dense plan** says it is planned only.
+  - `bench/dense_plan_sweep.py` plans 14 real configs on 16–48 GB cards
+    (`evidence/2026-10-07-dense-plan-sweep`).
+- **Reserve slack is learned per backend.** A plan's reserve, including the fallback, comes only from its own backend's
+  receipts. The GPU's CUDA context and host baseline stay shared. Receipts that do not name their backend count as
+  experts4bit's, so MoE plans are unchanged.
 - **A second backend, `dense`, describes dense decoder models without reading weights** (config + a meta-device
   tree). `inspect` and `plan` now reach a dense model through it instead of stopping at the MoE loader's refusal.
   - Every decoder-layer linear is classified by structural role from its shape: attention in/out, MLP in/out. Names

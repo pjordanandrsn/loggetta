@@ -51,6 +51,13 @@ def licensed(obs, use):
     return scope is None or use in scope
 
 
+def _receipt_backend(obs, backends):
+    """The backend whose plan a receipt ran. Receipts that do not say (written before plans named their backend, or
+    imported from bench records) belong to the backend listed first, the one every early receipt came from."""
+    ran = ((obs.get("plan") or {}).get("selected") or {}).get("backend") or obs.get("backend")
+    return ran or (backends[0].NAME if backends else None)
+
+
 def _receipt_residency(obs, backends):
     """Where a receipt's frozen weights lived, asked of the backend whose plan it ran (the first backend that can say,
     for a receipt without its plan)."""
@@ -515,7 +522,7 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
 
     dev_over, host_over, reserve_frac, reserve_meta = _overheads(hardware, gpu, observations, backends)
     link_gbps, link_basis, link_src = link_bandwidth(gpu, observations)
-    cands, statuses = [], {}
+    cands, statuses, own_fracs = [], {}, {}
     for b in usable:
         st = b.probe(gpu)
         statuses[b.NAME] = st
@@ -531,8 +538,13 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
         # a receipt written before the backend grew a setup field ran with that field's default: read it so, or a
         # key that names the field would never match the receipts that predate it
         key_defaults = getattr(b, "SLACK_DEFAULTS", {}).get(workload.kind, {})
+        # allocation patterns are a backend's own: a dense trainer must not borrow a MoE offload run's reserve slack
+        own = [o for o in observations if _receipt_backend(o, backends) == b.NAME]
+        # the fallback slack too: the CUDA context and host baseline are the GPU's, the reserve is the backend's
+        _d, _h, own_frac, own_meta = _overheads(hardware, gpu, own, backends)
+        own_fracs[b.NAME] = own_frac
         b_obs = [{**o, "setup": {**key_defaults, **o["setup"]}} if key_defaults and isinstance(o.get("setup"), dict)
-                 and o.get("workload", {}).get("kind", "train") == workload.kind else o for o in observations]
+                 and o.get("workload", {}).get("kind", "train") == workload.kind else o for o in own]
         learned_cache = {}
 
         def price(setup):
@@ -542,7 +554,7 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
             # field ran with its default too, so the candidate reads the same way
             keyed = {**key_defaults, **setup}
             alloc = sum(r[2] for r in raw if r[1] == "device")
-            default = (reserve_frac, *reserve_meta)
+            default = (own_frac, *own_meta)
             if workload.kind != "train":
                 default = (DEFAULT_RESERVE_FRAC, "inferred", f"default {DEFAULT_RESERVE_FRAC:.0%} of the allocator "
                            f"estimate; no {workload.kind} receipt on file measured this GPU")
@@ -635,7 +647,7 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
         if not valid:
             why = sorted({r for c in infeasible for r in c.rejected})
         suggestions = _suggest(topology, workload, constraints, budget, closest, usable, statuses, dev_over, host_over,
-                               reserve_frac)
+                               own_fracs.get(closest.backend, reserve_frac))
         return ExecutionPlan(status="refused", selected=None, alternatives=tuple(infeasible), reasons=tuple(reasons),
                              warnings=tuple(warnings), performance=perf,
                              refusal={"reasons": why, "closest": closest.label(),
