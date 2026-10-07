@@ -682,6 +682,45 @@ All values GiB.
   - Unscoped, SV6's long arm would also have raised host growth while serving from 1.05 to 3.45 GiB. The scope keeps
     that out, because nothing registered it.
 
+## 6k. Reserve matching: by workload shape, with every receipt's `bulk_kv`, and no anchor transfer for serving
+
+Three planner fixes to how a serve plan borrows its allocator reserve. All planning only; no box ran
+(`evidence/2026-10-07-reserve-matching/`).
+
+- **Old receipts could not match a current plan.** experts4bit-qlora #1247 added `bulk_kv` to the server's setup, so
+  every plan names it and no receipt imported before then did. Whole-setup matches stopped firing and plans fell back to
+  the most conservative same-key reserve.
+  - The server's default changed with #1200 (merged 2026-10-05T19:32Z). Lane SV2 ran three hours later from a branch
+    without it, so the field cannot be filled from a date.
+  - `bench/annotate_bulk_kv.py` recorded each value from the code its run used: the lane's commit, or a seat run that
+    predates #1200. It records the basis in `provenance.setup_inferred`.
+  - The 2026-10-06 A2000 family runs record no commit, so they stay without the field. A test now requires every other
+    serve receipt to name it.
+- **Same shape before same key.** Tier budgets (and `hot_rows`, which the server derives from them) move a few one-time
+  allocations, not the workload's transient ones.
+  - A receipt that differs from the plan only there is now preferred to a same-key receipt of another shape. Lanes SV4
+    and SV6 measured 4.1% and 3.8% at two VRAM tiers of one 8 × 8192 shape, against 6.7% for SV4's 4 × 4096 arm with an
+    NVMe tier.
+  - A receipt scoped by `licensed_for` still counts only for its own whole setup: SV6's licence.
+- **No anchor transfer for serving.** Moving another GPU's slack through an anchor model's ratio was built for training
+  (8–39% slack). Serving slack is 0.06–1.5%, and the ratio of two such numbers is noise: a ~14× ratio turned OLMoE's
+  2.8% on an RTX 5090 into 4.0 GiB of reserve on an RTX 4090, and gpt-oss-20b's into 10.4 GiB. Serving now takes this
+  GPU's same-setup slack from another model, as the next rule always did.
+
+**What moved** (`serve-sweep-ab.txt`, all 10 families × 4 cards × 2 workloads): 14 of 80 plans. No status, placement
+or decode-graph mode changed.
+- Larger VRAM tiers at 8 × 8192 on the 24 GB card:
+  - Qwen3-30B: 12.63 → 13.14 GiB, 5,316 of 6,144 expert rows;
+  - Qwen3.6: 13.80 → 14.31 GiB;
+  - Mixtral: 10.52 → 11.07 GiB.
+- The OLMoE and gpt-oss reserves on that card fell 1–5 GiB.
+- Restored whole-setup matches trimmed 0.05–1.2 GiB elsewhere.
+
+**Not run.** The Qwen3-30B 24 GB plan (VRAM 13.143 GiB, 22.344 GiB planned) is new; SV6 ran 12.631. Its reserve
+comes from SV4's same-shape arm. That read licenses no change in experts4bit-qlora, but the planner uses its receipts as
+data, as it always has. The plan is a planner output, not a measured one, and a lane registered first would check it on
+the card.
+
 ## 7. Not measured, said plainly
 
 - **No performance model.** Speed is ordered from evidence, never predicted, apart from the transfer lower bound.

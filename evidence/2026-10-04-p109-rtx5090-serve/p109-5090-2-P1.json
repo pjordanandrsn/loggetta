@@ -26,7 +26,8 @@
    16
   ],
   "kv_groups": "auto",
-  "prefill_graph": "0"
+  "prefill_graph": "0",
+  "bulk_kv": false
  },
  "hardware": {
   "gpu": {
@@ -51,6 +52,9 @@
   "imported_from": "/home/node/work/loggetta-ws/e4b/bench/p109/receipts/p109-5090-2/arm_P1.json",
   "e4b_sha": "3185b46ab041666894fd776fed904a6a96f1c396",
   "gnf4_sha": "51a49166ae7bc1a0f84188b7b5d1f42ecbc37e00",
-  "torch": "2.8.0+cu128"
+  "torch": "2.8.0+cu128",
+  "setup_inferred": {
+   "bulk_kv": "lane P109 ran experts4bit-qlora 3185b46a, which lacks experts4bit-qlora #1200 (2ee15a1c, merged 2026-10-05T19:32:02Z): E4B_PAGED_BULK_KV defaults to 1"
+  }
  }
 }
