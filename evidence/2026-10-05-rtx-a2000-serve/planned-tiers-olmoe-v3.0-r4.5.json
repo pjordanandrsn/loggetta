@@ -439,7 +439,10 @@
   "calib": "../runs/serve-validate/calib-p39.json",
   "calib_sha256": "15b79a103958dac240f35d46c2b86efecc100d5d683db925f6158099d007ecc2",
   "baked": null,
-  "changed_during_run": []
+  "changed_during_run": [],
+  "setup_inferred": {
+   "bulk_kv": "seat runs 2026-10-04T23:58Z-10-05T11:58Z, before experts4bit-qlora #1200 (2ee15a1c, merged 2026-10-05T19:32:02Z): E4B_PAGED_BULK_KV defaults to 1; bulk bookkeeping was opt-in and no run opted in"
+  }
  },
  "status": "OK",
  "setup": {
@@ -460,7 +463,8 @@
   "vram_gb": 0.899,
   "dram_gb": 1.39,
   "hot_rows": 64,
-  "torch_threads": "2"
+  "torch_threads": "2",
+  "bulk_kv": false
  },
  "env": {
   "E4B_PAGED_PLACEMENT": "solver",

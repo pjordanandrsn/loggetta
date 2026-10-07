@@ -32,7 +32,8 @@
   "dram_gb": 6.0,
   "hot_rows": 64,
   "exp_int4": false,
-  "attn_int4": false
+  "attn_int4": false,
+  "bulk_kv": true
  },
  "hardware": {
   "gpu": {
@@ -173,6 +174,9 @@
    "grouped-nf4-gemm": "0.41.0",
    "torch": "2.8.0+cu128",
    "transformers": "5.18.0"
+  },
+  "setup_inferred": {
+   "bulk_kv": "lane SV5 ran experts4bit-qlora f49006f5, which contains experts4bit-qlora #1200 (2ee15a1c, merged 2026-10-05T19:32:02Z): E4B_PAGED_BULK_KV defaults to 1; the receipt sets no override"
   }
  }
 }

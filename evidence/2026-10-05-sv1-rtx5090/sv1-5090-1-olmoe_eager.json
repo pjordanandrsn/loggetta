@@ -31,7 +31,8 @@
   "prefill_graph": "0",
   "vram_gb": 1.2,
   "dram_gb": 6.0,
-  "hot_rows": 64
+  "hot_rows": 64,
+  "bulk_kv": false
  },
  "hardware": {
   "gpu": {
@@ -114,6 +115,9 @@
    "grouped-nf4-gemm": "0.41.0",
    "torch": "2.8.0+cu128",
    "transformers": "5.18.0"
+  },
+  "setup_inferred": {
+   "bulk_kv": "lane SV1 ran experts4bit-qlora 547599b, which lacks experts4bit-qlora #1200 (2ee15a1c, merged 2026-10-05T19:32:02Z): E4B_PAGED_BULK_KV defaults to 1"
   }
  }
 }

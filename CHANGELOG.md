@@ -7,6 +7,18 @@
   - Linear warmup over 3% of the steps, then cosine decay to 10% of the peak.
   - The plan states it, and run reports record the applied rates.
   - Saved plans and direct `Workload` callers keep the constant rate.
+- **Assistant-only loss by default for chat and alpaca data (`--loss auto|all|assistant`).**
+  - Chat trains each assistant turn's text plus the end-of-turn marker the template closes it with. The marker is
+    read from the template.
+  - Alpaca trains the response and its EOS.
+  - Masks come from character offsets over the rendered conversation. Templates that rewrite text are refused,
+    never guessed.
+  - Earlier plans and the demonstration keep full-sequence loss.
+- **Gradient accumulation averages over trained tokens.** Each micro-batch is weighted by its share of the step's
+  trained tokens, so micro-batch × grad-accum splits of the same rows give the same step. Steps with nothing to
+  train are skipped and counted.
+- **Profiles and receipts record the loss.** Profiles record the loss and its trained-token count, and hash the mask.
+  Receipts carry `loss_tokens` and `loss_mask_sha256`.
 - **Read the dataset before planning.** Every row of `--dataset` is validated and tokenized before the model is
   described. The plan carries the resulting `data-profile/1`:
   - examples and tokens;

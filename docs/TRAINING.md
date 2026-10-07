@@ -128,9 +128,31 @@ before.
 
 ## Token and loss semantics
 
-The current objective is **full-sequence causal language modeling**, including prompt and response tokens.
-This release does not implement response-only or assistant-only loss masks, tool-call/multimodal chat formats,
-automatic train/evaluation splitting, or a validation-loss early-stopping policy.
+`--loss` decides which tokens are training targets:
+
+| `--loss` | chat | alpaca | text |
+|---|---|---|---|
+| `auto` (default) | assistant turns | the response | every token |
+| `assistant` | assistant turns | the response | refused: plain text has no assistant turns |
+| `all` | every token | every token | every token |
+
+- **Chat:** each assistant message's text trains, together with the end-of-turn marker the template closes it with
+  (`<|im_end|>`, `<|eot_id|>`, `<end_of_turn>`, ...). That marker is read from the template itself by rendering a
+  probe conversation, so the model learns where to stop. System and user turns, the template's headers and any block
+  the template inserts before a reply (Qwen3's empty `<think>` block) are context only.
+- **Alpaca:** the response trains, followed by its EOS. The `### Instruction` / `### Input` / `### Response` prompt is
+  context only.
+- **How assistant tokens are found:** every message is located, in order, in the conversation the template renders,
+  and character offsets map them onto tokens. This needs a fast tokenizer. A template that rewrites message text,
+  or that does not close an assistant turn where expected, is refused with "use --loss all"; it is never guessed.
+- **Plans made before `--loss` existed** keep full-sequence loss, as does the Alpaca demonstration.
+- **Gradient accumulation averages over trained tokens.** Each micro-batch's mean loss is weighted by its share of
+  the optimizer step's trained tokens, so one step does not depend on how its rows are split into micro-batches. A
+  micro-batch with nothing to train is skipped, and so is a step with nothing to train; the receipt counts such
+  steps. Full-sequence loss keeps the earlier arithmetic exactly.
+
+Not implemented: tool-call and multimodal chat formats, automatic train/evaluation splitting, or a
+validation-loss early-stopping policy.
 
 Examples are concatenated with EOS and cut into fixed-length blocks. Attention can cross example boundaries
 within a block. This is continuous text packing, not isolated per-example attention.

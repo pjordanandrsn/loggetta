@@ -27,6 +27,11 @@ SLACK_KEYS = {"train": ("expert_residency", "expert_kernel"),
               "serve": ("placement", "graphs", "prefill_graph", "exp_int4", "attn_int4")}
 #: what a receipt that predates a key field ran with (the server's defaults: the int4 levers off)
 SLACK_DEFAULTS = {"serve": {"exp_int4": False, "attn_int4": False}}
+#: setup fields the planner sizes to the budget (fill_knobs) or the mechanism derives from those sizes (``hot_rows``,
+#: resolved from the tier split after the fill): they move a few large one-time allocations, not the workload's
+#: transient ones, so a receipt that differs only in them has the candidate's allocation pattern (lanes SV4 and SV6,
+#: Qwen3-30B 8 x 8192 under the solver on an RTX 4090: 4.1% and 3.8% slack at VRAM tiers 10.9 and 12.6 GiB)
+BUDGET_FIELDS = {"serve": ("vram_gb", "dram_gb", "hot_rows")}
 #: which probed kernels each workload uses: the planner reports only those as unusable
 KERNELS_FOR = {"train": ("grouped_nf4", "reference"), "serve": ("paged_fp8", "paged_graphs", "cpu_tier")}
 GiB = 1 << 30

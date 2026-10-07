@@ -6,7 +6,8 @@ import json
 import numpy as np
 import pytest
 
-from loggetta.data import TrainingData, encode_dataset, encode_example, longer_than, prepare_data
+from loggetta.data import (TrainingData, encode_dataset, encode_example, encode_masked, longer_than,
+                           prepare_data)
 from loggetta.plan import ExecutionPlan, Workload
 
 
@@ -242,3 +243,99 @@ def test_epochs_round_trip_and_need_a_dataset():
         Workload(epochs=1.0)
     with pytest.raises(ValueError, match="finite and positive"):
         Workload(data=TrainingData("org/corpus").to_dict(), epochs=0)
+
+
+CHATML = "{% for m in messages %}<|im_start|>{{ m['role'] }} {{ m['content'] }} <|im_end|> {% endfor %}"
+
+
+def fast_tokenizer(template=CHATML):
+    """A real transformers fast tokenizer (offsets and all) over a 16-word vocabulary, with a ChatML-style template."""
+    tokenizers = pytest.importorskip("tokenizers")
+    transformers = pytest.importorskip("transformers")
+    words = ["[UNK]", "<eos>", "<|im_start|>", "<|im_end|>", "system", "user", "assistant", "hello", "hi", "there",
+             "be", "brief", "ok", "###", "fine", "thanks"]
+    core = tokenizers.Tokenizer(tokenizers.models.WordLevel({w: i for i, w in enumerate(words)}, unk_token="[UNK]"))
+    core.pre_tokenizer = tokenizers.pre_tokenizers.WhitespaceSplit()
+    tok = transformers.PreTrainedTokenizerFast(tokenizer_object=core, eos_token="<eos>", unk_token="[UNK]")
+    tok.chat_template = template
+    return tok
+
+
+def chat(*turns):
+    return {"messages": [{"role": r, "content": c} for r, c in turns]}
+
+
+def test_assistant_mask_covers_each_assistant_turn_and_its_end_of_turn_marker():
+    tok = fast_tokenizer()
+    ex = chat(("system", "be brief"), ("user", "hi there"), ("assistant", "hi there"), ("user", "ok"),
+              ("assistant", "fine thanks"))
+    ids, mask = encode_masked(tok, ex, TrainingData(format="chat"), "chat", "assistant")
+    assert ids == encode_example(tok, ex, TrainingData(format="chat"), "chat")       # the same ids as full loss
+    words = tok.convert_ids_to_tokens(ids)
+    trained = [w for w, m in zip(words, mask) if m]
+    # the user's "hi there" comes first and is not trained; the assistant's identical text is
+    assert trained == ["hi", "there", "<|im_end|>", "fine", "thanks", "<|im_end|>"]
+    assert words[-1] == "<eos>" and mask[-1] == 0                  # the separating EOS is not part of a turn
+
+
+def test_alpaca_trains_the_response_and_its_eos():
+    tok = fast_tokenizer()
+    ex = {"instruction": "hello", "input": "", "output": "hi there"}
+    ids, mask = encode_masked(tok, ex, TrainingData(format="alpaca"), "alpaca", "assistant")
+    assert ids == encode_example(tok, ex, TrainingData(format="alpaca"), "alpaca")
+    assert [w for w, m in zip(tok.convert_ids_to_tokens(ids), mask) if m] == ["hi", "there", "<eos>"]
+
+
+@pytest.mark.parametrize("make,ex,fmt,match", [
+    (lambda: fast_tokenizer("{% for m in messages %}{{ m['content'] | upper }} {% endfor %}"),
+     chat(("user", "hello"), ("assistant", "hi")), "chat", "does not render an assistant message's text verbatim"),
+    (fast_tokenizer, chat(("user", "hello"), ("system", "hi")), "chat", "no assistant message"),
+    (lambda: Tokenizer(), {"instruction": "a", "output": "b"}, "alpaca", "needs a fast tokenizer"),
+])
+def test_an_assistant_mask_that_cannot_be_derived_is_refused(make, ex, fmt, match):
+    with pytest.raises(ValueError, match=match):
+        encode_masked(make(), ex, TrainingData(format=fmt), fmt, "assistant")
+
+
+def test_loss_resolution_and_legacy_specs(tmp_path):
+    with pytest.raises(ValueError, match="plain text has no assistant turns"):
+        encode_dataset(Tokenizer(), TrainingData(str(jsonl(tmp_path, [{"text": "abc"}])), loss="assistant"))
+    assert TrainingData().loss == "auto"
+    assert TrainingData.from_dict({"source": "org/corpus"}).loss == "all"          # plans before the field
+    assert TrainingData.from_dict(None).loss == "all"                              # the demonstration
+    with pytest.raises(ValueError, match="loss must be one of"):
+        TrainingData(loss="prompt")
+
+
+def test_the_profile_counts_trained_tokens_and_hashes_the_mask(tmp_path):
+    rows = [chat(("user", "hello"), ("assistant", "hi there")), chat(("user", "ok"), ("assistant", "fine"))]
+    file = jsonl(tmp_path, rows)
+    with encode_dataset(fast_tokenizer(), TrainingData(str(file), format="chat")) as enc:          # auto: assistant
+        masked = enc.profile
+    with encode_dataset(fast_tokenizer(), TrainingData(str(file), format="chat", loss="all")) as enc:
+        full = enc.profile
+    assert masked["loss_mode"] == "assistant" and masked["loss_tokens"] == 3 + 2
+    assert full["loss_mode"] == "all" and full["loss_tokens"] == full["tokens"] == masked["tokens"]
+    assert masked["encoded_sha256"] != full["encoded_sha256"]
+
+
+def test_a_profile_from_before_the_loss_field_still_verifies(tmp_path):
+    file = jsonl(tmp_path, [{"text": "abcdefg"}, {"text": "hijklmn"}])
+    with encode_dataset(Tokenizer(), TrainingData(str(file), loss="all")) as enc:
+        legacy = {**enc.profile, "options": {k: v for k, v in enc.profile["options"].items() if k != "loss"}}
+    spec = TrainingData.from_dict(legacy["options"])                                # how execute reads an old plan
+    with prepare_data(Tokenizer(), 2, 4, spec, expect=legacy) as data:
+        assert data.info["verified_against_plan"] and data.mask is None
+
+
+@pytest.mark.parametrize("shuffle,seed,blocks", [(False, 0, 3), (True, 5, 6)])
+def test_masks_pack_the_same_way_streamed_and_profiled(tmp_path, shuffle, seed, blocks):
+    rows = [chat(("user", "hello " * (i % 3 + 1)), ("assistant", "hi there " * (i % 2 + 1))) for i in range(12)]
+    spec = TrainingData(str(jsonl(tmp_path, rows)), format="chat", shuffle=shuffle)
+    with encode_dataset(fast_tokenizer(), spec) as enc:
+        profile = enc.profile
+    with prepare_data(fast_tokenizer(), blocks, 8, spec, seed=seed) as streamed, \
+            prepare_data(fast_tokenizer(), blocks, 8, spec, seed=seed, expect=profile) as profiled:
+        assert np.array_equal(streamed.blocks, profiled.blocks) and np.array_equal(streamed.mask, profiled.mask)
+        assert streamed.info["loss_mask_sha256"] == profiled.info["loss_mask_sha256"]
+        assert streamed.info["loss_tokens"] == int(np.asarray(streamed.mask).sum()) > 0

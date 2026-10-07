@@ -41,6 +41,8 @@ def _common(p):
     p.add_argument("--output-field", default="output")
     p.add_argument("--shuffle-data", action="store_true", help="shuffle rows deterministically with --seed")
     p.add_argument("--repeat-data", action="store_true", help="explicitly allow repeating a short dataset")
+    p.add_argument("--loss", choices=("auto", "all", "assistant"), default="auto",
+                   help="which tokens train: auto = assistant turns (chat) or the response (alpaca), every token for text")
     p.add_argument("--learning-rate", type=float, default=2e-4, help="the peak learning rate (default 2e-4)")
     p.add_argument("--lr-schedule", choices=("cosine", "constant"), default="cosine",
                    help="cosine (default): linear warmup, then cosine decay to 10%% of the peak; constant: no decay")
@@ -85,9 +87,10 @@ def _plan(a):
                                      revision=a.dataset_revision, text_field=a.text_field,
                                      messages_field=a.messages_field, instruction_field=a.instruction_field,
                                      input_field=a.input_field, output_field=a.output_field,
-                                     shuffle=a.shuffle_data, repeat=a.repeat_data).to_dict()
+                                     shuffle=a.shuffle_data, repeat=a.repeat_data, loss=a.loss).to_dict()
     elif (a.dataset_config or a.dataset_revision or a.format != "auto" or a.split != "train"
-          or a.shuffle_data or a.repeat_data or a.text_field != "text" or a.messages_field != "messages"
+          or a.shuffle_data or a.repeat_data or a.loss != "auto" or a.text_field != "text"
+          or a.messages_field != "messages"
           or a.instruction_field != "instruction" or a.input_field != "input" or a.output_field != "output"):
         raise ValueError("dataset options require --dataset; omit them all for the Alpaca demonstration")
     if a.epochs is not None and a.steps is not None:

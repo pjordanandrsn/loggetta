@@ -121,3 +121,13 @@ def test_cli_trains_with_warmup_and_cosine_by_default(monkeypatch, tmp_path):
     assert seen["workload"].lr_schedule == "constant" and seen["workload"].warmup_steps == 5
     assert main(["plan", "org/Model", "--workload", "serve"]) == 0
     assert seen["workload"].lr_schedule == "constant"                   # a server has no learning rate
+def test_cli_loss_choice_is_part_of_the_dataset_options(monkeypatch, tmp_path, capsys):
+    seen = stub_planner(monkeypatch)
+    assert main(["plan", "org/Model", "--loss", "assistant"]) == 2
+    assert "require --dataset" in capsys.readouterr().err
+    data = tmp_path / "train.jsonl"
+    data.write_text(json.dumps({"text": "plain words"}) + "\n")
+    assert main(["plan", "org/Model", "--dataset", str(data), "--loss", "all"]) == 0
+    assert seen["workload"].data["loss"] == "all" and seen["data_profile"]["loss_mode"] == "all"
+    assert main(["plan", "org/Model", "--dataset", str(data), "--loss", "assistant"]) == 2
+    assert "plain text has no assistant turns" in capsys.readouterr().err
