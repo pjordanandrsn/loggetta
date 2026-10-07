@@ -11,6 +11,22 @@ class NoModelProvider(RuntimeError):
     pass
 
 
+class Refused:
+    """What :func:`describe_model` returns when more than one backend described the model and every one refused it:
+    the first description (its attributes read through, so callers that expect it still work) and each backend's own
+    refusal, by backend name, so a plan can say why each one cannot take the model."""
+
+    def __init__(self, first, backend: str, reasons: dict):
+        self._first, self.backend, self.reasons = first, backend, reasons
+
+    @property
+    def description(self):
+        return self._first
+
+    def __getattr__(self, name):
+        return getattr(self._first, name)
+
+
 def describe_model(model, *, revision=None, trust_remote_code=False, backends=None):
     """The model's topology without its weights (config.json at most, plus a meta-device module tree).
 
@@ -19,19 +35,21 @@ def describe_model(model, *, revision=None, trust_remote_code=False, backends=No
     (today experts4bit-qlora's ``MoETopology``)."""
     from .backends import BACKENDS
 
-    first, missing = None, []
+    described, missing = [], []
     for b in BACKENDS if backends is None else backends:
         try:
             topology = b.describe(model, revision=revision, trust_remote_code=trust_remote_code)
         except NoModelProvider as e:
             missing.append(e)
             continue
-        if b.refusal(topology) is None:
+        why = b.refusal(topology)
+        if why is None:
             return topology
-        if first is None:
-            first = topology
-    if first is None:
+        described.append((b.NAME, topology, why))
+    if not described:
         if len(missing) == 1:
             raise missing[0]
         raise NoModelProvider("; ".join(str(e) for e in missing) or "no backend is installed to describe a model")
-    return first
+    if len(described) == 1:
+        return described[0][1]
+    return Refused(described[0][1], described[0][0], {name: why for name, _t, why in described})

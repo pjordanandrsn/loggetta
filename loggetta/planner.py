@@ -428,9 +428,17 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
     if host_headroom:
         budget["host_headroom"] = int(host_headroom)
     # each backend says whether it can plan for this description at all (its own admission), before anything is priced
-    refusals = [(b, b.refusal(topology)) for b in backends]
+    from .model import Refused
+
+    if isinstance(topology, Refused):                  # every backend that described it refused: their own words
+        refusals = [(b, topology.reasons.get(b.NAME) or b.refusal(topology.description)) for b in backends]
+        owner = next((b for b in backends if b.NAME == topology.backend), backends[0] if backends else None)
+        topology = topology.description
+    else:
+        refusals = [(b, b.refusal(topology)) for b in backends]
+        owner = None
     admitted = [b for b, why in refusals if why is None]
-    owner = admitted[0] if admitted else (backends[0] if backends else None)
+    owner = admitted[0] if admitted else (owner or (backends[0] if backends else None))
     common = dict(model=owner.summary(topology) if owner else {"model": getattr(topology, "model", None)},
                   hardware=_hw_dict(hardware, gpu), workload=workload, constraints=constraints, budget=budget,
                   data_profile=data_profile)
@@ -447,6 +455,10 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
     if backends and not admitted:
         return refuse([why if len(refusals) == 1 else f"{b.NAME}: {why}" for b, why in refusals])
     usable = [b for b in admitted if workload.kind in b.WORKLOADS]
+    if not usable and admitted:
+        names = " and ".join(f"the {b.NAME} backend" for b in admitted)
+        return refuse([f"{names} described this model but {'does' if len(admitted) == 1 else 'do'} not plan "
+                       f"{workload.kind!r} workloads yet ({owner.summary(topology).get('summary', '')})"])
     if not usable:
         return refuse([f"no installed backend plans {workload.kind!r} workloads yet "
                        f"(backends: {', '.join(b.NAME for b in backends)}; they plan {sorted({w for b in backends for w in b.WORKLOADS})})"])

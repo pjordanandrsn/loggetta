@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **A second backend, `dense`, describes dense decoder models without reading weights** (config + a meta-device
+  tree). `inspect` and `plan` now reach a dense model through it instead of stopping at the MoE loader's refusal.
+  - Every decoder-layer linear is classified by structural role from its shape: attention in/out, MLP in/out. Names
+    only break ties, so fused `qkv_proj` / `gate_up_proj` (Phi-3) classify like separate projections; anything left
+    over stays frozen and is reported.
+  - Parameter counts, tied heads, and attention implementations are reported, including softcapping that SDPA would
+    drop (Gemma 2), along with whether experts4bit-qlora's chunked loss covers the class.
+  - MoE, pre-quantized and non-decoder models are refused in words.
+  - Training plans for dense models come next. Today such a plan says the backend described the model but does not
+    plan the workload yet.
 - **Assistant-only loss by default for chat and alpaca data (`--loss auto|all|assistant`).**
   - Chat trains each assistant turn's text plus the end-of-turn marker the template closes it with. The marker is
     read from the template.

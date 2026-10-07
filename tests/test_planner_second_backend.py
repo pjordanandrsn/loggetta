@@ -229,3 +229,14 @@ def test_receipts_are_read_through_the_backend_that_ran_them():
     streamed = toy_plan(observations=(_receipt("stream"),))
     base = {ln.name: ln for ln in streamed.selected.lines}["process baseline (torch, CUDA, libraries, model objects)"]
     assert base.bytes == 1 * GiB                                                    # streamed: pinned homes inflate RSS
+
+
+def test_when_every_backend_refuses_each_reason_reaches_the_plan():
+    from loggetta.model import Refused
+
+    t = describe_model("toy/unknown", backends=(Toy, OtherBackend))
+    assert isinstance(t, Refused) and t.model == "toy/unknown"          # attributes read through to Toy's description
+    assert t.reasons == {"toy": "toy knows no such model", "other": "the other backend plans nothing yet"}
+    p = plan(t, hw(), Workload(seq_len=512), backends=(Toy, OtherBackend))
+    assert p.refusal["reasons"] == ["toy: toy knows no such model", "other: the other backend plans nothing yet"]
+    assert p.model["model_type"] == "toy"

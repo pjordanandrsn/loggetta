@@ -257,11 +257,14 @@ def test_training_plans_do_not_mention_serving_kernels(topo):
     assert not any("paged_fp8" in r for r in p.reasons)
 
 
-def test_a_model_the_loader_refuses_is_refused_with_its_reason():
-    cfg = tr.LlamaConfig(hidden_size=256, intermediate_size=512, num_hidden_layers=2, num_attention_heads=4,
-                         vocab_size=1000)
+def test_a_model_every_backend_refuses_is_refused_with_each_reason():
+    cfg = tr.BertConfig(hidden_size=64, num_hidden_layers=2, num_attention_heads=4, intermediate_size=128,
+                        vocab_size=128, is_decoder=True)
     p = plan(describe_model(cfg), hw(), Workload())
-    assert p.status == "refused" and "Unsupported model_type='llama'" in p.refusal["reasons"][0]
+    assert p.status == "refused"
+    assert p.refusal["reasons"][0].startswith("experts4bit: the model-family layer cannot load this model: "
+                                              "Unsupported model_type='bert'")
+    assert p.refusal["reasons"][1].startswith("dense: ") and "no decoder layers" in p.refusal["reasons"][1]
 
 
 def test_no_gpu_is_a_refusal(topo):
