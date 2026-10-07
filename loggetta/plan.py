@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import json
 import math
+
+from .schedule import describe as describe_lr
 from dataclasses import asdict, dataclass, field
 
 PLAN_SCHEMA = "execution-plan/1"
@@ -38,6 +40,10 @@ class Workload:
     learning_rate: float = 2e-4
     #: passes over the dataset; when set, the planner derives ``steps`` from the data profile and records both
     epochs: float | None = None
+    #: "constant" or "cosine" (warmup, then cosine decay); see :mod:`.schedule`
+    lr_schedule: str = "constant"
+    #: linear warmup steps; None = the schedule's default (3% of the steps under cosine, none under constant)
+    warmup_steps: int | None = None
 
     def __post_init__(self):
         for name in ("seq_len", "micro_batch", "grad_accum", "steps"):
@@ -60,6 +66,13 @@ class Workload:
                 raise ValueError("epochs must be finite and positive")
             if self.data is None:
                 raise ValueError("epochs need a dataset (--dataset): the planner counts its tokens")
+        from .schedule import SCHEDULES
+
+        if self.lr_schedule not in SCHEDULES:
+            raise ValueError(f"lr_schedule must be one of {', '.join(SCHEDULES)}")
+        if self.warmup_steps is not None and (isinstance(self.warmup_steps, bool)
+                                              or not isinstance(self.warmup_steps, int) or self.warmup_steps < 0):
+            raise ValueError("warmup_steps must be a non-negative integer")
 
     @property
     def tokens_per_microbatch(self) -> int:
@@ -153,6 +166,10 @@ class ExecutionPlan:
             del out["workload"]["learning_rate"]
         if out["workload"]["epochs"] is None:
             del out["workload"]["epochs"]
+        if out["workload"]["lr_schedule"] == "constant":
+            del out["workload"]["lr_schedule"]
+        if out["workload"]["warmup_steps"] is None:
+            del out["workload"]["warmup_steps"]
         if out["data_profile"] is None:
             del out["data_profile"]
         return out
@@ -197,10 +214,10 @@ class ExecutionPlan:
                 out += [f"Data      {w.data['source']} ({d['format']}, split {d['split']}{ident}): {d['rows']:,} examples, "
                         f"{d['tokens']:,} tokens, validated and tokenized before planning",
                         f"          tokens per example: p50 {ln['p50']:,}, p90 {ln['p90']:,}, p99 {ln['p99']:,}, max {ln['max']:,}; "
-                        f"full-sequence loss; learning rate {w.learning_rate:g}"]
+                        f"full-sequence loss; {describe_lr(w)}"]
             elif w.data is not None:
                 out += [f"Data      {w.data['source']} ({w.data.get('format', 'auto')}, split {w.data.get('split', 'train')}); "
-                        f"full-sequence loss; learning rate {w.learning_rate:g}"]
+                        f"full-sequence loss; {describe_lr(w)}"]
             else:
                 out += ["Data      demonstration: tatsu-lab/alpaca, full-sequence loss, repeated as needed"]
         if self.status == "refused":

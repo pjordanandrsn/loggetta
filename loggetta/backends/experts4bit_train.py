@@ -170,6 +170,10 @@ def train_loop(model, trainable, model_id, w, smi, meas, *, revision=None, seed=
         opt = bnb.optim.AdamW8bit(trainable, lr=w.learning_rate)
     else:
         opt = torch.optim.AdamW(trainable, lr=w.learning_rate)
+    from ..schedule import describe as describe_lr, learning_rates
+
+    lrs = learning_rates(w)
+    meas.update(lr_schedule=describe_lr(w), lr_first=lrs[0], lr_peak=max(lrs), lr_last=lrs[-1])
     model.train()
     sync()
     if is_cuda:
@@ -190,6 +194,8 @@ def train_loop(model, trainable, model_id, w, smi, meas, *, revision=None, seed=
             (loss / w.grad_accum).backward()
             acc += float(loss.detach()) / w.grad_accum
         torch.nn.utils.clip_grad_norm_(trainable, 1.0, error_if_nonfinite=True)
+        for group in opt.param_groups:
+            group["lr"] = lrs[step]
         opt.step()
         sync()
         step_s.append(time.time() - ts)

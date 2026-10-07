@@ -113,6 +113,19 @@ with `tokenize=True` and `add_generation_prompt=False`. There is no fallback tha
 `--format auto` infers a format only when the columns indicate exactly one supported choice. Ambiguity is a
 request to choose a format explicitly, not permission to guess.
 
+## Learning rate
+
+`--learning-rate` is the peak, default 2e-4. With `--lr-schedule cosine`, the default for `train` and `plan`:
+- the learning rate rises linearly over a warmup (3% of the steps, at least one; `--warmup-steps N` to choose);
+- it then decays along a cosine to 10% of the peak at the last step;
+- no step trains at zero.
+
+`--lr-schedule constant` keeps the peak throughout, after a warmup only if `--warmup-steps` asks for one.
+
+The plan states the schedule. The run report records the applied first, peak and last learning rates. Plans saved
+before the schedule existed, and Python callers that build a `Workload` directly, train at a constant rate as
+before.
+
 ## Token and loss semantics
 
 The current objective is **full-sequence causal language modeling**, including prompt and response tokens.
