@@ -43,7 +43,10 @@ def _common(p):
     p.add_argument("--repeat-data", action="store_true", help="explicitly allow repeating a short dataset")
     p.add_argument("--loss", choices=("auto", "all", "assistant"), default="auto",
                    help="which tokens train: auto = assistant turns (chat) or the response (alpaca), every token for text")
-    p.add_argument("--learning-rate", type=float, default=2e-4)
+    p.add_argument("--learning-rate", type=float, default=2e-4, help="the peak learning rate (default 2e-4)")
+    p.add_argument("--lr-schedule", choices=("cosine", "constant"), default="cosine",
+                   help="cosine (default): linear warmup, then cosine decay to 10%% of the peak; constant: no decay")
+    p.add_argument("--warmup-steps", type=int, help="linear warmup steps (default: 3%% of the steps under cosine)")
     p.add_argument("--workload", default="train", choices=("train", "serve"))
     p.add_argument("--seq", type=int, default=512)
     p.add_argument("--micro-batch", type=int, default=1)
@@ -96,7 +99,9 @@ def _plan(a):
                  steps=a.steps if a.steps is not None else 20, epochs=a.epochs,
                  optimizer=a.optimizer, context_len=a.context or (4096 if a.workload == "serve" else None),
                  concurrency=a.concurrency or (1 if a.workload == "serve" else None),
-                 data=data, learning_rate=a.learning_rate)
+                 data=data, learning_rate=a.learning_rate,
+                 lr_schedule=a.lr_schedule if a.workload == "train" else "constant",
+                 warmup_steps=a.warmup_steps if a.workload == "train" else None)
     profile = None
     if data is not None:                     # every row validated and tokenized before the model is looked at
         tokenizer = data_mod.load_tokenizer(a.model, revision=a.revision, trust_remote_code=a.trust_remote_code)
