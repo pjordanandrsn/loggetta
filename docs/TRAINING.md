@@ -165,7 +165,8 @@ Two costs, both stated in the plan:
   bias. The plan prices this as micro-batch × seq² × 3 bytes, about 48 MiB per row at 4,096 tokens and growing
   quadratically.
 - **Speed:** flash attention cannot take a mask, so attention runs on SDPA's memory-efficient kernel. The speed cost
-  is not modelled.
+  is not modelled. Measured on an RTX A2000 (OLMoE-1B-7B, NF4, seq 2048, alternating arms): steps took 1.11x as long
+  as concatenated packing, and the allocator peak rose by the boolean mask alone (4 MiB; the plan prices 12 MiB).
 
 transformers derives per-example masks only when no KV cache exists. The training loop therefore passes
 `use_cache=False` together with `position_ids` (a test checks the isolation on a tiny model).

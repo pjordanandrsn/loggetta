@@ -387,7 +387,9 @@ def resolve_data(workload: Workload, profile: dict | None):
 
 
 #: bytes per element of a packed row's attention mask: transformers' boolean [rows, 1, seq, seq] mask, plus the bf16
-#: bias SDPA's memory-efficient kernel turns it into (flash attention cannot take a mask)
+#: bias SDPA's memory-efficient kernel can turn it into (flash attention cannot take a mask). Measured at seq 2048 on
+#: an RTX A2000 (evidence/2026-10-07-a2000-packing-ab): the allocator peak moved by exactly the boolean mask, 1 B per
+#: element; the bias is charged as well, conservatively, until a longer-seq receipt shows whether it meets the peak
 PACKED_MASK_BYTES = 3
 
 

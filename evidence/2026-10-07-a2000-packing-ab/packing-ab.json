@@ -1,0 +1,466 @@
+{
+ "arms": [
+  {
+   "device_peak_bytes": 6342526464,
+   "device_reserved_peak_bytes": 8101298176,
+   "loss_tokens": 13085,
+   "losses": [
+    2.9273784160614014,
+    5.557748317718506,
+    4.374790668487549,
+    3.3870089054107666,
+    3.2961535453796387,
+    3.0407652854919434,
+    2.7619473934173584,
+    2.82912015914917,
+    2.650956869125366,
+    2.516721487045288,
+    2.562476873397827,
+    2.546477794647217
+   ],
+   "packing": "concat",
+   "priced_mask_bytes": 0,
+   "s_per_step_median": 3.184584856033325,
+   "status": "OK",
+   "step_seconds": [
+    199.0632975101471,
+    4.104260683059692,
+    3.1492533683776855,
+    3.1734466552734375,
+    3.1611335277557373,
+    3.2110438346862793,
+    3.1769418716430664,
+    3.1702144145965576,
+    3.3389880657196045,
+    3.2202322483062744,
+    3.192227840423584,
+    3.1995694637298584
+   ]
+  },
+  {
+   "device_peak_bytes": 6346720256,
+   "device_reserved_peak_bytes": 8101298176,
+   "loss_tokens": 12860,
+   "losses": [
+    2.6440656185150146,
+    3.0320844650268555,
+    3.144514799118042,
+    3.120462417602539,
+    2.833324670791626,
+    2.6092848777770996,
+    2.5708863735198975,
+    2.538547992706299,
+    2.411149024963379,
+    2.4382762908935547,
+    2.3887994289398193,
+    2.4193360805511475
+   ],
+   "packing": "isolated",
+   "priced_mask_bytes": 12582912,
+   "s_per_step_median": 3.566245913505554,
+   "status": "OK",
+   "step_seconds": [
+    8.664682388305664,
+    3.6111319065093994,
+    3.5622293949127197,
+    3.545914888381958,
+    3.5526740550994873,
+    4.254308462142944,
+    3.5671212673187256,
+    3.563934803009033,
+    4.17313027381897,
+    3.574124336242676,
+    3.5666627883911133,
+    3.565829038619995
+   ]
+  },
+  {
+   "device_peak_bytes": 6342525440,
+   "device_reserved_peak_bytes": 8103395328,
+   "loss_tokens": 13085,
+   "losses": [
+    2.3073673248291016,
+    3.4274511337280273,
+    3.3781824111938477,
+    2.852384567260742,
+    2.4962291717529297,
+    2.43733549118042,
+    2.5875141620635986,
+    2.47525954246521,
+    2.377014636993408,
+    2.38032603263855,
+    2.4080052375793457,
+    2.4145665168762207
+   ],
+   "packing": "concat",
+   "priced_mask_bytes": 0,
+   "s_per_step_median": 3.264840245246887,
+   "status": "OK",
+   "step_seconds": [
+    3.3057861328125,
+    3.248900890350342,
+    3.2555665969848633,
+    3.2606029510498047,
+    3.3667595386505127,
+    3.2690775394439697,
+    3.2554590702056885,
+    3.2599422931671143,
+    3.277614116668701,
+    3.2595903873443604,
+    3.3154165744781494,
+    3.2753348350524902
+   ]
+  },
+  {
+   "device_peak_bytes": 6346719232,
+   "device_reserved_peak_bytes": 8103395328,
+   "loss_tokens": 12860,
+   "losses": [
+    2.337709903717041,
+    3.1994495391845703,
+    2.755119562149048,
+    2.5270495414733887,
+    2.409390449523926,
+    2.4570820331573486,
+    2.478097677230835,
+    2.3457159996032715,
+    2.3135826587677,
+    2.401726007461548,
+    2.3693485260009766,
+    2.362776756286621
+   ],
+   "packing": "isolated",
+   "priced_mask_bytes": 12582912,
+   "s_per_step_median": 3.606297492980957,
+   "status": "OK",
+   "step_seconds": [
+    3.639047384262085,
+    3.731727361679077,
+    3.604405164718628,
+    3.607789993286133,
+    3.587590217590332,
+    3.6016855239868164,
+    3.6091768741607666,
+    3.6095216274261475,
+    3.611783742904663,
+    3.6080753803253174,
+    3.600250005722046,
+    3.6048049926757812
+   ]
+  }
+ ],
+ "engaged": {
+  "attention_lora_projections": 64,
+  "commit": "6d84c48581ece794365f2b8e9cfb043c68ade9c5",
+  "dgrad": true,
+  "env_moe_keep_layers": null,
+  "fused_expert_modules": 16,
+  "fused_rmsnorm": true,
+  "fused_rope": true,
+  "setup": {
+   "adapter_dtype": "bf16",
+   "alpha": 16,
+   "attn_4bit": false,
+   "blocksize": 64,
+   "dgrad": true,
+   "expert_kernel": "grouped_nf4",
+   "expert_residency": "device",
+   "keep_moe_layers": 0,
+   "pin": true,
+   "quant_type": "nf4",
+   "r": 8,
+   "train_attention": true,
+   "train_experts": true
+  },
+  "train_gemm_route": "fused",
+  "trainable_numel": 60817408
+ },
+ "gpu": "NVIDIA RTX A2000 12GB",
+ "kernel": "grouped_nf4",
+ "load_seconds": 3088.3867795467377,
+ "model": "allenai/OLMoE-1B-7B-0924",
+ "profiles": {
+  "concat": {
+   "encoded_sha256": "d6e128383039fc14185755de0bb7e17354f7aad84d2be3959fef5784c0c0c159",
+   "encoding": "per example in source order: its length, then its ids with EOS, as little-endian int64; then its loss mask, one byte per token",
+   "format": "alpaca",
+   "histogram": [
+    [
+     0,
+     64,
+     53
+    ],
+    [
+     64,
+     128,
+     46
+    ],
+    [
+     128,
+     192,
+     34
+    ],
+    [
+     192,
+     256,
+     66
+    ],
+    [
+     256,
+     320,
+     7
+    ],
+    [
+     320,
+     384,
+     13
+    ],
+    [
+     448,
+     512,
+     48
+    ],
+    [
+     512,
+     576,
+     21
+    ],
+    [
+     576,
+     640,
+     51
+    ],
+    [
+     640,
+     704,
+     40
+    ],
+    [
+     704,
+     768,
+     1
+    ],
+    [
+     960,
+     1024,
+     20
+    ]
+   ],
+   "lengths": {
+    "max": 1011,
+    "mean": 365.63,
+    "min": 37,
+    "p50": 317,
+    "p90": 693,
+    "p99": 1000
+   },
+   "loss": "assistant tokens only: each assistant turn's text and its end-of-turn marker (chat), or the response and EOS (alpaca)",
+   "loss_mode": "assistant",
+   "loss_tokens": 82162,
+   "options": {
+    "config": null,
+    "format": "alpaca",
+    "input_field": "input",
+    "instruction_field": "instruction",
+    "loss": "auto",
+    "messages_field": "messages",
+    "output_field": "output",
+    "packing": "concat",
+    "repeat": false,
+    "revision": null,
+    "shuffle": false,
+    "source": "/home/node/work/loggetta-ws/runs/packing-ab-a2000-20261007T0206Z/synthetic-alpaca.jsonl",
+    "split": "train",
+    "text_field": "text"
+   },
+   "packing": "concatenated examples separated by EOS; attention is not isolated between examples",
+   "packing_mode": "concat",
+   "rows": 400,
+   "schema": "data-profile/1",
+   "source": {
+    "kind": "local",
+    "path": "/home/node/work/loggetta-ws/runs/packing-ab-a2000-20261007T0206Z/synthetic-alpaca.jsonl",
+    "sha256": "d9994126c7a5d3fe8b012aa8f87532c210fc623680e4a4c42b3bc5b34c4c3949"
+   },
+   "split": "train",
+   "tokenizer": {
+    "chat_template_sha256": null,
+    "class": "GPTNeoXTokenizer",
+    "eos_token_id": 50279,
+    "name": "allenai/OLMoE-1B-7B-0924",
+    "vocab_size": 50280
+   },
+   "tokens": 146254
+  },
+  "isolated": {
+   "encoded_sha256": "d6e128383039fc14185755de0bb7e17354f7aad84d2be3959fef5784c0c0c159",
+   "encoding": "per example in source order: its length, then its ids with EOS, as little-endian int64; then its loss mask, one byte per token",
+   "format": "alpaca",
+   "histogram": [
+    [
+     0,
+     64,
+     53
+    ],
+    [
+     64,
+     128,
+     46
+    ],
+    [
+     128,
+     192,
+     34
+    ],
+    [
+     192,
+     256,
+     66
+    ],
+    [
+     256,
+     320,
+     7
+    ],
+    [
+     320,
+     384,
+     13
+    ],
+    [
+     448,
+     512,
+     48
+    ],
+    [
+     512,
+     576,
+     21
+    ],
+    [
+     576,
+     640,
+     51
+    ],
+    [
+     640,
+     704,
+     40
+    ],
+    [
+     704,
+     768,
+     1
+    ],
+    [
+     960,
+     1024,
+     20
+    ]
+   ],
+   "lengths": {
+    "max": 1011,
+    "mean": 365.63,
+    "min": 37,
+    "p50": 317,
+    "p90": 693,
+    "p99": 1000
+   },
+   "loss": "assistant tokens only: each assistant turn's text and its end-of-turn marker (chat), or the response and EOS (alpaca)",
+   "loss_mode": "assistant",
+   "loss_tokens": 82162,
+   "options": {
+    "config": null,
+    "format": "alpaca",
+    "input_field": "input",
+    "instruction_field": "instruction",
+    "loss": "auto",
+    "messages_field": "messages",
+    "output_field": "output",
+    "packing": "isolated",
+    "repeat": false,
+    "revision": null,
+    "shuffle": false,
+    "source": "/home/node/work/loggetta-ws/runs/packing-ab-a2000-20261007T0206Z/synthetic-alpaca.jsonl",
+    "split": "train",
+    "text_field": "text"
+   },
+   "packed": {
+    "efficiency": 0.9918,
+    "rows": 72,
+    "seq_len": 2048,
+    "truncated_examples": 0,
+    "truncated_loss_tokens": 0,
+    "truncated_tokens": 0,
+    "window": 64
+   },
+   "packing": "whole examples per row (truncated to the row), positions reset per example, padding masked; each example attends only to itself (transformers' packed-sequence masks)",
+   "packing_mode": "isolated",
+   "rows": 400,
+   "schema": "data-profile/1",
+   "source": {
+    "kind": "local",
+    "path": "/home/node/work/loggetta-ws/runs/packing-ab-a2000-20261007T0206Z/synthetic-alpaca.jsonl",
+    "sha256": "d9994126c7a5d3fe8b012aa8f87532c210fc623680e4a4c42b3bc5b34c4c3949"
+   },
+   "split": "train",
+   "tokenizer": {
+    "chat_template_sha256": null,
+    "class": "GPTNeoXTokenizer",
+    "eos_token_id": 50279,
+    "name": "allenai/OLMoE-1B-7B-0924",
+    "vocab_size": 50280
+   },
+   "tokens": 146254
+  }
+ },
+ "provenance": {
+  "argv": [
+   "bench/packing_ab.py",
+   "--model",
+   "allenai/OLMoE-1B-7B-0924",
+   "--seq",
+   "2048",
+   "--steps",
+   "12",
+   "--out",
+   "/home/node/work/loggetta-ws/runs/packing-ab-a2000-20261007T0206Z"
+  ],
+  "python": "3.11.2",
+  "sources": {
+   "experts4bit_qlora": {
+    "branch": "HEAD",
+    "commit": "af0d95df70869e7a6aed5abd461865af94828ed8",
+    "dirty": false,
+    "file": "/tmp/claude-1000/-home-node/6466efc6-7935-4484-9c48-8ef3ca48562e/scratchpad/e4b-main/experts4bit_qlora/__init__.py"
+   },
+   "loggetta": {
+    "branch": "feat/isolated-packing",
+    "commit": "e78d2fa4c7724885a7cb88f11b619bc358c08f55",
+    "dirty": false,
+    "file": "/home/node/work/loggetta-ws/loggetta-d2b/loggetta/__init__.py"
+   },
+   "nf4_grouped": {
+    "branch": "HEAD",
+    "commit": "b4f93f1c62d1e3436ed45bec8ccd608c90433737",
+    "dirty": false,
+    "file": "/tmp/claude-1000/-home-node/6466efc6-7935-4484-9c48-8ef3ca48562e/scratchpad/gnf4-main/kernel/nf4_grouped.py"
+   }
+  },
+  "started_at": "2026-10-07T02:08:14Z",
+  "versions": {
+   "accelerate": "1.15.0",
+   "bitsandbytes": "0.50.2",
+   "experts4bit-qlora": "0.44.0",
+   "grouped-nf4-gemm": "0.37.0",
+   "torch": "2.8.0+cu128",
+   "transformers": "5.18.0",
+   "triton": "3.4.0"
+  }
+ },
+ "schema": "packing-ab/1",
+ "seq": 2048,
+ "steps": 12,
+ "torch": "2.8.0+cu128",
+ "warmup": 2
+}
