@@ -617,3 +617,21 @@ def test_a_data_profile_resolves_epochs_and_travels_with_the_plan(topo):
     assert ExecutionPlan.from_dict(json.loads(p.to_json())).to_json() == p.to_json()
     assert p.to_json() == plan(topo, hw(), Workload(seq_len=512, data=data, epochs=1), Constraints(),
                                data_profile=profile).to_json()
+
+
+def test_isolated_packing_is_priced_in_the_plan(topo):
+    from loggetta.data import TrainingData
+
+    data = TrainingData("chat.jsonl", format="chat").to_dict()
+    profile = {"schema": "data-profile/1", "rows": 300, "tokens": 90_000, "histogram": [[256, 320, 300]],
+               "options": data, "format": "chat", "split": "train", "source": {"kind": "local", "sha256": "cd" * 32},
+               "lengths": {"min": 300, "p50": 300, "p90": 300, "p99": 300, "max": 300, "mean": 300.0},
+               "loss_mode": "assistant", "loss_tokens": 30_000, "loss": "assistant tokens only", "packing_mode": "isolated",
+               "packed": {"seq_len": 1024, "rows": 100, "efficiency": 0.88, "truncated_examples": 0, "truncated_tokens": 0,
+                          "truncated_loss_tokens": 0, "window": 64}}
+    p = plan(topo, hw(), Workload(seq_len=1024, data=data, epochs=1), Constraints(), data_profile=profile)
+    assert p.status == "feasible" and p.workload.steps == 100
+    mask = next(ln for ln in p.selected.lines if ln.name == "packed-example attention masks")
+    assert mask.bytes == 1024 * 1024 * 3 and mask.where == "device"
+    assert any(r.startswith("isolated packing: 100 rows of 1,024 tokens, 88% filled") for r in p.reasons)
+    assert "isolated packing" in p.render()

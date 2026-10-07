@@ -73,3 +73,45 @@ def test_the_data_refusal_comes_before_the_machine_or_the_model():
     assert p.status == "refused" and "repeating it is not allowed" in p.refusal["reasons"][0]
     assert p.refusal["suggestions"][0] == "--steps 195 reads it once"
     assert p.data_profile["tokens"] == 100_000 and "100,000 tokens" in p.render()
+
+
+def isolated_profile(rows=500, seq=512, efficiency=0.9, truncated=(3, 900, 400)):
+    return {**profile(), "packing_mode": "isolated",
+            "packed": {"seq_len": seq, "rows": rows, "efficiency": efficiency, "truncated_examples": truncated[0],
+                       "truncated_tokens": truncated[1], "truncated_loss_tokens": truncated[2], "window": 64}}
+
+
+def test_isolated_packing_counts_rows_not_tokens():
+    w, reasons, warnings, refusal = resolve_data(Workload(seq_len=512, micro_batch=2, grad_accum=4, data=DATA,
+                                                          epochs=2), isolated_profile(rows=500))
+    assert w.steps == 2 * 500 // 8 == 125 and refusal is None
+    assert reasons[0] == ("steps 125: 2 epoch(s) of 500 packed rows at 8 rows per optimizer step "
+                          "(micro-batch x grad-accum)")
+    assert "isolated packing: 500 rows of 512 tokens, 90% filled" in reasons[2]
+    assert warnings == ["3 of 1,000 examples are longer than seq 512 tokens: isolated packing truncates them, "
+                        "dropping 900 tokens (400 of them trained)"]
+    _, _, _, (why, suggestions) = resolve_data(Workload(seq_len=512, steps=100, grad_accum=8, data=DATA),
+                                               isolated_profile(rows=500))
+    assert "packs into 500 packed rows; this plan reads 800" in why[0] and suggestions[0] == "--steps 62 reads it once"
+
+
+def test_a_profile_packed_for_another_seq_is_a_caller_error():
+    with pytest.raises(ValueError, match="packed for seq 512, not 1024"):
+        resolve_data(Workload(seq_len=1024, data=DATA), isolated_profile(seq=512))
+
+
+def test_isolated_packing_prices_its_attention_masks():
+    from loggetta.planner import data_memory_lines
+
+    (line,) = data_memory_lines(Workload(seq_len=4096, micro_batch=2, data=DATA), isolated_profile(seq=4096))
+    assert line.bytes == 2 * 4096 * 4096 * 3 and line.where == "device" and line.basis == "heuristic"
+    assert data_memory_lines(Workload(seq_len=4096, data=DATA), profile()) == []          # concatenated: no mask
+
+
+def test_a_model_that_mixes_tokens_through_state_cannot_isolate():
+    from loggetta.backends import experts4bit
+
+    hybrid = SimpleNamespace(n_layers=40, attention=SimpleNamespace(layers=4), provenance={})
+    assert "36 of 40 decoder layers mix tokens through a state" in experts4bit.isolation_refusal(hybrid)
+    assert experts4bit.isolation_refusal(SimpleNamespace(n_layers=8, attention=SimpleNamespace(layers=8),
+                                                         provenance={})) is None

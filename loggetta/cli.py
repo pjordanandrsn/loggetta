@@ -41,6 +41,8 @@ def _common(p):
     p.add_argument("--output-field", default="output")
     p.add_argument("--shuffle-data", action="store_true", help="shuffle rows deterministically with --seed")
     p.add_argument("--repeat-data", action="store_true", help="explicitly allow repeating a short dataset")
+    p.add_argument("--packing", choices=("auto", "concat", "isolated"), default="auto",
+                   help="auto = isolated for chat and alpaca (each example attends only to itself), concat for text")
     p.add_argument("--loss", choices=("auto", "all", "assistant"), default="auto",
                    help="which tokens train: auto = assistant turns (chat) or the response (alpaca), every token for text")
     p.add_argument("--learning-rate", type=float, default=2e-4)
@@ -84,9 +86,10 @@ def _plan(a):
                                      revision=a.dataset_revision, text_field=a.text_field,
                                      messages_field=a.messages_field, instruction_field=a.instruction_field,
                                      input_field=a.input_field, output_field=a.output_field,
-                                     shuffle=a.shuffle_data, repeat=a.repeat_data, loss=a.loss).to_dict()
+                                     shuffle=a.shuffle_data, repeat=a.repeat_data, loss=a.loss,
+                                     packing=a.packing).to_dict()
     elif (a.dataset_config or a.dataset_revision or a.format != "auto" or a.split != "train"
-          or a.shuffle_data or a.repeat_data or a.loss != "auto" or a.text_field != "text"
+          or a.shuffle_data or a.repeat_data or a.loss != "auto" or a.packing != "auto" or a.text_field != "text"
           or a.messages_field != "messages"
           or a.instruction_field != "instruction" or a.input_field != "input" or a.output_field != "output"):
         raise ValueError("dataset options require --dataset; omit them all for the Alpaca demonstration")
@@ -100,7 +103,7 @@ def _plan(a):
     profile = None
     if data is not None:                     # every row validated and tokenized before the model is looked at
         tokenizer = data_mod.load_tokenizer(a.model, revision=a.revision, trust_remote_code=a.trust_remote_code)
-        with data_mod.encode_dataset(tokenizer, data_mod.TrainingData.from_dict(data)) as encoded:
+        with data_mod.encode_dataset(tokenizer, data_mod.TrainingData.from_dict(data), seq_len=a.seq) as encoded:
             profile = encoded.profile
     topo = describe_model(a.model, revision=a.revision, trust_remote_code=a.trust_remote_code)
     if a.hardware:

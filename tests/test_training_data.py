@@ -6,7 +6,7 @@ import json
 import numpy as np
 import pytest
 
-from loggetta.data import (TrainingData, encode_dataset, encode_example, encode_masked, longer_than,
+from loggetta.data import (TrainingData, encode_dataset, encode_example, encode_masked, longer_than, pack_rows,
                            prepare_data)
 from loggetta.plan import ExecutionPlan, Workload
 
@@ -331,7 +331,7 @@ def test_a_profile_from_before_the_loss_field_still_verifies(tmp_path):
 @pytest.mark.parametrize("shuffle,seed,blocks", [(False, 0, 3), (True, 5, 6)])
 def test_masks_pack_the_same_way_streamed_and_profiled(tmp_path, shuffle, seed, blocks):
     rows = [chat(("user", "hello " * (i % 3 + 1)), ("assistant", "hi there " * (i % 2 + 1))) for i in range(12)]
-    spec = TrainingData(str(jsonl(tmp_path, rows)), format="chat", shuffle=shuffle)
+    spec = TrainingData(str(jsonl(tmp_path, rows)), format="chat", shuffle=shuffle, packing="concat")
     with encode_dataset(fast_tokenizer(), spec) as enc:
         profile = enc.profile
     with prepare_data(fast_tokenizer(), blocks, 8, spec, seed=seed) as streamed, \
@@ -339,3 +339,66 @@ def test_masks_pack_the_same_way_streamed_and_profiled(tmp_path, shuffle, seed, 
         assert np.array_equal(streamed.blocks, profiled.blocks) and np.array_equal(streamed.mask, profiled.mask)
         assert streamed.info["loss_mask_sha256"] == profiled.info["loss_mask_sha256"]
         assert streamed.info["loss_tokens"] == int(np.asarray(streamed.mask).sum()) > 0
+
+
+def test_pack_rows_places_whole_examples_best_fit_in_order():
+    assert pack_rows([5, 3, 4, 2, 6], 8) == [[0, 1], [2, 3], [4]]           # 5+3, then 4+2, 6 alone
+    assert pack_rows([9, 2], 8) == [[0], [1]]                               # 9 is truncated to a full row
+    assert pack_rows([4] * 6, 8, window=1) == [[0, 1], [2, 3], [4, 5]]
+    rows = pack_rows([3, 7, 1, 5, 2, 6, 4] * 20, 16)
+    assert sorted(i for r in rows for i in r) == list(range(140))         # every example exactly once
+    assert pack_rows([3, 7, 1, 5, 2, 6, 4] * 20, 16) == rows               # deterministic
+
+
+def test_isolated_packing_resets_positions_and_never_trains_across_examples(tmp_path):
+    # "<|im_start|>user" is one word, so [UNK]: [UNK hello <|im_end|> UNK hi there <|im_end|> <eos>] = 8 tokens,
+    # [UNK ok <|im_end|> UNK fine <|im_end|> <eos>] = 7; together 15 > 12, so two rows
+    rows = [chat(("user", "hello"), ("assistant", "hi there")), chat(("user", "ok"), ("assistant", "fine"))]
+    spec = TrainingData(str(jsonl(tmp_path, rows)), format="chat")            # auto: isolated
+    with encode_dataset(fast_tokenizer(), spec, seq_len=12) as enc:
+        profile = enc.profile
+    assert profile["packing_mode"] == "isolated"
+    assert profile["packed"] == {"seq_len": 12, "rows": 2, "efficiency": round(15 / 24, 4), "truncated_examples": 0,
+                                 "truncated_tokens": 0, "truncated_loss_tokens": 0, "window": 64}
+    with prepare_data(fast_tokenizer(), 2, 12, spec, expect=profile) as data:
+        tok = fast_tokenizer()
+        assert data.positions[0].tolist() == list(range(8)) + [0, 1, 2, 3]    # the example, then its padding
+        assert data.mask[0].tolist() == [0, 0, 0, 0, 1, 1, 1, 0] + [0] * 4    # "hi there <|im_end|>" trains
+        assert tok.convert_ids_to_tokens(data.blocks[0].tolist())[8:] == ["<eos>"] * 4
+        assert data.positions[1].tolist() == list(range(7)) + [0, 1, 2, 3, 4] and data.mask[1][0] == 0
+        assert data.info["rows_per_pass"] == 2 and data.info["verified_against_plan"]
+    with pytest.raises(ValueError, match="packs into 2 rows"):
+        prepare_data(fast_tokenizer(), 3, 12, spec, expect=profile)
+
+
+def test_isolated_packing_counts_what_truncation_drops(tmp_path):
+    # [UNK hello <|im_end|> UNK hi there fine thanks | ok <|im_end|> <eos>]: 11 tokens, the last 3 past seq 8
+    rows = [chat(("user", "hello"), ("assistant", "hi there fine thanks ok"))]
+    spec = TrainingData(str(jsonl(tmp_path, rows)), format="chat")
+    with encode_dataset(fast_tokenizer(), spec, seq_len=8) as enc:
+        packed = enc.profile["packed"]
+    assert packed["truncated_examples"] == 1 and packed["truncated_tokens"] == 3
+    assert packed["truncated_loss_tokens"] == 2                                 # "ok <|im_end|>"; the EOS never trains
+
+
+def test_transformers_isolates_examples_packed_with_reset_positions():
+    """The premise: a row of two examples with positions restarting at 0 gives each example the logits it has
+    alone. Checked on a tiny random Llama with SDPA attention, the implementation e4b's loader uses. transformers
+    derives the per-example masks only when no KV cache exists (5.18: not even an empty one), which is why the loop
+    passes ``use_cache=False`` with ``position_ids``."""
+    torch = pytest.importorskip("torch")
+    tr = pytest.importorskip("transformers")
+    torch.manual_seed(0)
+    cfg = tr.LlamaConfig(vocab_size=32, hidden_size=32, intermediate_size=64, num_hidden_layers=2,
+                         num_attention_heads=4, num_key_value_heads=2, max_position_embeddings=64,
+                         attn_implementation="sdpa")
+    model = tr.LlamaForCausalLM(cfg).eval()
+    a, b = torch.tensor([[5, 6, 7, 8, 9]]), torch.tensor([[10, 11, 12]])
+    packed = torch.cat([a, b], dim=1)
+    positions = torch.tensor([[0, 1, 2, 3, 4, 0, 1, 2]])
+    with torch.no_grad():
+        together = model(input_ids=packed, position_ids=positions, use_cache=False).logits
+        alone_a, alone_b = model(input_ids=a, use_cache=False).logits, model(input_ids=b, use_cache=False).logits
+        leaky = model(input_ids=packed, use_cache=False).logits                 # concatenated: b sees a
+    assert torch.allclose(together[:, :5], alone_a, atol=1e-5) and torch.allclose(together[:, 5:], alone_b, atol=1e-5)
+    assert not torch.allclose(leaky[:, 5:], alone_b, atol=1e-3)

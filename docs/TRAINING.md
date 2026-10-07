@@ -141,8 +141,40 @@ request to choose a format explicitly, not permission to guess.
 Not implemented: tool-call and multimodal chat formats, automatic train/evaluation splitting, or a
 validation-loss early-stopping policy.
 
-Examples are concatenated with EOS and cut into fixed-length blocks. Attention can cross example boundaries
-within a block. This is continuous text packing, not isolated per-example attention.
+`--packing` decides how examples share a fixed-length row:
+
+| `--packing` | chat, alpaca | text |
+|---|---|---|
+| `auto` (default) | isolated | concat |
+| `isolated` | isolated | isolated |
+| `concat` | concat | concat |
+
+**Isolated** packing places whole examples into rows, in data order. Each example goes into the open row it fills
+most tightly, with up to 64 rows open; this is deterministic.
+- Positions restart at 0 for every example, so transformers masks attention per example: no example sees another.
+- An example's first token is never a target.
+- The rest of a row is EOS padding, never trained.
+- An example longer than `--seq` is truncated. The plan states how many tokens, and how many trained ones, that
+  drops.
+- With `--shuffle-data`, the *rows* are shuffled by the execution `--seed`, so the packing is fixed by the data and
+  `--seq` alone.
+- The plan counts the data in packed rows: `--epochs` and the "reads it once" suggestion are in rows.
+
+Two costs, both stated in the plan:
+- **Memory:** transformers builds a `[micro-batch, 1, seq, seq]` mask for packed rows, and SDPA turns it into a bf16
+  bias. The plan prices this as micro-batch × seq² × 3 bytes, about 48 MiB per row at 4,096 tokens and growing
+  quadratically.
+- **Speed:** flash attention cannot take a mask, so attention runs on SDPA's memory-efficient kernel. The speed cost
+  is not modelled.
+
+transformers derives per-example masks only when no KV cache exists. The training loop therefore passes
+`use_cache=False` together with `position_ids` (a test checks the isolation on a tiny model).
+
+A model that mixes tokens through a recurrent state (state-space, convolution or linear-attention layers) cannot be
+isolated by positions, and isolated packing is refused for it; use `--packing concat`.
+
+**Concat** packing joins examples with EOS and cuts them into rows, so attention crosses example boundaries within a
+row. Plans made before `--packing` existed keep it.
 
 The plan consumes exactly:
 

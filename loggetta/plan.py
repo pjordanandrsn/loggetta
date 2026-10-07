@@ -198,7 +198,9 @@ class ExecutionPlan:
                         f"{d['tokens']:,} tokens, validated and tokenized before planning",
                         f"          tokens per example: p50 {ln['p50']:,}, p90 {ln['p90']:,}, p99 {ln['p99']:,}, max {ln['max']:,}; "
                         + (f"loss on assistant tokens ({d['loss_tokens'] / d['tokens']:.0%})" if d.get("loss_mode") == "assistant"
-                           else "full-sequence loss") + f"; learning rate {w.learning_rate:g}"]
+                           else "full-sequence loss")
+                        + ("; isolated packing" if d.get("packing_mode") == "isolated" else "; concatenated packing")
+                        + f"; learning rate {w.learning_rate:g}"]
             elif w.data is not None:
                 loss = {"all": "full-sequence loss", "assistant": "loss on assistant tokens",
                         "auto": "loss on assistant tokens for chat/alpaca, else full-sequence"}[w.data.get("loss", "all")]
