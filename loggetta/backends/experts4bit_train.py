@@ -106,7 +106,7 @@ def run(plan, *, seed: int = 0, warmup: int = 2, log=print, adapter_dir: str | N
                       max_passes=math.ceil(epochs) if epochs and not spec.repeat else None) as prepared:
         data_seconds = time.perf_counter() - t_data
         log(f"Data ready: {prepared.info['tokens']} tokens from {prepared.info['examples_used']} rows; "
-            f"{prepared.info['passes']} pass(es); full-sequence loss.", flush=True)
+            f"{prepared.info['passes']} pass(es); {prepared.info['loss']}.", flush=True)
         torch.manual_seed(seed)
         torch.cuda.set_device(plan.constraints.device)
         torch.zeros(1, device="cuda")

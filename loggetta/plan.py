@@ -224,7 +224,7 @@ class ExecutionPlan:
                 out += [f"Data      {w.data['source']} ({w.data.get('format', 'auto')}, split {w.data.get('split', 'train')}); "
                         f"{loss}; {describe_lr(w)}"]
             else:
-                out += ["Data      demonstration: tatsu-lab/alpaca, full-sequence loss, repeated as needed"]
+                out += [f"Data      demonstration: tatsu-lab/alpaca, full-sequence loss, repeated as needed; {describe_lr(w)}"]
         if self.status == "refused":
             out += ["", "NOT FEASIBLE under the requested constraints.", ""]
             out += [f"  {r}" for r in self.refusal.get("reasons", ())]

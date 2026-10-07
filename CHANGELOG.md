@@ -37,9 +37,11 @@
 - **Plans use the profile.**
   - A plan that would read past the data without `--repeat-data` is refused, with the steps that read it once.
   - `--epochs N` derives the steps.
-  - Examples longer than `--seq` are counted, because packing splits them.
+  - Examples longer than `--seq` are counted: concatenated packing splits them, isolated packing truncates them,
+    and the plan states the tokens dropped.
 - **`execute` re-tokenizes and checks.** It refuses data or a tokenizer that changed since planning, before any
-  weights load. The packed token stream is identical to 0.2.0's for the same seed.
+  weights load. With concatenated packing and full-sequence loss, the packed token stream is identical to 0.2.0's
+  for the same seed; chat and Alpaca data now default to isolated packing, whose stream differs.
 - Plans without a profile (older plans, the Alpaca demonstration) keep the 0.2.0 behaviour and wire shape.
 
 ## 0.2.0

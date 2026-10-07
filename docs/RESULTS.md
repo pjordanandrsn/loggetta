@@ -14,7 +14,8 @@ Runs write raw receipts under `runs/receipts/`; curated public evidence is commi
 
 ## 1. One real workload through the planner
 
-`python -m loggetta train allenai/OLMoE-1B-7B-0924 --seq 512 --micro-batch 2 --steps 12`:
+`python -m loggetta train allenai/OLMoE-1B-7B-0924 --seq 512 --micro-batch 2 --steps 12` (run at a constant 2e-4,
+before the learning-rate schedule existed; add `--lr-schedule constant` to reproduce it now):
 
 1. took the hardware inventory;
 2. described OLMoE from its config (16/16 MoE layers, E=64, H=2048, I=1024, top-8; 6.44B expert + 0.48B dense
@@ -762,9 +763,12 @@ All values GiB unless marked.
 - **No performance model.** Speed is ordered from evidence, never predicted, apart from the transfer lower bound.
 - **The activation heuristic** is a formula, checked against nine allocator peaks (three here, six in the
   register), not derived.
-- **Qwen3-30B ran once, on a rented RTX 5090 (FP1).** Every other model above 8B was planned, not run.
-- **Serving** is planned at both placements. All-VRAM is checked on two model/card pairs. The solver's tiers are
-  checked on one model and card (OLMoE, A2000) and assume uniform routing, as the server does. The int4 levers
+- **Training above 8B ran only on Qwen3-30B-A3B, on a rented RTX 5090 (FP1).** Every other model above 8B was planned
+  for training, not trained. Serving above 8B ran on Qwen3-30B-A3B, Qwen3.6-35B-A3B, ERNIE-4.5-21B-A3B and
+  gpt-oss-20b (6c, 6g).
+- **Serving** is planned at both placements. It has run on six families (OLMoE, Granite-3.1, Qwen3-30B, Qwen3.6,
+  ERNIE-4.5, gpt-oss-20b) across three cards (A2000, RTX 4090, RTX 5090). The solver's tiers are checked on OLMoE and
+  ERNIE-4.5 (A2000) and Qwen3-30B (RTX 4090), and assume uniform routing, as the server does. The int4 levers
   are priced and checked on OLMoE / A2000 (6e) and Qwen3-30B / RTX 5090 with decode graphs (6f), and planned only
   when fixed. A measured routing profile and
   decode speed are not planned; see `SERVING-PRESSURE-TEST.md`.

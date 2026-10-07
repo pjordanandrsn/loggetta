@@ -20,6 +20,20 @@ loggetta plan Qwen/Qwen3-30B-A3B --seq 2048
 loggetta train allenai/OLMoE-1B-7B-0924 --seq 512 --micro-batch 2 --steps 12 --out receipts/
 ```
 
+Without `--dataset`, `train` runs a short demonstration on `tatsu-lab/alpaca` (full-sequence loss) with the default
+warmup + cosine learning-rate schedule. To train on your own data and keep a reusable adapter:
+
+```bash
+loggetta train Qwen/Qwen3-30B-A3B --dataset ./data/train.jsonl --format chat \
+  --seq 1024 --micro-batch 1 --epochs 1 --out runs/my-run --adapter-out adapters/my-adapter
+```
+
+The dataset is validated, tokenized and profiled before any weights load, and the plan carries that profile. For chat
+and Alpaca data the defaults are assistant-only loss (`--loss`), isolated packing so each example attends only to
+itself (`--packing`), and warmup + cosine decay (`--lr-schedule`). Reload the adapter with
+`loggetta.load_adapter("adapters/my-adapter")`. See the
+[training guide](https://github.com/pjordanandrsn/loggetta/blob/main/docs/TRAINING.md).
+
 A feasible plan is an estimate, not an OOM guarantee. Serving placement can be planned; Loggetta does not launch the server yet.
 
 ## Plan, run, measure
@@ -40,7 +54,7 @@ loggetta plan allenai/OLMoE-1B-7B-0924 \
   --seq 512 --micro-batch 2 --observations receipts/
 ```
 
-The planner does not load weights while choosing. Hardware probing and model topology discovery happen first; candidate selection is deterministic policy over those facts and constraints.
+The planner does not load weights while choosing. With `--dataset`, every row is validated and tokenized first; then the model topology and the hardware are read. Candidate selection is deterministic policy over those facts, the data profile and the constraints.
 
 ## Measured speed
 
@@ -65,12 +79,14 @@ Evidence: [Unsloth same-stack](https://github.com/pjordanandrsn/experts4bit-qlor
 | **Qwen3-30B-A3B** (`qwen3_moe`) | Supported | Planner + serving validated; backend training receipts imported for calibration |
 | **Granite-3.1-3B-A800M** (`granitemoe`) | Supported | **Run: training + serving** |
 | **Granite-4.0-H-tiny** (`granitemoehybrid`) | Supported | **Run: training**; serving refusal validated (Mamba state unsupported by current paged runner) |
-| **Qwen3.6-35B-A3B** (`qwen3_5_moe`) | Supported | Planner-tested for training + serving; not yet executed here |
+| **Qwen3.6-35B-A3B** (`qwen3_5_moe`) | Supported | Planner-tested for training; serving validated; training not yet executed here |
 | **LFM2-8B-A1B** (`lfm2_moe`) | Supported | Planner-tested; serving refusal validated (conv state unsupported by current paged runner) |
 | **Mixtral-8x7B-Instruct-v0.1** (`mixtral`) | Supported | Planner-tested; not yet executed here |
-| **ERNIE-4.5-21B-A3B** (`ernie4_5_moe`) | Supported | Planner-tested; not yet executed here |
+| **ERNIE-4.5-21B-A3B** (`ernie4_5_moe`) | Supported | Planner-tested for training; serving validated (tiered, RTX A2000); training not yet executed here |
 | **Gemma-4-26B-A4B-it** (`gemma4_text`) | Supported | Runtime-supported; not yet in Loggetta's model sweep |
 | **NVIDIA Nemotron-3.5-Lightning-30B-A3B** (`nemotron_h`) | Supported | Runtime-supported; not yet in Loggetta's model sweep |
+
+**Packing on hybrid models.** With chat or Alpaca data the default isolated packing is refused for a model whose layers mix tokens through a state (Qwen3.6-35B-A3B, Granite-4.0-H-tiny, LFM2-8B-A1B and, by its structure, Nemotron-H) or whose attention is not described (DeepSeek-V2-Lite): resetting positions cannot isolate examples there. Pass `--packing concat` for those models.
 
 Also exercised by the planner but **not advertised as supported expert-QLoRA rows**: `DeepSeek-V2-Lite` is planned with attention LoRA disabled because its MLA attention is not described by the current adapter path; `gpt-oss-20b` is deliberately refused for expert QLoRA because its biased/clamped expert structure does not satisfy `ExpertsLoRA`'s contract.
 
@@ -90,7 +106,7 @@ Loggetta does **not** currently predict throughput. It may use measured evidence
 
 ## Current scope
 
-**Available:** one-command install of the full stack; single-GPU MoE planning; saved `ExecutionPlan` and `ExecutionReceipt`; QLoRA training execution; device/host/storage serving placement planning; measured-memory feedback; explicit refusals.
+**Available:** one-command install of the full stack; single-GPU MoE planning; saved `ExecutionPlan` and `ExecutionReceipt`; QLoRA training on your own data (local JSONL/JSON/CSV/Parquet/TXT or Hub datasets; text, Alpaca or chat) with reusable adapters; QLoRA training execution; device/host/storage serving placement planning; measured-memory feedback; explicit refusals.
 
 **Not claimed:** first-class dense-model planning; multi-GPU planning/execution; calibrated throughput prediction; a Loggetta server-launch command; universal exposure of every mechanism in the lower packages.
 
