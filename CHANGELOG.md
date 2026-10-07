@@ -11,6 +11,11 @@
     not modelled.
   - Models that mix tokens through a recurrent state are refused isolation.
   - Earlier plans keep concatenation.
+- **Warmup + cosine learning-rate schedule by default for `train` and `plan`** (`--lr-schedule cosine|constant`,
+  `--warmup-steps`).
+  - Linear warmup over 3% of the steps, then cosine decay to 10% of the peak.
+  - The plan states it, and run reports record the applied rates.
+  - Saved plans and direct `Workload` callers keep the constant rate.
 - **Assistant-only loss by default for chat and alpaca data (`--loss auto|all|assistant`).**
   - Chat trains each assistant turn's text plus the end-of-turn marker the template closes it with. The marker is
     read from the template.

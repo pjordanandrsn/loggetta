@@ -103,17 +103,21 @@ def _overheads(hardware, gpu, observations, backends=()):
 PCIE_LANE_GBPS = {1: 0.25, 2: 0.5, 3: 0.985, 4: 1.969, 5: 3.938, 6: 7.563}
 
 
-def reserve_fraction(gpu, setup, observations, default, model=None, kind="train", key=()):
+def reserve_fraction(gpu, setup, observations, default, model=None, kind="train", key=(), budget_fields=()):
     """Allocator reserve slack (reserved peak / allocated peak - 1) for one candidate, from receipts. Returns
     (fraction, basis, source).
 
     Slack depends on the allocation pattern (offload's per-layer staging leaves more cached blocks), on the model and on
     the GPU: OLMoE's resident slack measured 0.222 on an RTX A2000 and 0.150 on an RTX 5090. In order:
 
-    1. a receipt for this GPU, this residency + kernel and this model (those with the candidate's whole setup first;
-       of several, the largest slack): measured;
-    2. this model + setup measured on ANOTHER GPU, scaled by an anchor model measured with the same setup on both GPUs
-       (slack(model, here) = slack(model, there) x slack(anchor, here) / slack(anchor, there)): a stated transfer;
+    1. a receipt for this GPU, this residency + kernel and this model: those with the candidate's whole setup first,
+       then those that differ from it only in ``budget_fields`` (the tier budgets the planner sizes: the same workload
+       shape), then any; of several, the largest slack: measured;
+    2. training only: this model + setup measured on ANOTHER GPU, scaled by an anchor model measured with the same setup
+       on both GPUs (slack(model, here) = slack(model, there) x slack(anchor, here) / slack(anchor, there)): a stated
+       transfer. Not for serving: its slack is 0.06-1.5%, so the anchor ratio divides one measurement's noise by
+       another's (a 2.8% OLMoE slack on an RTX 5090 came out as 4.0 GiB of reserve on an RTX 4090, and gpt-oss-20b's
+       as 10.4 GiB, through a ~14x ratio of two Qwen3-30B slacks under 1%);
     3. this GPU + setup, another model: measured, but for a different model;
     4. the largest slack measured on this GPU, conservative (a smaller borrowed figure would make the unmeasured
        candidate look cheaper than the measured one);
@@ -125,6 +129,9 @@ def reserve_fraction(gpu, setup, observations, default, model=None, kind="train"
     every step, so one's slack says nothing about the other's. Receipts without a kind are training receipts. ``key``
     names the setup fields that separate allocation patterns (the backend's ``SLACK_KEYS``): measured, a server's
     tiered placement leaves 15% slack where its all-VRAM placement leaves 1-2%.
+
+    A receipt scoped by ``licensed_for`` is same-setup evidence (lane SV6's licence, experts4bit-qlora#1275): its slack
+    counts only for a candidate whose whole setup it ran, never borrowed for another.
     """
     def frac(o):
         m = o["measured"]
@@ -136,26 +143,40 @@ def reserve_fraction(gpu, setup, observations, default, model=None, kind="train"
     def mname(o):
         return o.get("model", {}).get("model")
 
+    def sj(s, drop=()):
+        return json.dumps({k: v for k, v in (s or {}).items() if k not in drop}, sort_keys=True, default=list)
+
+    whole, shape = sj(setup), sj(setup, budget_fields)
     usable = [o for o in observations if o.get("status") in ("OK", None) and licensed(o, "reserve")
+              and (o.get("licensed_for") is None or sj(o.get("setup")) == whole)
               and o.get("measured", {}).get("device_peak_bytes")
               and o.get("measured", {}).get("device_reserved_peak_bytes")
               and o.get("workload", {}).get("kind", "train") == kind]
     same_setup = [o for o in usable if {k: o.get("setup", {}).get(k) for k in key} == {k: setup.get(k) for k in key}]
-    # among receipts with the same key fields, those with the candidate's whole setup win; of several, the largest
-    # slack (repeats differ, and a setting the setup does not name can change it)
-    whole = json.dumps(setup, sort_keys=True, default=list)
-    same_setup.sort(key=lambda o: json.dumps(o.get("setup"), sort_keys=True, default=list) != whole)
+    same_setup.sort(key=lambda o: sj(o.get("setup")) != whole)
+
+    def tier(group):
+        """Among receipts with the same key fields: the candidate's whole setup, else its shape (only the budgets
+        differ), else any; of several, the largest slack (repeats differ, and a setting the setup does not name can
+        change it). Returns (group, how it matched)."""
+        for match, how in ((lambda o: sj(o.get("setup")) == whole, "setup"),
+                           (lambda o: sj(o.get("setup"), budget_fields) == shape, "shape, other tier budgets")):
+            top = [o for o in group if match(o)]
+            if top and (how == "setup" or budget_fields):
+                return top, how
+        return group, "key fields"
 
     def pick(group):
-        top = [o for o in group if json.dumps(o.get("setup"), sort_keys=True, default=list) == whole] or group
-        return max(top, key=frac)
+        return max(tier(group)[0], key=frac)
 
     here = [o for o in same_setup if gname(o) == gpu.name]
     exact = [o for o in here if model and mname(o) == model]
     if exact:
-        e = pick(exact)
-        return frac(e), "measured", f"receipt {e.get('run_id')} (this GPU, setup and model; largest of {len(exact)}) = {frac(e):.3f}"
-    if model:
+        top, how = tier(exact)
+        e = max(top, key=frac)
+        where = "this GPU, setup and model" if how == "setup" else f"this GPU and model, same {how}"
+        return frac(e), "measured", f"receipt {e.get('run_id')} ({where}; largest of {len(top)}) = {frac(e):.3f}"
+    if model and kind != "serve":
         for there in (o for o in same_setup if mname(o) == model and gname(o) != gpu.name):
             for anchor_here in here:
                 anchor_there = next((o for o in same_setup if gname(o) == gname(there) and mname(o) == mname(anchor_here)), None)
@@ -514,7 +535,8 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
                 default = (DEFAULT_RESERVE_FRAC, "inferred", f"default {DEFAULT_RESERVE_FRAC:.0%} of the allocator "
                            f"estimate; no {workload.kind} receipt on file measured this GPU")
             frac, fbasis, fsrc = reserve_fraction(gpu, keyed, b_obs, default, model=topology.model,
-                                                  kind=workload.kind, key=slack_key)
+                                                  kind=workload.kind, key=slack_key,
+                                                  budget_fields=getattr(b, "BUDGET_FIELDS", {}).get(workload.kind, ()))
             reserve = MemoryLine("allocator reserve (cached, unallocated blocks)", "device", int(frac * alloc),
                                  fbasis, fsrc)
             learned = ()

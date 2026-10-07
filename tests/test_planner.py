@@ -359,6 +359,23 @@ def test_slack_for_an_unmeasured_gpu_transfers_through_an_anchor(topo):
     assert abs(line.bytes / alloc - 0.20) < 1e-3
 
 
+def test_serving_slack_is_not_transferred_through_an_anchor():
+    """Serving slack is 0.06-1.5%: an anchor ratio of two such measurements is noise (a ~14x ratio turned OLMoE's 2.8% on
+    an RTX 5090 into 4.0 GiB of reserve on an RTX 4090). A serve plan takes this GPU's same-setup slack instead."""
+    from loggetta.planner import reserve_fraction
+    g = gpu()
+
+    def rec(rid, gpu_name, model, frac):
+        return {"run_id": rid, "status": "OK", "model": {"model": model}, "workload": {"kind": "serve"},
+                "setup": {"placement": "all-vram", "graphs": True}, "hardware": {"gpu": {"name": gpu_name}},
+                "measured": {"device_peak_bytes": 100 * GiB, "device_reserved_peak_bytes": int(100 * GiB * (1 + frac))}}
+    obs = [rec("mine-on-5090", "RTX 5090", "m", 0.028), rec("anchor-on-5090", "RTX 5090", "anchor", 0.0006),
+           rec("anchor-here", g.name, "anchor", 0.0083)]
+    f, basis, src = reserve_fraction(g, {"placement": "all-vram", "graphs": True}, obs, (0.2, "inferred", "default"),
+                                     model="m", kind="serve", key=("placement", "graphs"))
+    assert abs(f - 0.0083) < 1e-6 and basis == "measured" and "anchor-here" in src and "transferred" not in src
+
+
 def test_serving_below_sm89_plans_eager_decode_and_says_why(topo):
     p = _serve(topo, 4096, 8)                                 # the stated test card is sm_86
     assert p.status == "feasible"
@@ -462,6 +479,58 @@ def test_a_receipt_licensed_for_some_uses_teaches_only_those(topo):
     full = {k: v for k, v in rec.items() if k != "licensed_for"}
     lines = {ln.name: ln for ln in plan(*run, observations=[full]).selected.lines}
     assert lines["host growth while serving"].bytes == 700 << 20 and "allocator residual" in " ".join(lines)
+
+
+def test_reserve_matches_the_whole_setup_then_its_shape_then_its_key_fields():
+    """Tier budgets move a few one-time allocations, not the workload's transient ones: a receipt that differs from the
+    candidate only in the fields the planner sizes (lanes SV4 and SV6: 4.1% and 3.8% at two VRAM tiers of one 8 x 8192
+    shape) is preferred to a same-key receipt of another shape (6.7% at 4 x 4096 with an NVMe tier). A receipt scoped by
+    ``licensed_for`` counts only for its own whole setup (lane SV6's licence)."""
+    from loggetta.planner import reserve_fraction
+    g = gpu()
+    base = {"placement": "solver", "max_seqs": 8, "max_tokens_per_seq": 8192, "graphs": False, "vram_gb": 12.6,
+            "dram_gb": 15.2, "hot_rows": 1}
+
+    def rec(rid, setup, frac, scope=None):
+        r = {"run_id": rid, "status": "OK", "model": {"model": "m"}, "workload": {"kind": "serve"}, "setup": setup,
+             "hardware": {"gpu": {"name": g.name}},
+             "measured": {"device_peak_bytes": 100 * GiB, "device_reserved_peak_bytes": int(100 * GiB * (1 + frac))}}
+        return {**r, "licensed_for": scope} if scope else r
+
+    shape = rec("shape", {**base, "vram_gb": 10.9, "hot_rows": 4}, 0.041)
+    other = rec("other", {**base, "max_seqs": 4, "max_tokens_per_seq": 4096, "vram_gb": 8.0}, 0.067)
+    kw = dict(default=(0.2, "inferred", "default"), model="m", kind="serve", key=("placement", "graphs"))
+    budgets = ("vram_gb", "dram_gb", "hot_rows")
+    f, basis, src = reserve_fraction(g, base, [shape, other], budget_fields=budgets, **kw)
+    assert abs(f - 0.041) < 1e-6 and basis == "measured" and "receipt shape" in src and "same shape" in src
+    f, _, src = reserve_fraction(g, base, [shape, other], **kw)            # a backend that names no budget fields
+    assert abs(f - 0.067) < 1e-6 and "same key fields" in src
+    f, _, src = reserve_fraction(g, base, [shape, other, rec("whole", dict(base), 0.03)], budget_fields=budgets, **kw)
+    assert abs(f - 0.03) < 1e-6 and "this GPU, setup and model" in src
+    scoped_shape = rec("scoped", {**base, "vram_gb": 10.9}, 0.01, scope=["reserve", "context"])
+    f, _, src = reserve_fraction(g, base, [scoped_shape, other], budget_fields=budgets, **kw)
+    assert abs(f - 0.067) < 1e-6 and "receipt other" in src                # scoped: not borrowed for another setup
+    scoped_whole = rec("scoped-whole", dict(base), 0.01, scope=["reserve", "context"])
+    f, _, src = reserve_fraction(g, base, [scoped_whole, other], budget_fields=budgets, **kw)
+    assert abs(f - 0.01) < 1e-6 and "receipt scoped-whole" in src
+
+
+def test_every_serve_receipt_on_file_names_bulk_kv():
+    """A serve plan's setup names ``bulk_kv`` (experts4bit-qlora #1247), so a receipt that does not can never match one
+    whole or by shape. bench/annotate_bulk_kv.py recorded each from the code its run used; the seat's 2026-10-06 family
+    runs recorded no commit and stay without it. A new import must record the field."""
+    import glob
+    import json
+    import os
+    root = os.path.join(os.path.dirname(__file__), "..", "evidence")
+    unknown = {"2026-10-06-a2000-family-serve"}
+    missing = []
+    for f in glob.glob(os.path.join(root, "*", "*.json")):
+        r = json.load(open(f))
+        if r.get("schema") == "execution-receipt/1" and r.get("workload", {}).get("kind") == "serve" \
+                and "bulk_kv" not in (r.get("setup") or {}) and os.path.basename(os.path.dirname(f)) not in unknown:
+            missing.append(os.path.relpath(f, root))
+    assert not missing, missing
 
 
 def test_serve_slack_is_borrowed_across_cards_only_for_serving(topo):

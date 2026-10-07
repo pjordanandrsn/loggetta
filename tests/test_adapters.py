@@ -188,6 +188,23 @@ def test_failed_export_does_not_leave_a_complete_looking_artifact(tmp_path):
     assert not target.exists()
 
 
+def test_the_loop_trains_each_step_at_its_scheduled_learning_rate(tmp_path, monkeypatch):
+    from loggetta.backends import experts4bit_train
+    from loggetta.schedule import learning_rates
+
+    monkeypatch.setattr(experts4bit_train, "_expert_digest", frozen_digest)
+    seen, step = [], torch.optim.AdamW.step
+    monkeypatch.setattr(torch.optim.AdamW, "step", lambda self, *a, **k: (seen.append(self.param_groups[0]["lr"]),
+                                                                          step(self, *a, **k))[1])
+    spec = TrainingData(str(jsonl(tmp_path, [{"text": "abcdefghijklmnopqrstuvwxyz"}])), repeat=True)
+    w = Workload(seq_len=4, steps=6, data=spec.to_dict(), lr_schedule="cosine", warmup_steps=2)
+    sampler = SimpleNamespace(peak=0, interval=0, samples=0, anon_peak=0, shmem_peak=0, file_peak=0, required_peak=0)
+    model = TinyModel()
+    with prepare_data(Tokenizer(), 6, 4, spec) as prepared:
+        out = experts4bit_train.train_loop(model, [p for p in model.parameters() if p.requires_grad],
+                                           "no-network", w, sampler, {}, prepared_data=prepared, device="cpu")
+    assert seen == pytest.approx(learning_rates(w))
+    assert out["measured"]["lr_last"] == pytest.approx(2e-5) and "cosine" in out["measured"]["lr_schedule"]
 def test_accumulation_weights_micro_batches_by_their_trained_tokens(tmp_path, monkeypatch):
     """One optimizer step over the same rows must not depend on how they are split into micro-batches. With a loss mask
     the rows carry different numbers of trained tokens, so the step is the mean over all trained tokens: 1 x 2

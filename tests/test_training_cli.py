@@ -113,6 +113,14 @@ def test_cli_takes_steps_or_epochs_not_both(monkeypatch, tmp_path, capsys):
     assert "not both" in capsys.readouterr().err
 
 
+def test_cli_trains_with_warmup_and_cosine_by_default(monkeypatch, tmp_path):
+    seen = stub_planner(monkeypatch)
+    assert main(["plan", "org/Model"]) == 0
+    assert seen["workload"].lr_schedule == "cosine" and seen["workload"].warmup_steps is None
+    assert main(["plan", "org/Model", "--lr-schedule", "constant", "--warmup-steps", "5"]) == 0
+    assert seen["workload"].lr_schedule == "constant" and seen["workload"].warmup_steps == 5
+    assert main(["plan", "org/Model", "--workload", "serve"]) == 0
+    assert seen["workload"].lr_schedule == "constant"                   # a server has no learning rate
 def test_cli_loss_choice_is_part_of_the_dataset_options(monkeypatch, tmp_path, capsys):
     seen = stub_planner(monkeypatch)
     assert main(["plan", "org/Model", "--loss", "assistant"]) == 2
