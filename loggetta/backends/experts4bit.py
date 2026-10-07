@@ -115,6 +115,21 @@ def plan_warnings(setup: dict, gpu) -> list:
     return []
 
 
+def isolation_refusal(topology) -> str | None:
+    """Why resetting positions cannot isolate packed examples in this model, or None. Positions isolate attention;
+    a layer that mixes tokens through a recurrent state (state-space, convolution, linear attention) carries one
+    example into the next regardless."""
+    attn = topology.attention
+    if attn is None:
+        return ("this model's attention could not be described, so isolating packed examples cannot be checked "
+                f"({topology.provenance.get('attention', 'no description')})")
+    mixing = topology.n_layers - attn.layers
+    if mixing > 0:
+        return (f"{mixing} of {topology.n_layers} decoder layers mix tokens through a state (state-space, convolution "
+                "or linear attention): resetting positions does not isolate packed examples there")
+    return None
+
+
 def relaxed_candidates(topology, workload, constraints, status) -> list:
     """Setups outside the caller's constraints whose fit would change a refusal, each with the words for that change:
     ``[(words, setup)]``, in the order to try them. Here: host-backed experts, when the caller forbade them."""

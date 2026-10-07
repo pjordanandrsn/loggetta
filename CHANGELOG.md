@@ -12,6 +12,20 @@
   - MoE, pre-quantized and non-decoder models are refused in words.
   - Training plans for dense models come next. Today such a plan says the backend described the model but does not
     plan the workload yet.
+- **Isolated packing by default for chat and alpaca data** (`--packing auto|concat|isolated`).
+  - Whole examples go into rows (deterministic best fit), positions restart per example, and an example's first token
+    and the row padding never train. transformers then keeps each example's attention to itself; the loop passes
+    `use_cache=False`, which that isolation requires.
+  - Profiles record the packing at the planned seq (rows, fill, truncation), and plans count rows.
+  - The per-row attention mask is priced (micro-batch × seq² × 3 B). Its speed cost (no flash attention) is stated,
+    not modelled.
+  - Models that mix tokens through a recurrent state are refused isolation.
+  - Earlier plans keep concatenation.
+- **Warmup + cosine learning-rate schedule by default for `train` and `plan`** (`--lr-schedule cosine|constant`,
+  `--warmup-steps`).
+  - Linear warmup over 3% of the steps, then cosine decay to 10% of the peak.
+  - The plan states it, and run reports record the applied rates.
+  - Saved plans and direct `Workload` callers keep the constant rate.
 - **Assistant-only loss by default for chat and alpaca data (`--loss auto|all|assistant`).**
   - Chat trains each assistant turn's text plus the end-of-turn marker the template closes it with. The marker is
     read from the template.

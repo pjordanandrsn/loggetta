@@ -188,6 +188,23 @@ def test_failed_export_does_not_leave_a_complete_looking_artifact(tmp_path):
     assert not target.exists()
 
 
+def test_the_loop_trains_each_step_at_its_scheduled_learning_rate(tmp_path, monkeypatch):
+    from loggetta.backends import experts4bit_train
+    from loggetta.schedule import learning_rates
+
+    monkeypatch.setattr(experts4bit_train, "_expert_digest", frozen_digest)
+    seen, step = [], torch.optim.AdamW.step
+    monkeypatch.setattr(torch.optim.AdamW, "step", lambda self, *a, **k: (seen.append(self.param_groups[0]["lr"]),
+                                                                          step(self, *a, **k))[1])
+    spec = TrainingData(str(jsonl(tmp_path, [{"text": "abcdefghijklmnopqrstuvwxyz"}])), repeat=True)
+    w = Workload(seq_len=4, steps=6, data=spec.to_dict(), lr_schedule="cosine", warmup_steps=2)
+    sampler = SimpleNamespace(peak=0, interval=0, samples=0, anon_peak=0, shmem_peak=0, file_peak=0, required_peak=0)
+    model = TinyModel()
+    with prepare_data(Tokenizer(), 6, 4, spec) as prepared:
+        out = experts4bit_train.train_loop(model, [p for p in model.parameters() if p.requires_grad],
+                                           "no-network", w, sampler, {}, prepared_data=prepared, device="cpu")
+    assert seen == pytest.approx(learning_rates(w))
+    assert out["measured"]["lr_last"] == pytest.approx(2e-5) and "cosine" in out["measured"]["lr_schedule"]
 def test_accumulation_weights_micro_batches_by_their_trained_tokens(tmp_path, monkeypatch):
     """One optimizer step over the same rows must not depend on how they are split into micro-batches. With a loss mask
     the rows carry different numbers of trained tokens, so the step is the mean over all trained tokens: 1 x 2
@@ -200,7 +217,7 @@ def test_accumulation_weights_micro_batches_by_their_trained_tokens(tmp_path, mo
     monkeypatch.setattr(torch.optim, "AdamW", torch.optim.SGD)
     rows = [chat(("user", "hello"), ("assistant", "hi there fine thanks ok")),
             chat(("user", "hello hello hello hello"), ("assistant", "ok"))]
-    spec = TrainingData(str(jsonl(tmp_path, rows)), format="chat")
+    spec = TrainingData(str(jsonl(tmp_path, rows)), format="chat", packing="concat")
     sampler = SimpleNamespace(peak=0, interval=0, samples=0, anon_peak=0, shmem_peak=0, file_peak=0, required_peak=0)
     torch.manual_seed(3)
     base = TinyModel()
@@ -221,3 +238,26 @@ def test_accumulation_weights_micro_batches_by_their_trained_tokens(tmp_path, mo
     assert counts[0] != counts[1]                                        # unequal rows: the case the weighting is for
     for a, b in zip(*moved):
         assert torch.allclose(a, b, atol=1e-5, rtol=0)
+
+
+def test_isolated_packing_reaches_the_model_as_reset_positions_without_a_cache(tmp_path, monkeypatch):
+    from loggetta.backends import experts4bit_train
+    from test_training_data import chat, fast_tokenizer
+
+    seen = []
+
+    class Recording(TinyModel):
+        def forward(self, input_ids, labels=None, position_ids=None, use_cache=None):
+            seen.append((position_ids.tolist(), use_cache))
+            return super().forward(input_ids, labels)
+
+    monkeypatch.setattr(experts4bit_train, "_expert_digest", frozen_digest)
+    rows = [chat(("user", "hello"), ("assistant", "hi there")), chat(("user", "ok"), ("assistant", "fine"))]
+    spec = TrainingData(str(jsonl(tmp_path, rows)), format="chat")                  # auto: isolated
+    w = Workload(seq_len=12, steps=1, grad_accum=2, data=spec.to_dict())
+    sampler = SimpleNamespace(peak=0, interval=0, samples=0, anon_peak=0, shmem_peak=0, file_peak=0, required_peak=0)
+    model = Recording()
+    with prepare_data(fast_tokenizer(), 2, 12, spec) as prepared:
+        experts4bit_train.train_loop(model, [p for p in model.parameters() if p.requires_grad], "no-network", w,
+                                     sampler, {}, prepared_data=prepared, device="cpu")
+    assert seen == [([list(range(8)) + [0, 1, 2, 3]], False), ([list(range(7)) + [0, 1, 2, 3, 4]], False)]

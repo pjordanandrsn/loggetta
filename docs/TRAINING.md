@@ -113,6 +113,19 @@ with `tokenize=True` and `add_generation_prompt=False`. There is no fallback tha
 `--format auto` infers a format only when the columns indicate exactly one supported choice. Ambiguity is a
 request to choose a format explicitly, not permission to guess.
 
+## Learning rate
+
+`--learning-rate` is the peak, default 2e-4. With `--lr-schedule cosine`, the default for `train` and `plan`:
+- the learning rate rises linearly over a warmup (3% of the steps, at least one; `--warmup-steps N` to choose);
+- it then decays along a cosine to 10% of the peak at the last step;
+- no step trains at zero.
+
+`--lr-schedule constant` keeps the peak throughout, after a warmup only if `--warmup-steps` asks for one.
+
+The plan states the schedule. The run report records the applied first, peak and last learning rates. Plans saved
+before the schedule existed, and Python callers that build a `Workload` directly, train at a constant rate as
+before.
+
 ## Token and loss semantics
 
 `--loss` decides which tokens are training targets:
@@ -141,8 +154,41 @@ request to choose a format explicitly, not permission to guess.
 Not implemented: tool-call and multimodal chat formats, automatic train/evaluation splitting, or a
 validation-loss early-stopping policy.
 
-Examples are concatenated with EOS and cut into fixed-length blocks. Attention can cross example boundaries
-within a block. This is continuous text packing, not isolated per-example attention.
+`--packing` decides how examples share a fixed-length row:
+
+| `--packing` | chat, alpaca | text |
+|---|---|---|
+| `auto` (default) | isolated | concat |
+| `isolated` | isolated | isolated |
+| `concat` | concat | concat |
+
+**Isolated** packing places whole examples into rows, in data order. Each example goes into the open row it fills
+most tightly, with up to 64 rows open; this is deterministic.
+- Positions restart at 0 for every example, so transformers masks attention per example: no example sees another.
+- An example's first token is never a target.
+- The rest of a row is EOS padding, never trained.
+- An example longer than `--seq` is truncated. The plan states how many tokens, and how many trained ones, that
+  drops.
+- With `--shuffle-data`, the *rows* are shuffled by the execution `--seed`, so the packing is fixed by the data and
+  `--seq` alone.
+- The plan counts the data in packed rows: `--epochs` and the "reads it once" suggestion are in rows.
+
+Two costs, both stated in the plan:
+- **Memory:** transformers builds a `[micro-batch, 1, seq, seq]` mask for packed rows, and SDPA turns it into a bf16
+  bias. The plan prices this as micro-batch × seq² × 3 bytes, about 48 MiB per row at 4,096 tokens and growing
+  quadratically.
+- **Speed:** flash attention cannot take a mask, so attention runs on SDPA's memory-efficient kernel. The speed cost
+  is not modelled. Measured on an RTX A2000 (OLMoE-1B-7B, NF4, seq 2048, alternating arms): steps took 1.11x as long
+  as concatenated packing, and the allocator peak rose by the boolean mask alone (4 MiB; the plan prices 12 MiB).
+
+transformers derives per-example masks only when no KV cache exists. The training loop therefore passes
+`use_cache=False` together with `position_ids` (a test checks the isolation on a tiny model).
+
+A model that mixes tokens through a recurrent state (state-space, convolution or linear-attention layers) cannot be
+isolated by positions, and isolated packing is refused for it; use `--packing concat`.
+
+**Concat** packing joins examples with EOS and cuts them into rows, so attention crosses example boundaries within a
+row. Plans made before `--packing` existed keep it.
 
 The plan consumes exactly:
 

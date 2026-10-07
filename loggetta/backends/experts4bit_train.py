@@ -170,6 +170,10 @@ def train_loop(model, trainable, model_id, w, smi, meas, *, revision=None, seed=
         opt = bnb.optim.AdamW8bit(trainable, lr=w.learning_rate)
     else:
         opt = torch.optim.AdamW(trainable, lr=w.learning_rate)
+    from ..schedule import describe as describe_lr, learning_rates
+
+    lrs = learning_rates(w)
+    meas.update(lr_schedule=describe_lr(w), lr_first=lrs[0], lr_peak=max(lrs), lr_last=lrs[-1])
     model.train()
     sync()
     if is_cuda:
@@ -177,6 +181,9 @@ def train_loop(model, trainable, model_id, w, smi, meas, *, revision=None, seed=
     smi_floor = smi.peak
     # a loss mask (1 = trained) beside the blocks; None trains every token, exactly as before masks existed
     masks = getattr(prepared_data, "mask", None) if prepared_data is not None else None
+    # isolated packing: positions restart at 0 for each example; transformers then masks attention per example, but
+    # only when no KV cache exists, so the call says use_cache=False rather than trusting the model's config
+    positions = getattr(prepared_data, "positions", None) if prepared_data is not None else None
     losses, step_s, k, skipped = [], [], 0, 0
     for step in range(w.steps):
         sync()
@@ -201,8 +208,11 @@ def train_loop(model, trainable, model_id, w, smi, meas, *, revision=None, seed=
                 continue
             labels = ids if masks is None else ids.masked_fill(
                 torch.tensor(masks[k:k + w.micro_batch], device=device) == 0, -100)
+            extra = {} if positions is None else {
+                "position_ids": torch.tensor(positions[k:k + w.micro_batch], dtype=torch.long, device=device),
+                "use_cache": False}
             k += w.micro_batch
-            loss = model(input_ids=ids, labels=labels).loss
+            loss = model(input_ids=ids, labels=labels, **extra).loss
             if not torch.isfinite(loss):
                 raise ValueError(f"non-finite loss at step {step + 1}; training stopped before an optimizer update")
             if masks is None:
@@ -212,6 +222,8 @@ def train_loop(model, trainable, model_id, w, smi, meas, *, revision=None, seed=
                 (loss * (counts[i] / total)).backward()
                 acc += float(loss.detach()) * counts[i] / total
         torch.nn.utils.clip_grad_norm_(trainable, 1.0, error_if_nonfinite=True)
+        for group in opt.param_groups:
+            group["lr"] = lrs[step]
         opt.step()
         sync()
         step_s.append(time.time() - ts)
