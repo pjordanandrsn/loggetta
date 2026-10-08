@@ -3,8 +3,8 @@
 This module is the planner's side of that backend. It DESCRIBES a model -- from its config and a module tree built on
 the ``meta`` device (no weights read) it finds the decoder layers and classifies every linear in them by its structural
 role, so that LoRA targets are chosen by shape rather than by a per-family list of names -- and it PLANS adapter
-training on it: candidate setups, an itemized memory estimate, refusals and the reasons for a choice. Plans are not
-executable yet (``executor`` returns None): the run itself is the next step.
+training on it: candidate setups, an itemized memory estimate, refusals and the reasons for a choice. Its executor
+uses transformers, PEFT and the existing experts4bit-qlora engines; no dense kernel is added here.
 
 The roles:
 
@@ -256,7 +256,7 @@ def _describe(model, *, revision=None, trust_remote_code=False):
         per_layer.append(tuple(found))
         layer_param_ids |= {id(p) for p in layer.parameters()}
     first = per_layer[0]
-    uniform = all(tuple((x.name, x.role) for x in lin) == tuple((x.name, x.role) for x in first) for lin in per_layer)
+    uniform = all(lin == first for lin in per_layer)       # names, shapes, biases and roles must all agree
     linear_params = sum(lin.in_features * lin.out_features for layer in per_layer for lin in layer)
     emb, head = tree.get_input_embeddings(), tree.get_output_embeddings()
     tied = bool(getattr(config_t, "tie_word_embeddings", getattr(config, "tie_word_embeddings", False))) \
@@ -566,12 +566,16 @@ def run_tag(setup: dict) -> str:
 
 
 def executor(kind: str):
-    """None: dense plans are planned only in this release; the run that executes them is the next step."""
+    """Run adapter training through the existing e4b engines; other workloads remain unimplemented."""
+    if kind == "train":
+        from .dense_train import run
+
+        return run
     return None
 
 
 def planned_only_reason(kind: str) -> str:
-    return "dense adapter training is planned only in this release: no executor runs it yet"
+    return f"the dense backend does not execute {kind!r} workloads"
 
 
 def residency(setup: dict) -> str | None:
@@ -656,5 +660,4 @@ def explain(sel, feasible, infeasible, budget, status, constraints, workload) ->
         out += [f"ordering, {k}: {v}" for k, v in SPEED_EVIDENCE.items()]
     if constraints.fixed:
         out.append(f"fixed by the caller: {constraints.fixed}")
-    out.append(planned_only_reason("train"))
     return out

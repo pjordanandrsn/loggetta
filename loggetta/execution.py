@@ -115,7 +115,7 @@ def execute(plan: ExecutionPlan, *, out_dir: str | None = None, seed: int = 0, l
     target = str(Path(adapter_dir) if adapter_dir is not None else Path(out_dir or "runs") / run_id / "adapter")
     result = run(plan, seed=seed, log=log, adapter_dir=target)
     receipt = {
-        "schema": RECEIPT_SCHEMA, "run_id": run_id, "status": result["status"],
+        "schema": RECEIPT_SCHEMA, "run_id": run_id, "status": result["status"], "backend": backend.NAME,
         "model": plan.model, "workload": {**plan.workload.__dict__,
                                           "tokens_per_microbatch": plan.workload.tokens_per_microbatch},
         "setup": s, "hardware": plan.hardware, "plan": plan.to_dict(),
@@ -156,13 +156,14 @@ def load_observations(path: str | None) -> list:
 
 def summarize(receipt: dict) -> str:
     m, c, cmp = receipt["measured"], receipt["correctness"], receipt["comparison"]
+    frozen_kind = "dense" if "frozen_dense_bytes_unchanged" in c else "expert"
     g = lambda n: "n/a" if n is None else f"{n / GiB:.2f} GiB"  # noqa: E731
     rows = [f"Run {receipt['run_id']}: {receipt['status']}",
             f"  step time  median {m['s_per_step_median']:.2f} s (steps {m['timed_steps']}), "
             f"{m['tokens_per_s']:.0f} tokens/s  [measured]",
             f"  loss       {c['losses'][0]:.4f} -> {c['losses'][-1]:.4f}; first third {c['loss_first_third_mean']:.4f}, "
             f"last third {c['loss_last_third_mean']:.4f}; finite={c['all_finite']}",
-            f"  integrity  frozen expert bytes unchanged={c['frozen_expert_bytes_unchanged']}; "
+            f"  integrity  sampled frozen {frozen_kind} bytes unchanged={c[f'frozen_{frozen_kind}_bytes_unchanged']}; "
             f"adapters moved={c['adapters_moved']}",
             "  memory                      estimated   measured   residual"]
     for k, v in cmp.items():
@@ -171,7 +172,7 @@ def summarize(receipt: dict) -> str:
                     f"{('n/a' if res is None else f'{res / GiB:+.2f} GiB'):>10s}")
     adapter = receipt.get("artifacts", {}).get("adapter")
     if adapter:
-        rows.append(f"  adapter   {adapter['path']} ({adapter['tensor_count']} tensors; native runtime format)")
+        rows.append(f"  adapter   {adapter['path']} ({adapter['tensor_count']} tensors; {adapter.get('format', 'runtime format')})")
     if receipt.get("artifact_error"):
         rows.append(f"  adapter save FAILED: {receipt['artifact_error']}")
     return "\n".join(rows)

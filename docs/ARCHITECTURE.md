@@ -292,7 +292,9 @@ trainer's.
       `chunked_loss_bytes` for the loss.
   - **Refused:** streaming that would free nothing (`late_bound_4bit_refusal`), an attention implementation that would
     change the model's semantics, a sequence past its positions, and int8 bases (not priced yet).
-  - **Plan-only:** its `executor` returns None, so a dense plan says it is planned only. The run is the next step.
+  - **Execution:** the dense backend loads one safetensors tensor at a time, uses PEFT linear LoRA, and applies
+    e4b's chunked loss and dense offload when the plan selects them. The shared measured loop produces the receipt.
+    [Dense training](DENSE.md) records the validation scope and remaining CUDA gates.
 - **Receipts and reserve slack:** the planner learns reserve slack only from receipts of the same backend, so a dense
   plan never borrows a MoE offload run's slack. Receipts that do not name their backend count as the first listed one,
   experts4bit.

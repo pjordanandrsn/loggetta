@@ -235,15 +235,18 @@ runs/my-training/
     RUN_ID.json
 ```
 
-The native adapter artifact contains only the trainable LoRA tensors identified by the runtime's own structural
+The MoE backend's native adapter artifact contains only the trainable LoRA tensors identified by the runtime's own structural
 adapter discovery. It does not serialize the full model state, frozen experts, optimizer, scheduler, or RNG state.
 The manifest records the base model and resolved revision when available, exact backend setup (including rank,
 alpha and adapter precision), dataset record, learning rate, seed, runtime version, tensor shapes/dtypes, and file
 checksums. Model checkpoints addressed by local paths must still be available when the adapter is reloaded.
 
-This is **native experts4bit-qlora adapter data, not a PEFT `save_pretrained` artifact** and not an exact training
+For MoE, this is **native experts4bit-qlora adapter data, not a PEFT `save_pretrained` artifact** and not an exact training
 resume checkpoint. Save time is reported separately from measured training-step time. A failed export marks the
 run `SAVE_FAILED`; failed integrity checks do not produce an adapter presented as a successful result.
+
+The development [dense executor](DENSE.md) exports PEFT linear LoRA adapters instead. `load_adapter` dispatches by
+the checksummed manifest's backend and preserves adapter precision. Both formats exclude optimizer state.
 
 ## Reload it
 

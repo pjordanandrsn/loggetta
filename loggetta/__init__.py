@@ -27,6 +27,14 @@ __version__ = "0.3.1"
 
 def load_adapter(directory, *, device="cuda"):
     """Rebuild the recorded runtime setup and return a model with the saved adapters loaded."""
+    import json
+    from pathlib import Path
+
+    manifest = json.loads((Path(directory).expanduser() / "adapter_manifest.json").read_text(encoding="utf-8"))
+    if manifest.get("backend") == "dense":
+        from .backends.dense_adapters import load_adapter as load
+
+        return load(directory, device=device)
     from .backends.experts4bit_adapters import load_adapter as load
 
     return load(directory, device=device)

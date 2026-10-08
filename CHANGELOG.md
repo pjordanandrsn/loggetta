@@ -2,7 +2,17 @@
 
 ## Unreleased
 
-- **Dense adapter-training plans (planned only).** The dense backend now plans `train` for dense models.
+- **Dense execution prototype.** Dense training plans dispatch through transformers, PEFT linear LoRA and the
+  existing e4b chunked-loss and dense-offload engines. Checkpoint loading reads one safetensors tensor at a time;
+  NF4 quantization handles one decoder linear at a time, and streamed codes stay on the host. The selected setup
+  is checked against the loaded structure and echoed in a dense ExecutionReceipt. Sampled frozen-layer integrity,
+  adapter movement, memory and timing share the measured loop with MoE. Dense adapters use PEFT with checksummed
+  export/reload; existing MoE adapters retain their native format. PEFT 0.21.2 is the tested dependency floor.
+  CPU tiny-model checks cover exact checkpoint reconstruction, resident/streamed loss and gradient equality,
+  actual chunked loss and adapter precision on reload. CUDA/NF4 and capacity calibration await a registered lane;
+  this entry claims no new GPU measurement. The e4b floor remains 0.49.0.
+
+- **Dense adapter-training plans.** The dense backend now plans `train` for dense models.
   - **Candidates:** bf16 base resident, NF4 base resident, NF4 base streamed from pinned host memory. Speed order:
     bf16 before NF4, resident before streamed, per experts4bit-qlora's measured DQ lanes.
   - **Estimate:** itemized.
@@ -10,11 +20,10 @@
       gradients, AdamW, and experts4bit-qlora's `offload_plan` for streaming.
     - *heuristic:* activations scaled to DQ4's measured slope; the chunked-loss workspace from `chunked_loss_bytes`.
     - Linear biases are counted once, with norms and other parameters.
-  - **Checked:** against DQ4's measured peaks at Qwen3-32B, the estimate is +1.9 to +3.1% resident and +3.0 to +8.7%
-    streamed, never under.
+  - **Checked in-sample only:** the activation slope is fitted to DQ4, and against DQ4's measured peaks at Qwen3-32B the
+    estimate is +1.9 to +3.1% resident and +3.0 to +8.7% streamed, never under. A second model is not checked yet.
   - **Refused, in words:** streaming that would free nothing, attention that would change semantics, a sequence past
     the model's positions, int8.
-  - **Executing a dense plan** says it is planned only.
   - `bench/dense_plan_sweep.py` plans 14 real configs on 16–48 GB cards
     (`evidence/2026-10-07-dense-plan-sweep`).
 - **Reserve slack is learned per backend.** A plan's reserve, including the fallback, comes only from its own backend's
@@ -30,8 +39,7 @@
   - MoE, pre-quantized and non-decoder models are refused in words.
   - Config, model-build and chunked-loss errors become refusals naming the exception type; refused descriptions
     can be copied or pickled without recursion.
-  - Training plans for dense models come next. Today such a plan says the backend described the model but does not
-    plan the workload yet.
+  - Dense training plans and their development executor are described above; other dense workloads remain planned only.
 
 ## 0.3.1 — 2026-10-08
 
