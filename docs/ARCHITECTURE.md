@@ -306,7 +306,7 @@ _See `docs/RESULTS.md`._
 appears.
 
 
-## User data and adapter artifacts (0.2.0)
+## User data and adapter artifacts (0.3.0)
 
 Optional `Workload.data` and `Workload.learning_rate` fields extend `execution-plan/1`; old plans load with their
 original Alpaca demonstration and learning-rate defaults, and serializing those defaults keeps the old wire shape.

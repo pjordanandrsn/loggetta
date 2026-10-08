@@ -35,11 +35,10 @@ The current scope is single-GPU MoE training. Serving placement can be planned; 
 
 ## Train on your data
 
-Custom datasets and reusable adapters are on `main` and ship to PyPI in 0.3.0 (PyPI serves 0.1.3 until then). To use
-them now, install from `main`:
+Custom datasets and reusable adapters arrived in 0.3.0:
 
 ```bash
-pip install "git+https://github.com/pjordanandrsn/loggetta.git@main"
+pip install -U loggetta
 loggetta train Qwen/Qwen3-30B-A3B \
   --dataset ./data/train.jsonl --format text \
   --seq 512 --micro-batch 1 --steps 20 --seed 42 \
