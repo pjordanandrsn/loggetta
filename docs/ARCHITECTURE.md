@@ -27,8 +27,8 @@ The code and the tests are the source of truth; this file says where things live
 - Section 1 records the two lower packages as they were when this layer was started: experts4bit-qlora (e4b)
   v0.45.0, origin/main `7b3b6aa5`, and grouped-nf4-gemm (gnf4) v0.37.0, origin/main `c6455de`, inspected on
   2026-10-04.
-- The interfaces in section 4 are released in e4b 0.48.0 and gnf4 0.41.0, except `min_hot_rows` and
-  `usable_buckets`, which first ship in e4b 0.49.0; until then the serve estimate falls back to its own rules.
+- The interfaces in section 4 are released: e4b 0.48.0 and gnf4 0.41.0 first shipped them, and `min_hot_rows` and
+  `usable_buckets` followed in e4b 0.49.0, the floor Loggetta requires.
 
 ## 1. What the two packages already were (from the code, not the READMEs)
 
@@ -139,7 +139,7 @@ setup_refusals(topology, QLoRASetup) -> tuple[str]                             #
 estimate_qlora_footprint(topology, QLoRASetup, *, tokens_per_microbatch, optimizer) -> Footprint
 prepare_qlora_training(model_id, QLoRASetup, *, device, revision) -> PreparedQLoRA   # the run: e4b builds the setup
 estimate_serve_footprint(topology, ServeSetup) -> Footprint                    # paged server: all-VRAM and the solver's tiers
-min_hot_rows(topology, ServeSetup) -> int                                      # cold tier's floor (e4b 0.49.0, next release)
+min_hot_rows(topology, ServeSetup) -> int                                      # cold tier's floor (since e4b 0.49.0)
 fused_append_unsupported(capability) -> str | None                             # where decode graphs cannot run
 ServeSetup.to_env() -> {"E4B_PAGED_*": str}                                    # what serve_paged reads back
 ```
