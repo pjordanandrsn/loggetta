@@ -487,12 +487,17 @@ def estimate(topology, setup, workload):
         lines.append(("frozen decoder linears", "device", weights + L * stays_layer, "derived",
                       f"{L} layers x {len(t.layer_linears)} linears in {qdesc}"))
     else:
-        layer = [(m, 2, False, True) for m in streamed_layer]
+        frozen_layer = [(m, 2, False, True) for m in streamed_layer]
+        kept_frozen = _offload_plan()([frozen_layer] * L, pin=True, train_prefetch=True)["stays_on_device"]
+        layer = list(frozen_layer)
         layer += [(r * lin.in_features * ab, 2, True, True) for lin in t.layer_linears if lin.role in roles]
         layer += [(lin.out_features * r * ab, 2, True, True) for lin in t.layer_linears if lin.role in roles]
         plan = _offload_plan()([layer] * L, pin=True, train_prefetch=True)
         lines.append(("frozen decoder linears, two layers staged", "device", plan["resident_slots"], "derived",
                       "experts4bit-qlora offload_plan: the layer in use and its prefetched neighbour"))
+        if kept_frozen:
+            lines.append(("frozen decoder linears, kept on device", "device", kept_frozen, "derived",
+                          "experts4bit-qlora offload_plan: frozen codes below its streaming threshold stay on device"))
         if stays_layer:
             lines.append(("frozen decoder linears, quantization statistics", "device", L * stays_layer, "derived",
                           "absmax and second-level scales stay on the device"))
