@@ -271,7 +271,70 @@ def executor(kind: str):
     return None
 
 
-def explain(sel, feasible, infeasible, budget, status, constraints, workload) -> list:
+def single_stream_levers(topology) -> str | None:
+    """What a default ``serve_paged`` decodes one sequence with on this model's family, as the INSTALLED
+    experts4bit-qlora resolves it (its family-scoped B=1 fused stack, lane P115: ``serve_paged.resolve_fusion_modes``
+    and the reads it names), never a table kept here. None when experts4bit-qlora's serving module is not importable."""
+    try:
+        from experts4bit_qlora import serve_paged as sp
+    except ImportError:
+        return None
+    family = getattr(topology, "model_type", None)
+    resolve = getattr(sp, "resolve_fusion_modes", None)
+    if resolve is None or not hasattr(sp, "FUSION_KNOBS") or not hasattr(sp, "FUSION_UNSET"):
+        return ("the B=1 fused stack (fused q/k/v and three glue folds) is off unless set: this experts4bit-qlora has "
+                "no family-scoped fusion default")
+    modes, _sources = resolve({k: sp.FUSION_UNSET for k in sp.FUSION_KNOBS}, family)
+    on = sorted(k for k, v in modes.items() if v != "0")
+    if on:
+        why = getattr(sp, "FUSION_DEFAULT_FAMILIES", {}).get(family, "")
+        return (f"the B=1 fused stack (fused q/k/v and three glue folds) is on by default for {family}"
+                + (f" ({why})" if why else "") + "; " + ", ".join(f"{k}=0" for k in on) + " turns it off")
+    why = getattr(sp, "FUSION_UNLICENSED", {}).get(family, "no registered read")
+    return (f"the B=1 fused stack (fused q/k/v and three glue folds) is off by default for {family}: {why}; setting "
+            "its knobs to auto applies it where the structure matches, without that read")
+
+
+def performance(topology, setup: dict, workload, gpu, observations, status) -> dict | None:
+    """A single-stream decode figure measured on exactly this setup, or None: then nothing is shown, and the planner's
+    own statement (no performance prediction) stands.
+
+    Only a measurement of the same thing counts: a serve receipt of this model at one sequence, on this GPU name and
+    driver, with this setup and the same experts4bit-qlora and grouped-nf4-gemm versions (defaults that move decode
+    speed change between versions), that recorded its decode step (``measured.decode_step_ms_b1``, from the server's
+    step trace). Absolute decode times do not travel between hosts, so nothing is extrapolated from another GPU."""
+    if workload.kind != "serve" or setup.get("max_seqs") != 1:
+        return None
+    vers = getattr(status, "versions", None) or {}
+    want = {d: vers.get(d) for d in ("experts4bit-qlora", "grouped-nf4-gemm")}
+    gname, gdrv = (gpu.name, gpu.driver.value) if gpu is not None else (None, None)
+    match = None
+    for obs in observations:
+        m = obs.get("measured") or {}
+        g = (obs.get("hardware") or {}).get("gpu") or {}
+        got = ((obs.get("provenance") or {}).get("versions") or {})
+        if (obs.get("status") == "OK" and (obs.get("workload") or {}).get("kind") == "serve"
+                and (obs.get("workload") or {}).get("concurrency") == 1
+                and (obs.get("model") or {}).get("model") == topology.model and obs.get("setup") == setup
+                and g.get("name") == gname and g.get("driver") == gdrv
+                and all(got.get(d) == v for d, v in want.items())
+                and isinstance(m.get("decode_step_ms_b1"), (int, float)) and m["decode_step_ms_b1"] > 0):
+            match = obs
+            break
+    if match is None:
+        return None                 # nothing is shown: no figure is interpolated or borrowed
+    m = match["measured"]
+    ms = float(m["decode_step_ms_b1"])
+    return {"statement": (f"measured on this setup: one sequence decodes at {1000 / ms:.0f} tokens/s ({ms:.2f} ms per "
+                          f"decode step, median of {m.get('decode_steps_b1', '?')} steps; receipt "
+                          f"{match.get('run_id')}, {gname}, experts4bit-qlora {want['experts4bit-qlora']}). Not an "
+                          "estimate for another GPU, driver, setup or version"),
+            "estimate": {"basis": "measured-same-setup", "decode_step_ms_b1": ms,
+                         "tokens_per_s_b1": round(1000 / ms, 1), "decode_device_ms_b1": m.get("decode_device_ms_b1"),
+                         "receipt": match.get("run_id")}}
+
+
+def explain(sel, feasible, infeasible, budget, status, constraints, workload, topology=None) -> list:
     """Why this candidate, in words: the backend knows its own setup fields; the planner does not read them."""
     s, out = sel.setup, []
     if workload.kind == "serve":
@@ -330,7 +393,12 @@ def explain(sel, feasible, infeasible, budget, status, constraints, workload) ->
         if not (s.get("exp_int4") or s.get("attn_int4")) and not {"exp_int4", "attn_int4"} & set(constraints.fixed):
             out.append("int4 levers off: exp_int4 and attn_int4 change the served weights (round-to-nearest int4), so "
                        "the planner prices them only when fixed")
-        out.append("not planned yet: a measured routing profile for the solver, decode speed")
+        if s.get("max_seqs") == 1 and topology is not None:
+            levers = single_stream_levers(topology)
+            if levers:
+                out.append(f"single stream: {levers}")
+        out.append("not planned yet: a measured routing profile for the solver; decode speed beyond a receipt of "
+                   "this same setup (see performance)")
         from experts4bit_qlora.serve_recipe import ServeSetup
 
         env = " ".join(f"{k}={v}" for k, v in sorted(_serve_setup(ServeSetup, s).to_env().items()))

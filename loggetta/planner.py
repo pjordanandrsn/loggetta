@@ -9,6 +9,7 @@ Deterministic: the same inputs give the same plan, byte for byte (``ExecutionPla
 """
 from __future__ import annotations
 
+import inspect
 import json
 import math
 from dataclasses import replace
@@ -668,7 +669,9 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
     budget["headroom"] = sel.bounds.get("device_headroom_bytes", headroom)
     st = statuses[sel.backend]
     b = next(x for x in usable if x.NAME == sel.backend)
-    reasons += b.explain(sel, feasible, infeasible, budget, st, constraints, workload)
+    kw = {"topology": topology} if "topology" in inspect.signature(b.explain).parameters else {}
+    reasons += b.explain(sel, feasible, infeasible, budget, st, constraints, workload, **kw)
+    perf = getattr(b, "performance", lambda *a: None)(topology, sel.setup, workload, gpu, observations, st) or perf
     warnings += getattr(b, "plan_warnings", lambda *a: [])(sel.setup, gpu)
     warnings += getattr(b, "scope_warnings", lambda *a: [])(topology, sel.setup, workload)
     return ExecutionPlan(status="feasible", selected=sel, alternatives=tuple(feasible[1:]) + tuple(infeasible),

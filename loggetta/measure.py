@@ -152,3 +152,27 @@ def changed_since(prov: dict) -> list:
             out.append(f"{name}: {src.get('commit', 'untracked')[:10]}{'+dirty' if src.get('dirty') else ''} at start, "
                        f"{now.get('commit', 'untracked')[:10]}{'+dirty' if now.get('dirty') else ''} at end")
     return out
+
+
+def decode_step_b1(rows) -> dict | None:
+    """The single-stream decode step from an experts4bit-qlora step trace (``E4B_PAGED_STEP_TRACE``, one row per
+    engine step; ``experts4bit_qlora.engines.step_trace``): the steps that decoded exactly one row and ran no prefill.
+    ``step_ms`` is the step's whole host time (inputs, replay or eager step, the token sync, bookkeeping), so a decode
+    step and its tokens per second are what one sequence sees. ``device_ms`` is the decode's device time
+    (``gpu.dec_issue - gpu.dec_prep``) where the trace resolved its events. None when the trace has no such step."""
+    steps = [r for r in rows if r.get("decode_rows") == 1 and not r.get("prefill_tokens")
+             and isinstance(r.get("step_ms"), (int, float))]
+    if not steps:
+        return None
+
+    def median(xs):
+        xs = sorted(xs)
+        n = len(xs)
+        return xs[n // 2] if n % 2 else (xs[n // 2 - 1] + xs[n // 2]) / 2
+
+    dev = [r["gpu"]["dec_issue"] - r["gpu"]["dec_prep"] for r in steps
+           if isinstance(r.get("gpu"), dict) and {"dec_issue", "dec_prep"} <= set(r["gpu"])]
+    return {"decode_step_ms_b1": round(median([r["step_ms"] for r in steps]), 4),
+            "decode_device_ms_b1": round(median(dev), 4) if dev else None,
+            "decode_steps_b1": len(steps),
+            "decode_buckets_b1": sorted({r.get("bucket") for r in steps}, key=lambda b: (b is None, b))}

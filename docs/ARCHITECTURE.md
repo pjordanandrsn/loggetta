@@ -187,7 +187,13 @@ model is refused only when every backend refuses it, each with its own reason.
 - every alternative with the reason it lost;
 - the reasoning, with the evidence for the speed ordering as claim IDs;
 - warnings;
-- a performance section that says plainly it is **not predicted** (there is no calibrated performance model).
+- a performance section that says plainly it is **not predicted** (there is no calibrated performance model). The
+  one exception is a single-stream serve plan (one sequence) with a serve receipt of exactly the same setup: same
+  model, GPU name and driver, setup, and experts4bit-qlora and grouped-nf4-gemm versions. That plan quotes the
+  receipt's decode step, labelled measured, with the receipt's ID. Anything less shows nothing, and no figure is
+  interpolated or carried between hosts.
+- for a single-stream serve plan, which B=1 levers a default `serve_paged` runs for the model's family, as the
+  installed experts4bit-qlora resolves them (its family-scoped fused stack).
 
 **Refusal is a status.** A refused plan carries:
 - the reasons, per constraint;
