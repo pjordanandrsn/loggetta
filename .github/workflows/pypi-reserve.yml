@@ -1,6 +1,8 @@
 name: Publish Loggetta to PyPI
 
 on:
+  release:
+    types: [published]       # a GitHub release publishes to PyPI, so the two always match
   workflow_dispatch:
 
 permissions:

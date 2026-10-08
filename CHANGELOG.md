@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.3.0 — 2026-10-08
+
+**0.3.0.** Train on your own data and keep the adapters. This is the first PyPI release since 0.1.3; 0.2.0 was never
+published, and its work ships here. Loggetta now reads your dataset (local files or the Hub), checks and tokenizes it before
+any model loads, plans from what it found, trains on assistant tokens with isolated packing and a cosine schedule by default,
+and exports a reusable adapter. Upgrade if you want to train on your own data. It needs experts4bit-qlora 0.49.0 or later
+(0.48.0 fails under transformers 5.19 and lacks the planner's row and bucket controls).
+
+### Training defaults and planning from the data
+
 - **Isolated packing by default for chat and alpaca data** (`--packing auto|concat|isolated`).
   - Whole examples go into rows (deterministic best fit), positions restart per example, and an example's first token
     and the row padding never train. transformers then keeps each example's attention to itself; the loop passes
@@ -44,7 +54,7 @@
   for the same seed; chat and Alpaca data now default to isolated packing, whose stream differs.
 - Plans without a profile (older plans, the Alpaca demonstration) keep the 0.2.0 behaviour and wire shape.
 
-## 0.2.0
+### Your data and reusable adapters (developed as 0.2.0, never published)
 
 - Accept local JSON/JSONL/CSV/Parquet/TXT files and Hub datasets, with split/config/revision selection.
 - Add explicit text, Alpaca, and text-only chat formats, column mapping, seeded shuffle, and opt-in repetition.

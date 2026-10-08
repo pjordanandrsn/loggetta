@@ -1,6 +1,6 @@
 # Train on your data and keep the adapter
 
-Since 0.2.0 (on `main`; first published on PyPI in 0.3.0), Loggetta accepts your dataset, includes it in a saved training plan, and exports a reusable
+Since 0.3.0, Loggetta accepts your dataset, includes it in a saved training plan, and exports a reusable
 adapter plus the tokenizer and a measured run report. The installation still includes the runtime and kernels:
 
 ```bash
