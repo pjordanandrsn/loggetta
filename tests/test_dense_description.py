@@ -91,9 +91,8 @@ def test_a_dense_model_reaches_the_planner_through_the_dense_backend():
 
     t = describe_model(tr.LlamaConfig(**SMALL))
     assert isinstance(t, DenseTopology)
-    p = plan(t, hw(), Workload())
-    assert p.status == "refused" and p.model["model_type"] == "llama"
-    assert "the dense backend described this model but does not plan 'train' workloads yet" in p.refusal["reasons"][0]
+    p = plan(t, hw(), Workload(seq_len=64))
+    assert p.status == "feasible" and p.model["model_type"] == "llama" and p.selected.backend == "dense"
     moe = describe_model(tr.Qwen3MoeConfig(**SMALL, num_experts=4, moe_intermediate_size=32, head_dim=16))
     assert not isinstance(moe, DenseTopology)                              # a MoE model stays experts4bit's
 
