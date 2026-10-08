@@ -1,122 +1,74 @@
 # Loggetta
 
-**One install for planning and running single-GPU MoE QLoRA workloads.**
+**Plan the run. Train the model. Keep the evidence.**
+
+Loggetta checks your hardware, chooses a supported configuration for a Mixture-of-Experts (MoE) model, and runs QLoRA
+fine-tuning. It saves the plan and a JSON run report with memory use, timing, and checks that the selected
+optimizations actually ran. One install includes the runtime
+([experts4bit-qlora](https://pypi.org/project/experts4bit-qlora/)) and the GPU kernels
+([grouped-nf4-gemm](https://pypi.org/project/grouped-nf4-gemm/)).
 
 ```bash
 pip install loggetta
-```
-
-That installs Loggetta plus its current runtime and kernel stack:
-
-- **Loggetta** — hardware inventory, planning, `ExecutionPlan`, execution orchestration, and `ExecutionReceipt`
-- **experts4bit-qlora** — model loading, QLoRA, training, serving mechanisms, and CPU/NVMe offload
-- **grouped-nf4-gemm** — packed low-bit kernels and residency primitives
-
-Loggetta examines the model, machine, workload, and constraints **before loading model weights**. It chooses a supported setup, explains why alternatives lost, and refuses configurations estimated not to fit. For supported training plans it dispatches into the included runtime and records what actually happened.
-
-```bash
 loggetta inspect
 loggetta plan Qwen/Qwen3-30B-A3B --seq 2048
-loggetta train allenai/OLMoE-1B-7B-0924 --seq 512 --micro-batch 2 --steps 12 --out receipts/
 ```
 
-Without `--dataset`, `train` runs a short demonstration on `tatsu-lab/alpaca` (full-sequence loss) with the default
-warmup + cosine learning-rate schedule. To train on your own data and keep a reusable adapter:
+The plan shows where weights will live, estimated memory use, and why alternatives were rejected. It checks the budget
+before downloading model weights. Estimates can miss; they are not an out-of-memory guarantee.
+
+## Train on your data
 
 ```bash
-loggetta train Qwen/Qwen3-30B-A3B --dataset ./data/train.jsonl --format chat \
-  --seq 1024 --micro-batch 1 --epochs 1 --out runs/my-run --adapter-out adapters/my-adapter
+loggetta train Qwen/Qwen3-30B-A3B \
+  --dataset ./data/train.jsonl --format text \
+  --seq 512 --micro-batch 1 --steps 20 --seed 42 \
+  --out runs/my-training --adapter-out adapters/my-adapter
 ```
 
-The dataset is validated, tokenized and profiled before any weights load, and the plan carries that profile. For chat
-and Alpaca data the defaults are assistant-only loss (`--loss`), isolated packing so each example attends only to
-itself (`--packing`), and warmup + cosine decay (`--lr-schedule`). Reload the adapter with
-`loggetta.load_adapter("adapters/my-adapter")`. See the
+Local JSONL, JSON, CSV, Parquet and TXT files, Hub datasets, Alpaca instructions and text-only chats are supported.
+Data is validated and tokenized before weights load. Chat data trains only the assistant turns by default. Reload the
+adapter with `loggetta.load_adapter("adapters/my-adapter")`. See the
 [training guide](https://github.com/pjordanandrsn/loggetta/blob/main/docs/TRAINING.md).
 
-A feasible plan is an estimate, not an OOM guarantee. Serving placement can be planned; Loggetta does not launch the server yet.
+To run a saved decision later: `loggetta plan MODEL --out plan.json`, then `loggetta execute plan.json --out runs/`.
+Pass earlier run reports back with `--observations runs/` and later plans use those measurements.
 
-## Plan, run, measure
+## Measured results
 
-A plan is a serializable artifact, not just terminal output. It records the selected backend setup, budgets, memory estimates, rejected alternatives, warnings, and anything the planner does not model. You can save it, inspect it, then execute that exact decision:
+The included runtime and kernels do the compute; these are matched training runs, not planner benchmarks.
 
-```bash
-loggetta plan allenai/OLMoE-1B-7B-0924 \
-  --seq 512 --micro-batch 2 --steps 12 --out plan.json
-
-loggetta execute plan.json --out receipts/
-```
-
-The resulting receipt records the plan plus measured allocator/reserved/driver memory, timing, correctness checks, and runtime provenance. Earlier receipts can be passed back as observations so later plans use measurements from the same model/setup when available:
-
-```bash
-loggetta plan allenai/OLMoE-1B-7B-0924 \
-  --seq 512 --micro-batch 2 --observations receipts/
-```
-
-The planner does not load weights while choosing. With `--dataset`, every row is validated and tokenized first; then the model topology and the hardware are read. Candidate selection is deterministic policy over those facts, the data profile and the constraints.
-
-## Measured speed
-
-These are measurements of the **runtime/kernel stack that Loggetta installs and dispatches into**, not speedups caused by the planner.
-
-| Result | Measured comparison |
+| Workload | Result |
 | :--- | :--- |
-| **2.352x faster/step vs Unsloth** | Qwen3-30B-A3B QLoRA on one RTX 5090, matched adapters/init/tokens and the same torch 2.12.1+cu130 / transformers 5.5.0 stack: **3.494 vs 8.218 s/step**. Held-out loss was COMPARABLE. Unsloth used less peak VRAM: **24.27 vs 27.49 GB**. |
-| **2.468x replication** | Same-stack Qwen3 comparison on a second RTX 5090 host. The registered position remains 2.352x; the replication is reported separately. |
-| **2.775x vs Axolotl** | Matched-work Qwen3-30B-A3B comparison on an RTX 5090 / Ryzen 9 9950X3D host: **2.147 vs 5.956 s/step**. A separate EPYC-host reading was **1.979x**, so this ratio is host-sensitive. |
-| **2.33x packed-compute throughput** | H100 synthetic expert-offload pipeline vs bitsandbytes CUDA dequantization + cuBLAS: **6.466 vs 2.773 pipeline tok/s**, **26.8 vs 59.1 J/token**. This is not an end-to-end serving claim. |
+| **Qwen3-30B-A3B QLoRA · RTX 5090** | **2.352×** training speed vs Unsloth: **3.494 vs 8.218 s/step**, comparable held-out loss; Unsloth used 3.22 GB less peak VRAM. [Result](https://github.com/pjordanandrsn/experts4bit-qlora/blob/main/bench/h2h-2026-10-02/tc1/RESULTS-tc1-samestack-box4.md) |
+| **Same recipe, second RTX 5090 host** | **2.468×**, reported separately. [Replication](https://github.com/pjordanandrsn/experts4bit-qlora/blob/main/bench/h2h-2026-10-02/tc1/RESULTS-tc1-samestack-host2.md) |
+| **Planner memory check · Qwen3-30B-A3B · RTX 5090** | **24.54 GiB** estimated process peak, **24.34 GiB** measured, after calibration from earlier runs. [Plan vs run](https://github.com/pjordanandrsn/loggetta/blob/main/docs/RESULTS.md) |
 
-Evidence: [Unsloth same-stack](https://github.com/pjordanandrsn/experts4bit-qlora/blob/main/bench/h2h-2026-10-02/tc1/RESULTS-tc1-samestack-box4.md) · [second-host replication](https://github.com/pjordanandrsn/experts4bit-qlora/blob/main/changelog.d/tc1-amendment-42-read-samestack-host2.md) · [Axolotl/Unsloth matched work](https://github.com/pjordanandrsn/experts4bit-qlora/blob/main/bench/h2h-2026-10-02/tc1/RESULTS-tc1-matched19.md) · [H100 pipeline](https://github.com/pjordanandrsn/grouped-nf4-gemm/blob/main/bench/phase3/flagship/RESULTS-flagship-bnb-baseline.md)
+Both speed comparisons used torch 2.12.1+cu130 and transformers 5.5.0, with matched adapters, initialization and
+tokens. Loggetta does not predict throughput.
 
-## Models: supported vs tested
+## Models
 
-**Runtime-supported** means the included `experts4bit-qlora` fast-training path is evidence-gated supported with a real-weight PASS receipt. The Loggetta column says what this repository itself has exercised.
+| Model | Tested in Loggetta |
+| :--- | :--- |
+| OLMoE-1B-7B-0924, Granite-3.1-3B-A800M | training and serving run |
+| Granite-4.0-H-tiny | training run; serving refused (Mamba state) |
+| Qwen3-30B-A3B, Qwen3.6-35B-A3B, ERNIE-4.5-21B-A3B | planned; serving validated |
+| LFM2-8B-A1B | planned; serving refused (conv state) |
+| Mixtral-8x7B-Instruct | planned |
+| Gemma-4-26B-A4B-it, Nemotron-3.5-Lightning-30B-A3B | supported by the runtime; not yet in Loggetta's sweep |
 
-| Model / family | Included runtime QLoRA | Loggetta test status |
-| :--- | :---: | :--- |
-| **OLMoE-1B-7B-0924** (`olmoe`) | Supported | **Run: training + serving** |
-| **Qwen3-30B-A3B** (`qwen3_moe`) | Supported | Planner + serving validated; backend training receipts imported for calibration |
-| **Granite-3.1-3B-A800M** (`granitemoe`) | Supported | **Run: training + serving** |
-| **Granite-4.0-H-tiny** (`granitemoehybrid`) | Supported | **Run: training**; serving refusal validated (Mamba state unsupported by current paged runner) |
-| **Qwen3.6-35B-A3B** (`qwen3_5_moe`) | Supported | Planner-tested for training; serving validated; training not yet executed here |
-| **LFM2-8B-A1B** (`lfm2_moe`) | Supported | Planner-tested; serving refusal validated (conv state unsupported by current paged runner) |
-| **Mixtral-8x7B-Instruct-v0.1** (`mixtral`) | Supported | Planner-tested; not yet executed here |
-| **ERNIE-4.5-21B-A3B** (`ernie4_5_moe`) | Supported | Planner-tested for training; serving validated (tiered, RTX A2000); training not yet executed here |
-| **Gemma-4-26B-A4B-it** (`gemma4_text`) | Supported | Runtime-supported; not yet in Loggetta's model sweep |
-| **NVIDIA Nemotron-3.5-Lightning-30B-A3B** (`nemotron_h`) | Supported | Runtime-supported; not yet in Loggetta's model sweep |
+Every row is supported by the included runtime's QLoRA path. Hybrid models (Qwen3.6, Granite-4.0-H, LFM2, Nemotron-H)
+need `--packing concat` with chat or Alpaca data. The runtime's
+[capability register](https://github.com/pjordanandrsn/experts4bit-qlora/blob/main/docs/capabilities.json) is the
+authority.
 
-**Packing on hybrid models.** With chat or Alpaca data the default isolated packing is refused for a model whose layers mix tokens through a state (Qwen3.6-35B-A3B, Granite-4.0-H-tiny, LFM2-8B-A1B and, by its structure, Nemotron-H) or whose attention is not described (DeepSeek-V2-Lite): resetting positions cannot isolate examples there. Pass `--packing concat` for those models.
+## Scope
 
-Also exercised by the planner but **not advertised as supported expert-QLoRA rows**: `DeepSeek-V2-Lite` is planned with attention LoRA disabled because its MLA attention is not described by the current adapter path; `gpt-oss-20b` is deliberately refused for expert QLoRA because its biased/clamped expert structure does not satisfy `ExpertsLoRA`'s contract.
+Single-GPU MoE planning and QLoRA training; serving placement is planned, not launched. Not yet: dense models,
+multi-GPU, throughput prediction. GPU runs need Linux, an NVIDIA CUDA GPU and a compatible PyTorch. Pre-1.0.
 
-Backend support is evidence-gated and can move independently of Loggetta's own test matrix. See the [runtime capability register](https://github.com/pjordanandrsn/experts4bit-qlora/blob/main/docs/capabilities.json) and Loggetta's [measured results](https://github.com/pjordanandrsn/loggetta/blob/main/docs/RESULTS.md).
-
-## Memory planning
-
-Loggetta labels each estimate as measured, derived, inferred, or heuristic instead of presenting every number as equally certain. An `ExecutionReceipt` records estimated vs measured memory and can be fed back into later plans.
-
-Selected checks:
-
-- A2000 training runs across OLMoE and Granite families put allocator estimates within **0.01-0.21 GiB** of measured peaks.
-- Qwen3-30B-A3B on an RTX 5090: allocator **22.09 GiB estimated vs 21.91 GiB measured**; after receipt-calibrated runtime overheads, process peak **24.54 GiB planned vs 24.34 GiB measured**.
-- OLMoE serving on an A2000: planned VRAM/DRAM/NVMe expert placement matched the server's **272 / 421 / 331** split; allocator **2.052 GiB planned vs 2.051 GiB measured**.
-
-Loggetta does **not** currently predict throughput. It may use measured evidence to order valid setups, but unknown speed remains unknown.
-
-## Current scope
-
-**Available:** one-command install of the full stack; single-GPU MoE planning; saved `ExecutionPlan` and `ExecutionReceipt`; QLoRA training on your own data (local JSONL/JSON/CSV/Parquet/TXT or Hub datasets; text, Alpaca or chat) with reusable adapters; QLoRA training execution; device/host/storage serving placement planning; measured-memory feedback; explicit refusals.
-
-**Not claimed:** first-class dense-model planning; multi-GPU planning/execution; calibrated throughput prediction; a Loggetta server-launch command; universal exposure of every mechanism in the lower packages.
-
-GPU execution currently targets **Linux + NVIDIA CUDA** and requires a compatible driver/PyTorch environment. The package is pre-1.0.
-
-## More detail
-
-The PyPI page is intentionally short. The GitHub repository carries the architecture, full benchmark caveats, receipts, family sweeps, and reproducibility notes:
-
-- [Full README](https://github.com/pjordanandrsn/loggetta)
-- [Results](https://github.com/pjordanandrsn/loggetta/blob/main/docs/RESULTS.md)
-- [Architecture](https://github.com/pjordanandrsn/loggetta/blob/main/docs/ARCHITECTURE.md)
-- [experts4bit-qlora capabilities](https://github.com/pjordanandrsn/experts4bit-qlora/blob/main/docs/capabilities.json)
+[GitHub](https://github.com/pjordanandrsn/loggetta) ·
+[Results](https://github.com/pjordanandrsn/loggetta/blob/main/docs/RESULTS.md) ·
+[Architecture](https://github.com/pjordanandrsn/loggetta/blob/main/docs/ARCHITECTURE.md) ·
+[Research and releases](https://cerinamroth.com/ml/)
