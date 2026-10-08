@@ -7,8 +7,9 @@
     family-scoped default reads as "off unless set". Nothing here keeps its own table of families.
   - **The figure.** The plan's performance section quotes a decode figure only from a serve receipt of exactly the
     same setup: same model, GPU name and driver, setup, and experts4bit-qlora and grouped-nf4-gemm versions, at one
-    sequence. The figure is labelled measured, with the receipt's ID. Anything less shows nothing: loggetta still
-    predicts no throughput, and no figure is interpolated or carried between hosts.
+    sequence. The figure is labelled measured, with the receipt's ID and the prompt and new-token counts it was
+    measured at (a decode step grows with the KV position). Anything less shows nothing: loggetta still predicts no
+    throughput, and no figure is interpolated or carried between hosts.
   - **The receipt.** `bench/serve_validate.py --concurrency 1` traces the engine's steps (`E4B_PAGED_STEP_TRACE`) and
     records `measured.decode_step_ms_b1`: the median whole-step time of the steps that decoded one row and ran no
     prefill. It also records the decode's device time and the step count, from `loggetta.measure.decode_step_b1`.

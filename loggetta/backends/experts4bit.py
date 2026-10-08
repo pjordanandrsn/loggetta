@@ -325,13 +325,18 @@ def performance(topology, setup: dict, workload, gpu, observations, status) -> d
         return None                 # nothing is shown: no figure is interpolated or borrowed
     m = match["measured"]
     ms = float(m["decode_step_ms_b1"])
+    # a decode step grows with the KV position it attends over: say where this one was measured
+    w = match.get("workload") or {}
+    pt, nt = w.get("prompt_tokens"), w.get("new_tokens")
+    where = (f" after a {pt}-token prompt over {nt} new tokens" if isinstance(pt, int) and isinstance(nt, int)
+             else "")
     return {"statement": (f"measured on this setup: one sequence decodes at {1000 / ms:.0f} tokens/s ({ms:.2f} ms per "
-                          f"decode step, median of {m.get('decode_steps_b1', '?')} steps; receipt "
+                          f"decode step, median of {m.get('decode_steps_b1', '?')} steps{where}; receipt "
                           f"{match.get('run_id')}, {gname}, experts4bit-qlora {want['experts4bit-qlora']}). Not an "
-                          "estimate for another GPU, driver, setup or version"),
+                          "estimate for another GPU, driver, setup, version or context length"),
             "estimate": {"basis": "measured-same-setup", "decode_step_ms_b1": ms,
                          "tokens_per_s_b1": round(1000 / ms, 1), "decode_device_ms_b1": m.get("decode_device_ms_b1"),
-                         "receipt": match.get("run_id")}}
+                         "prompt_tokens": pt, "new_tokens": nt, "receipt": match.get("run_id")}}
 
 
 def explain(sel, feasible, infeasible, budget, status, constraints, workload, topology=None) -> list:
