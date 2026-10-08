@@ -40,11 +40,11 @@ The included runtime and kernels do the compute; these are matched training runs
 
 | Workload | Result |
 | :--- | :--- |
-| **Qwen3-30B-A3B QLoRA · RTX 5090** | **2.352×** training speed vs Unsloth: **3.494 vs 8.218 s/step**, comparable held-out loss; Unsloth used 3.22 GB less peak VRAM. [Result](https://github.com/pjordanandrsn/experts4bit-qlora/blob/main/bench/h2h-2026-10-02/tc1/RESULTS-tc1-samestack-box4.md) |
-| **Same recipe, second RTX 5090 host** | **2.468×**, reported separately. [Replication](https://github.com/pjordanandrsn/experts4bit-qlora/blob/main/bench/h2h-2026-10-02/tc1/RESULTS-tc1-samestack-host2.md) |
+| **Qwen3-30B-A3B QLoRA · RTX 5090** | Unsloth spends **1.92×** e4b's GPU time per step, and **2.80×** its wall-clock time on an AMD EPYC 7713 host. Comparable held-out loss; Unsloth peaked lower (24.27 vs 26.16 GB). [Result](https://github.com/pjordanandrsn/experts4bit-qlora/blob/main/bench/h2h-2026-10-02/tc1/RESULTS-tc1-pos69.md) |
+| **Why two numbers** | GPU time doesn't depend on the host. Unsloth runs about 14× e4b's CPU operations per step, so its wall-clock time grows on a slower host. Earlier wall-clock readings, before e4b's current defaults: 2.352× and 2.468×. |
 | **Planner memory check · Qwen3-30B-A3B · RTX 5090** | **24.54 GiB** estimated process peak, **24.34 GiB** measured, after calibration from earlier runs. [Plan vs run](https://github.com/pjordanandrsn/loggetta/blob/main/docs/RESULTS.md) |
 
-Both speed comparisons used torch 2.12.1+cu130 and transformers 5.5.0, with matched adapters, initialization and
+The comparison used torch 2.12.1+cu130 and transformers 5.5.0 for both frameworks, with matched adapters, initialization and
 tokens. Loggetta does not predict throughput.
 
 ## Models
