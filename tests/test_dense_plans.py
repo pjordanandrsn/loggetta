@@ -233,3 +233,13 @@ def test_large_streamed_plans_receive_proportional_margin_and_scope_warning(q32,
              Constraints(fixed={"base": "nf4", "placement": "stream"}, headroom=0), backends=(dense,))
     assert p.budget["headroom"] == -(-p.selected.device_bytes//5) > dense.DQ7_STREAM_HEADROOM
     assert any("outside DQ7" in warning for warning in p.warnings)
+
+
+@needs_offload
+def test_step_count_and_schedule_do_not_create_memory_scope_warning(q14, monkeypatch):
+    monkeypatch.setattr(dense, "_late_bound_reason", lambda: None)
+    p = plan(q14, hw(24), Workload(seq_len=2048, steps=20, learning_rate=1e-4, lr_schedule="cosine"),
+             Constraints(fixed={"base": "nf4", "placement": "stream"}, headroom=0), backends=(dense,))
+    assert p.status == "feasible" and p.budget["headroom"] >= dense.DQ7_STREAM_HEADROOM
+    assert any("DQ7" in warning for warning in p.warnings)
+    assert not any("outside DQ7" in warning for warning in p.warnings)

@@ -614,14 +614,13 @@ def scope_warnings(topology, setup, workload) -> list:
     upper = 2048 if shape == ("qwen3", 5120, 25600, 64, 64, 8, 128, 151936) else 4096
     lower = 2048 if upper == 2048 else 512
     if (shape not in shapes or not lower <= workload.seq_len <= upper
-            or workload.micro_batch != 1 or workload.grad_accum != 1 or workload.steps != 2
+            or workload.micro_batch != 1 or workload.grad_accum != 1
             or setup.get("base") != "nf4" or setup.get("adapter_dtype") != "fp32"
             or setup.get("r") != 16 or setup.get("alpha") != 32 or set(setup.get("targets", ())) != set(ROLES)
             or setup.get("attn_impl") != "sdpa" or workload.optimizer != "adamw"
-            or workload.learning_rate != 2e-4 or workload.lr_schedule != "constant"
             or setup.get("loss_chunk") != (0 if topology.model_type == "llama" else 512)):
         return ["Streamed plan is outside DQ7's measured subject/sequence/recipe range (Qwen3-14B and Llama-3.1-8B "
-                "512-4096, Qwen3-32B 2048 only; two steps, micro-batch1/accum1, NF4 fp32 r16 SDPA AdamW). "
+                "512-4096, Qwen3-32B 2048 only; micro-batch1/accum1, NF4 fp32 r16 SDPA AdamW). "
                 "The empirical headroom floor cannot establish fit beyond that range."]
     return []
 
