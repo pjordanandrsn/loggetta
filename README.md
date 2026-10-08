@@ -35,10 +35,10 @@ The current scope is single-GPU MoE training. Serving placement can be planned; 
 
 ## Train on your data
 
-**Merged on main for 0.2.0; PyPI currently serves 0.1.3.** Install the source version to use custom datasets and reusable adapters:
+Custom datasets and reusable adapters arrived in 0.3.0:
 
 ```bash
-pip install "git+https://github.com/pjordanandrsn/loggetta.git@ca0383dd9e45849cedc5a3f528ddea31a7930a31"
+pip install -U loggetta
 loggetta train Qwen/Qwen3-30B-A3B \
   --dataset ./data/train.jsonl --format text \
   --seq 512 --micro-batch 1 --steps 20 --seed 42 \
@@ -49,7 +49,8 @@ Use a JSONL file with a `text` field and enough tokens for the run. Local JSON, 
 Hub datasets, Alpaca instructions and text-only chats are also supported.
 
 You keep **adapter tensors, tokenizer files, a manifest, and a run report**. Data is validated and tokenized before
-weights load. Short datasets require `--repeat-data`; existing adapter directories are never overwritten.
+weights load. A plan that would read the dataset more than once is refused unless you pass `--epochs N` or
+`--repeat-data`; existing adapter directories are never overwritten.
 
 ```python
 from loggetta import load_adapter
@@ -57,7 +58,8 @@ from loggetta import load_adapter
 model = load_adapter("adapters/my-adapter", device="cuda")
 ```
 
-Training currently scores all tokens, including prompts. Adapters use the native runtime format, not PEFT or
+By default, chat data trains only the assistant turns and Alpaca data only the response; plain text and `--loss all`
+score every token. Adapters use the native runtime format, not PEFT or
 optimizer-resume checkpoints. Save/reload passes real-adapter CPU tests; the full CUDA integration test remains unverified.
 [Training and reload guide](https://github.com/pjordanandrsn/loggetta/blob/main/docs/TRAINING.md)
 
@@ -104,7 +106,7 @@ The packages can also be used independently. [Architecture and ownership](https:
 - [Training and adapter reload](https://github.com/pjordanandrsn/loggetta/blob/main/docs/TRAINING.md)
 - [Results and memory-estimate checks](https://github.com/pjordanandrsn/loggetta/blob/main/docs/RESULTS.md)
 - [Serving placement tests](https://github.com/pjordanandrsn/loggetta/blob/main/docs/SERVING-PRESSURE-TEST.md)
-- [Current project state](https://github.com/pjordanandrsn/loggetta/blob/main/docs/SESSION-REPORT.md)
+- [Session report, 2026-10-04/05 (dated; predates dataset training)](https://github.com/pjordanandrsn/loggetta/blob/main/docs/SESSION-REPORT.md)
 - [Research, releases, and machine-readable evidence](https://cerinamroth.com/ml/)
 
 <details>

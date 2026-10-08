@@ -4,8 +4,10 @@ A user dataset is validated and tokenized, every row, before the plan is made (:
 :func:`profile <encode_dataset>` is an input to the planner, like the hardware inventory. Execution tokenizes it
 again, refuses to continue if the result differs from the profile the plan was made from, and packs it into a
 temporary, memory-mapped fixed-shape token file before the model loads. The receipt identifies the source and the
-exact token stream, not the contents of private examples. Loss covers all tokens, including instruction/chat
-prompts. Packing joins examples with EOS; it does not isolate their attention.
+exact token stream, not the contents of private examples. By default chat data trains only the assistant turns and
+Alpaca data only the response (``--loss``), and their examples are packed in isolation: positions restart per example
+and no example attends across its boundary (``--packing``). Plain text, and ``--packing concat``, join examples with
+EOS without isolating their attention; ``--loss all`` trains every token.
 """
 from __future__ import annotations
 
