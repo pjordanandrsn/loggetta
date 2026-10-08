@@ -484,6 +484,19 @@ def test_a_receipt_licensed_for_some_uses_teaches_only_those(topo):
     assert lines["host growth while serving"].bytes == 700 << 20 and "allocator residual" in " ".join(lines)
 
 
+@pytest.mark.parametrize("metadata", [{}, {"plan": None}, {"plan": {}},
+                                      {"plan": {"constraints": None}}])
+def test_nullable_plan_metadata_preserves_observation_licensing(metadata):
+    from loggetta.planner import OVERHEAD_USES, licensed
+
+    for use in OVERHEAD_USES:
+        assert licensed(metadata, use)
+        assert licensed({**metadata, "licensed_for": ["reserve"]}, use) == (use == "reserve")
+        for tag in ("dq7", "dq9", "dq10"):
+            assert not licensed({**metadata, tag: {}, "licensed_for": list(OVERHEAD_USES)}, use)
+    assert not licensed({"plan": {"constraints": {"dense_reserve_policy": "dq10"}}}, "reserve")
+
+
 def test_reserve_matches_the_whole_setup_then_its_shape_then_its_key_fields():
     """Tier budgets move a few one-time allocations, not the workload's transient ones: a receipt that differs from the
     candidate only in the fields the planner sizes (lanes SV4 and SV6: 4.1% and 3.8% at two VRAM tiers of one 8 x 8192
