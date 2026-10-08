@@ -1,6 +1,8 @@
 """Check a serve plan against the paged server it describes: plan, build ``serve_paged``'s engine with exactly the
 plan's environment (``ServeSetup.to_env``), decode, and write an ``execution-receipt/1`` with the measured peaks
-beside the estimate.
+beside the estimate. At ``--concurrency 1`` it also traces the engine's steps (``E4B_PAGED_STEP_TRACE``) and records
+the single-stream decode step (``measured.decode_step_ms_b1``, :func:`loggetta.measure.decode_step_b1`): the figure a
+plan of this same setup on this GPU, driver and experts4bit-qlora version may then quote, labelled measured.
 
     python bench/serve_validate.py allenai/OLMoE-1B-7B-0924 --arena ARENA --calib CALIB --context 4096 \
         --concurrency 4 --hardware evidence/.../hardware-profile.json --observations evidence/... --out runs/receipts
@@ -127,6 +129,18 @@ def main():
                     load_reserved_peak_bytes=torch.cuda.max_memory_reserved(),
                     host_anon_after_load_bytes=proc_status().get("RssAnon"))
         smi.mark(meas["host_anon_after_load_bytes"] or 0)
+        tracer, trace_path = None, None
+        if a.concurrency == 1:              # the single-stream decode step, from the engine's own step trace
+            try:
+                from experts4bit_qlora.engines.step_trace import StepTrace
+            except ImportError:
+                StepTrace = None
+            if StepTrace is not None and hasattr(parts.scheduler, "tracer"):
+                trace_path = os.path.join(a.out, run_id + ".steps.jsonl")
+                tracer = StepTrace(trace_path, cuda=True)
+                parts.scheduler.tracer = tracer
+                if parts.runner is not None and hasattr(parts.runner, "tracer"):
+                    parts.runner.tracer = tracer
         g = torch.Generator().manual_seed(0)
         vocab = int(getattr(parts.tokenizer, "vocab_size", 0) or 32000)
         n_prompt = min(a.prompt_tokens, a.context - a.new_tokens - 1)
@@ -137,6 +151,13 @@ def main():
         steps = parts.scheduler.run_until_idle()
         torch.cuda.synchronize()
         dt = time.time() - t1
+        if tracer is not None:
+            tracer.close()
+            from loggetta.measure import decode_step_b1
+
+            b1 = decode_step_b1([json.loads(ln) for ln in open(trace_path) if ln.strip()])
+            if b1:
+                meas.update(b1, step_trace=os.path.basename(trace_path))
     alloc, reserved = torch.cuda.max_memory_allocated(), torch.cuda.max_memory_reserved()
     meas.update(device_peak_bytes=alloc, device_reserved_peak_bytes=reserved, driver_process_peak_bytes=smi.peak or None,
                 driver_samples=smi.samples, cuda_context_bytes=(smi.peak - reserved) if smi.peak else None,
