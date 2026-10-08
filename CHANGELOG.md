@@ -10,6 +10,8 @@
   - Parameter counts, tied heads, and attention implementations are reported, including softcapping that SDPA would
     drop (Gemma 2), along with whether experts4bit-qlora's chunked loss covers the class.
   - MoE, pre-quantized and non-decoder models are refused in words.
+  - Config, model-build and chunked-loss errors become refusals naming the exception type; refused descriptions
+    can be copied or pickled without recursion.
   - Training plans for dense models come next. Today such a plan says the backend described the model but does not
     plan the workload yet.
 
