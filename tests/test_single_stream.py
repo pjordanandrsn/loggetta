@@ -108,7 +108,8 @@ def _gpu(name="RTX 5090", driver="595.71.05"):
 
 def _receipt(**over):
     rec = {"run_id": "serve-q3-c4096x1", "status": "OK", "model": {"model": "Qwen/Qwen3-30B-A3B"},
-           "workload": {"kind": "serve", "context_len": 4096, "concurrency": 1},
+           "workload": {"kind": "serve", "context_len": 4096, "concurrency": 1, "prompt_tokens": 1024,
+                        "new_tokens": 64},
            "setup": dict(SETUP), "hardware": {"gpu": {"name": "RTX 5090", "driver": "595.71.05"}},
            "provenance": {"versions": dict(VERS)},
            "measured": {"decode_step_ms_b1": 4.64, "decode_device_ms_b1": 4.31, "decode_steps_b1": 63}}
@@ -130,6 +131,15 @@ def test_a_receipt_of_exactly_this_setup_is_quoted_as_measured():
     assert p["estimate"]["tokens_per_s_b1"] == pytest.approx(215.5, abs=0.1)
     assert p["estimate"]["receipt"] == "serve-q3-c4096x1"
     assert "measured on this setup" in p["statement"] and "serve-q3-c4096x1" in p["statement"]
+    assert "after a 1024-token prompt over 64 new tokens" in p["statement"]     # where in the KV it was measured
+    assert (p["estimate"]["prompt_tokens"], p["estimate"]["new_tokens"]) == (1024, 64)
+
+
+def test_a_receipt_without_its_lengths_is_still_quoted_without_them():
+    rec = _receipt(workload={"kind": "serve", "context_len": 4096, "concurrency": 1})
+    p = _perf([rec])
+    assert p["estimate"]["basis"] == "measured-same-setup" and "token prompt" not in p["statement"]
+    assert p["estimate"]["prompt_tokens"] is None
 
 
 @pytest.mark.parametrize("change", [
