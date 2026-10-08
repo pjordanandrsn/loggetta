@@ -27,8 +27,8 @@ The code and the tests are the source of truth; this file says where things live
 - Section 1 records the two lower packages as they were when this layer was started: experts4bit-qlora (e4b)
   v0.45.0, origin/main `7b3b6aa5`, and grouped-nf4-gemm (gnf4) v0.37.0, origin/main `c6455de`, inspected on
   2026-10-04.
-- The interfaces in section 4 are released in e4b 0.48.0 and gnf4 0.41.0. The serve estimate's later items are in
-  e4b's next release.
+- The interfaces in section 4 are released in e4b 0.48.0 and gnf4 0.41.0, except `min_hot_rows` and
+  `usable_buckets`, which first ship in e4b 0.49.0; until then the serve estimate falls back to its own rules.
 
 ## 1. What the two packages already were (from the code, not the READMEs)
 
@@ -139,7 +139,7 @@ setup_refusals(topology, QLoRASetup) -> tuple[str]                             #
 estimate_qlora_footprint(topology, QLoRASetup, *, tokens_per_microbatch, optimizer) -> Footprint
 prepare_qlora_training(model_id, QLoRASetup, *, device, revision) -> PreparedQLoRA   # the run: e4b builds the setup
 estimate_serve_footprint(topology, ServeSetup) -> Footprint                    # paged server: all-VRAM and the solver's tiers
-min_hot_rows(topology, ServeSetup) -> int                                      # cold tier's floor (next e4b release)
+min_hot_rows(topology, ServeSetup) -> int                                      # cold tier's floor (e4b 0.49.0, next release)
 fused_append_unsupported(capability) -> str | None                             # where decode graphs cannot run
 ServeSetup.to_env() -> {"E4B_PAGED_*": str}                                    # what serve_paged reads back
 ```
@@ -154,6 +154,11 @@ ServeSetup.to_env() -> {"E4B_PAGED_*": str}                                    #
   gpu)`, and `relaxed_candidates(...)` (setups outside the caller's constraints, with the words for the change, which
   the planner prices into a refusal's suggestions);
 - for serving: `fill_knobs`, `resolve`, `SLACK_DEFAULTS`;
+- `isolation_refusal(topology)`: why isolated packing cannot isolate examples in this model (a layer that mixes
+  tokens through a state, or attention the backend cannot describe), or `None`. A backend without it is treated as
+  able to isolate;
+- `BUDGET_FIELDS`: per workload kind, the setup fields the planner sizes as budgets (serve: `vram_gb`, `dram_gb`,
+  `hot_rows`), which reserve matching treats as the same workload shape;
 - the handoff: `executor(kind)` returns the function that runs a feasible plan of that workload kind, or `None` when
   the kind is planned only (serve, today); `run_tag(setup)` names the setup in a receipt's run id.
 
@@ -213,8 +218,10 @@ Nothing is loaded before step 4, and nothing in this module knows how a model ru
 **The experts4bit executor** (`backends/experts4bit_train.py`) has `prepare_qlora_training` build the model from
 exactly the selected setup. Loading, the 4-bit stores, adapters, the fused engines, offload and kernels are e4b's.
 Around it, the executor adds only the measured loop:
-- packed alpaca blocks of fixed shape;
-- AdamW or AdamW8bit, clip 1.0;
+- the plan's data packed into fixed-shape rows (concatenated, or isolated with per-example positions and
+  `use_cache=False`), with loss masks where the loss is not full-sequence;
+- AdamW or AdamW8bit, clip 1.0, the plan's learning-rate schedule, and gradient accumulation weighted by trained
+  tokens;
 - timing, memory sampling, and the integrity checks.
 
 **The receipt carries:**
@@ -240,8 +247,15 @@ Around it, the executor adds only the measured loop:
 **Receipts are the planner's evidence** (`--observations DIR`, `load_observations`). Each lookup says which receipt
 it used, and with what basis:
 - the CUDA context and host baseline for the same GPU and driver;
-- allocator reserve slack, matched by setup key, model, GPU and workload kind. Where none matches, it is transferred
-  through an anchor model (heuristic);
+- allocator reserve slack, matched by setup key, model, GPU and workload kind (`reserve_fraction`), in order:
+  1. this GPU, setup and model (same-shape receipts first);
+  2. training only: the same model and setup on another GPU, transferred through an anchor model;
+  3. this GPU and setup, another model;
+  4. the largest slack measured on this GPU;
+  5. serving only: the largest slack for this setup on any GPU (heuristic);
+  6. the default.
+
+  A receipt scoped by `licensed_for` counts only as same-setup evidence;
 - the measured host-to-device bandwidth;
 - for serving, this model's allocator residual and host growth;
 - an earlier measured peak for an identical setup.
@@ -288,7 +302,7 @@ _See `docs/RESULTS.md`._
 - the package directory;
 - `pyproject.toml` (name, script);
 - the README title and this repo's name;
-- the PyPI project (`0.0.1` is reserved under the current name).
+- the published PyPI project `loggetta`.
 
 **What a rename does not touch:**
 - No serialized format names the project: `execution-plan/1`, `execution-receipt/1`, `estimate-validation/1`.
@@ -300,7 +314,7 @@ _See `docs/RESULTS.md`._
 appears.
 
 
-## User data and adapter artifacts (0.2.0)
+## User data and adapter artifacts (0.3.0)
 
 Optional `Workload.data` and `Workload.learning_rate` fields extend `execution-plan/1`; old plans load with their
 original Alpaca demonstration and learning-rate defaults, and serializing those defaults keeps the old wire shape.
@@ -317,6 +331,12 @@ safetensors plus a manifest and tokenizer files. No full model state_dict, froze
 or private training-example text is included. The public `load_adapter` function delegates to that backend helper.
 It is a native artifact, not a PEFT conversion or an exact training-resume checkpoint.
 
+**0.3.0.** With `--dataset`, the data is now read, validated and tokenized before planning, and the plan carries the
+resulting `data_profile`. `Workload` gains the optional fields `epochs`, `lr_schedule` and `warmup_steps`, and
+`ExecutionPlan` gains `data_profile`; as before, serializing their defaults keeps the old wire shape. `execute` re-tokenizes the data and
+refuses to load weights if the result differs from the plan's profile. Reports label the resolved loss
+(assistant-only or full-sequence) and packing (isolated or concatenated).
+
 Exports never overwrite an existing directory. Export errors mark the report `SAVE_FAILED`; integrity failures
-suppress adapter export. The data record identifies the actual token stream and explicitly labels full-sequence
-loss, concatenated packing, shuffling and repetition. GPU throughput claims still require measured GPU runs.
+suppress adapter export. The data record identifies the actual token stream and explicitly labels the loss, the
+packing, shuffling and repetition. GPU throughput claims still require measured GPU runs.

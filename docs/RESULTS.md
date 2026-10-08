@@ -14,7 +14,8 @@ Runs write raw receipts under `runs/receipts/`; curated public evidence is commi
 
 ## 1. One real workload through the planner
 
-`python -m loggetta train allenai/OLMoE-1B-7B-0924 --seq 512 --micro-batch 2 --steps 12`:
+`python -m loggetta train allenai/OLMoE-1B-7B-0924 --seq 512 --micro-batch 2 --steps 12` (run at a constant 2e-4,
+before the learning-rate schedule existed; add `--lr-schedule constant` to reproduce it now):
 
 1. took the hardware inventory;
 2. described OLMoE from its config (16/16 MoE layers, E=64, H=2048, I=1024, top-8; 6.44B expert + 0.48B dense
@@ -721,14 +722,53 @@ comes from SV4's same-shape arm. That read licenses no change in experts4bit-qlo
 data, as it always has. The plan is a planner output, not a measured one, and a lane registered first would check it on
 the card.
 
+## 6l. SV7: the re-matched 24 GB plan, run at the longest prompts
+
+Lane SV7 is experts4bit-qlora#1294 ($5 cap within the owner's $50), run in order:
+- the registration (#1297) merged after review;
+- a driver-sampler amendment (#1308) merged after review between its two boxes;
+- the read (#1310) was reviewed before it merged.
+
+It tested 6k's plan: Qwen3-30B at 8 × 8192 on an RTX 4090. That plan uses the solver's tiers at VRAM 13.143 GiB (5,316
+expert rows on the GPU, against SV6's 5,109), with a reserve borrowed from SV4's same-shape arm, 22.344 GiB planned.
+
+- **The boxes:**
+  - `sv7-4090-1` ($0.61): its container listed host-namespace PIDs, so the driver sampler took no samples and V1/V2
+    could not be read. The amendment adds a sole-process fallback.
+  - `sv7-4090-2` ($0.41): every sample matched by PID.
+  - Lane total $1.02.
+
+| arm (`sv7-4090-2`) | estimate | allocator peak | reserved − allocated | driver peak | plan |
+|---|---|---|---|---|---|
+| 8 × 1,024-token prompts | 20.987 | 19.681 (−6.2%) | 400 MiB | 20.527 | 22.344 |
+| 8 × 8,000-token prompts | 20.987 | 20.657 (−1.6%) | 823 MiB | 21.916 | 22.344 |
+
+All values GiB unless marked.
+
+- **All five readings held.** The plan fits, and its driver peak was 0.43 GiB under the plan. The borrowed reserve
+  (877 MiB) covered the allocator's cached blocks (823 MiB). The estimate read −1.6%, and the tier rows were exact.
+- **The prediction from SV6**, registered before either box: allocator about 20.66 GiB, cached blocks about 0.78 GiB,
+  driver peak about 21.9 GiB. Measured: 20.657, 0.80 and 21.916.
+- **V3 held at 94% of the borrowed reserve in both runs.** The same-shape rule stands for this shape and card class,
+  with little room to stretch it further.
+- **What the planner takes.** The registration licenses `sv7-4090-2`'s receipts for the reserve and the context on
+  this class, and nothing more. They are imported with `licensed_for: [reserve, context]`; `sv7-4090-1`'s are not
+  imported, since its V2 is NO_READING. Replanned (`evidence/2026-10-07-sv7-rtx4090/replan-24gb.txt`):
+  - this exact setup's reserve is now SV7's own 3.9% (0.817 GiB), and the plan 22.304 GiB;
+  - the split is unchanged, because scoped receipts count only for their own setup;
+  - SV7's host growth while serving (4.3 GB at long prompts) stays out.
+
 ## 7. Not measured, said plainly
 
 - **No performance model.** Speed is ordered from evidence, never predicted, apart from the transfer lower bound.
 - **The activation heuristic** is a formula, checked against nine allocator peaks (three here, six in the
   register), not derived.
-- **Qwen3-30B ran once, on a rented RTX 5090 (FP1).** Every other model above 8B was planned, not run.
-- **Serving** is planned at both placements. All-VRAM is checked on two model/card pairs. The solver's tiers are
-  checked on one model and card (OLMoE, A2000) and assume uniform routing, as the server does. The int4 levers
+- **Training above 8B ran only on Qwen3-30B-A3B, on a rented RTX 5090 (FP1).** Every other model above 8B was planned
+  for training, not trained. Serving above 8B ran on Qwen3-30B-A3B, Qwen3.6-35B-A3B, ERNIE-4.5-21B-A3B and
+  gpt-oss-20b (6c, 6g).
+- **Serving** is planned at both placements. It has run on six families (OLMoE, Granite-3.1, Qwen3-30B, Qwen3.6,
+  ERNIE-4.5, gpt-oss-20b) across three cards (A2000, RTX 4090, RTX 5090). The solver's tiers are checked on OLMoE and
+  ERNIE-4.5 (A2000) and Qwen3-30B (RTX 4090), and assume uniform routing, as the server does. The int4 levers
   are priced and checked on OLMoE / A2000 (6e) and Qwen3-30B / RTX 5090 with decode graphs (6f), and planned only
   when fixed. A measured routing profile and
   decode speed are not planned; see `SERVING-PRESSURE-TEST.md`.

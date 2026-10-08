@@ -12,6 +12,17 @@
   - MoE, pre-quantized and non-decoder models are refused in words.
   - Training plans for dense models come next. Today such a plan says the backend described the model but does not
     plan the workload yet.
+
+## 0.3.0 — 2026-10-08
+
+**0.3.0.** Train on your own data and keep the adapters. This is the first PyPI release since 0.1.3; 0.2.0 was never
+published, and its work ships here. Loggetta now reads your dataset (local files or the Hub), checks and tokenizes it before
+any model loads, plans from what it found, trains on assistant tokens with isolated packing and a cosine schedule by default,
+and exports a reusable adapter. Upgrade if you want to train on your own data. It needs experts4bit-qlora 0.49.0 or later
+(0.48.0 fails under transformers 5.19 and lacks the planner's row and bucket controls).
+
+### Training defaults and planning from the data
+
 - **Isolated packing by default for chat and alpaca data** (`--packing auto|concat|isolated`).
   - Whole examples go into rows (deterministic best fit), positions restart per example, and an example's first token
     and the row padding never train. transformers then keeps each example's attention to itself; the loop passes
@@ -47,12 +58,14 @@
 - **Plans use the profile.**
   - A plan that would read past the data without `--repeat-data` is refused, with the steps that read it once.
   - `--epochs N` derives the steps.
-  - Examples longer than `--seq` are counted, because packing splits them.
+  - Examples longer than `--seq` are counted: concatenated packing splits them, isolated packing truncates them,
+    and the plan states the tokens dropped.
 - **`execute` re-tokenizes and checks.** It refuses data or a tokenizer that changed since planning, before any
-  weights load. The packed token stream is identical to 0.2.0's for the same seed.
+  weights load. With concatenated packing and full-sequence loss, the packed token stream is identical to 0.2.0's
+  for the same seed; chat and Alpaca data now default to isolated packing, whose stream differs.
 - Plans without a profile (older plans, the Alpaca demonstration) keep the 0.2.0 behaviour and wire shape.
 
-## 0.2.0
+### Your data and reusable adapters (developed as 0.2.0, never published)
 
 - Accept local JSON/JSONL/CSV/Parquet/TXT files and Hub datasets, with split/config/revision selection.
 - Add explicit text, Alpaca, and text-only chat formats, column mapping, seeded shuffle, and opt-in repetition.
