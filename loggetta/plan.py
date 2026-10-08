@@ -252,7 +252,7 @@ class ExecutionPlan:
             out += ["", "Warnings"] + [f"  - {x}" for x in self.warnings]
         if self.performance:
             out += ["", f"Performance  {self.performance.get('statement')}"]
-        if self.selected is not None and self.selected.bounds:
+        if self.selected is not None and "s_per_step_lower_bound" in self.selected.bounds:
             b = self.selected.bounds
             out.append(f"  transfer bound  >= {b['s_per_step_lower_bound']:.2f} s/step: {b['link_bytes_per_step'] / 1e9:.2f} GB "
                        f"host-to-device per step over <= {b['link_gbps']:.2f} GB/s [{b['link_gbps_basis']}: {b['link_gbps_source']}]")

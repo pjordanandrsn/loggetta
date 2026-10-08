@@ -490,6 +490,8 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
         owner = None
     admitted = [b for b, why in refusals if why is None]
     owner = admitted[0] if admitted else (owner or (backends[0] if backends else None))
+    if owner is not None:
+        warnings += getattr(owner, "planning_warnings", lambda *a: [])(topology)
     common = dict(model=owner.summary(topology) if owner else {"model": getattr(topology, "model", None)},
                   hardware=_hw_dict(hardware, gpu), workload=workload, constraints=constraints, budget=budget,
                   data_profile=data_profile)
@@ -574,11 +576,14 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
             host = sum(ln.bytes for ln in lines if ln.where == "host")
             return lines, dev, host, unmodelled, refusals
 
+        def candidate_headroom(setup, device_bytes):
+            return max(headroom, getattr(b, "minimum_headroom", lambda *a: 0)(setup, device_bytes))
+
         def side_fits(setup, side):
             lines, dev, host, _, refusals = price(setup)
             if refusals:
                 return False
-            return dev + headroom <= dev_budget if side == "device" else host + host_headroom <= host_budget
+            return dev + candidate_headroom(setup, dev) <= dev_budget if side == "device" else host + host_headroom <= host_budget
 
         for setup in b.candidates(topology, workload, constraints, st):
             # knobs a backend asks the planner to size: the largest value its side of the budget allows (policy).
@@ -604,19 +609,20 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
                 setup = b.resolve(topology, setup, workload)
             lines, dev, host, unmodelled, refusals = price(setup)
             rejected = list(refusals)
-            bounds = {}
+            required_headroom = candidate_headroom(setup, dev)
+            bounds = ({"device_headroom_bytes": required_headroom} if required_headroom != headroom else {})
             link = sum(ln.bytes for ln in lines if ln.where == "link") * workload.grad_accum
             if link and link_gbps:
-                bounds = {"link_bytes_per_step": link, "link_gbps": link_gbps, "link_gbps_basis": link_basis,
-                          "link_gbps_source": link_src, "s_per_step_lower_bound": link / (link_gbps * 1e9)}
-            if not refusals and bounds and constraints.target_s_per_step is not None and \
+                bounds.update({"link_bytes_per_step": link, "link_gbps": link_gbps, "link_gbps_basis": link_basis,
+                          "link_gbps_source": link_src, "s_per_step_lower_bound": link / (link_gbps * 1e9)})
+            if not refusals and "s_per_step_lower_bound" in bounds and constraints.target_s_per_step is not None and \
                     bounds["s_per_step_lower_bound"] > constraints.target_s_per_step:
                 rejected.append(f"host-to-device traffic alone needs >= {bounds['s_per_step_lower_bound']:.2f} s/step "
                                 f"({link / 1e9:.1f} GB over <= {link_gbps:.1f} GB/s, {link_basis}); target is "
                                 f"{constraints.target_s_per_step:g} s/step")
             if not refusals:
-                if dev + headroom > dev_budget:
-                    rejected.append(f"device {dev / GiB:.2f} + headroom {headroom / GiB:.2f} GiB > budget "
+                if dev + required_headroom > dev_budget:
+                    rejected.append(f"device {dev / GiB:.2f} + headroom {required_headroom / GiB:.2f} GiB > budget "
                                     f"{dev_budget / GiB:.2f} GiB")
                 if host + host_headroom > host_budget:
                     rejected.append(f"host {host / GiB:.2f}" + (f" + headroom {host_headroom / GiB:.2f}" if host_headroom
@@ -643,6 +649,9 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
         valid = [c for c in infeasible if not any("refus" in r or "cannot" in r or "must be" in r for r in c.rejected)
                  and all(r.startswith(("device ", "host ", "host-to-device traffic")) for r in c.rejected)]
         closest = min(valid or infeasible, key=lambda c: (c.device_bytes, c.host_bytes))
+        closest_backend = next(b for b in usable if b.NAME == closest.backend)
+        warnings += getattr(closest_backend, "scope_warnings", lambda *a: [])(topology, closest.setup, workload)
+        budget["headroom"] = closest.bounds.get("device_headroom_bytes", headroom)
         why = [f"{closest.label()}: " + "; ".join(closest.rejected)]
         if not valid:
             why = sorted({r for c in infeasible for r in c.rejected})
@@ -656,10 +665,12 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
                                       "suggestions": suggestions}, **common)
 
     sel = feasible[0]
+    budget["headroom"] = sel.bounds.get("device_headroom_bytes", headroom)
     st = statuses[sel.backend]
     b = next(x for x in usable if x.NAME == sel.backend)
     reasons += b.explain(sel, feasible, infeasible, budget, st, constraints, workload)
     warnings += getattr(b, "plan_warnings", lambda *a: [])(sel.setup, gpu)
+    warnings += getattr(b, "scope_warnings", lambda *a: [])(topology, sel.setup, workload)
     return ExecutionPlan(status="feasible", selected=sel, alternatives=tuple(feasible[1:]) + tuple(infeasible),
                          reasons=tuple(reasons), warnings=tuple(warnings), performance=perf,
                          provenance={"backend_versions": st.versions}, **common)
@@ -682,7 +693,8 @@ def _suggest(topology, workload, constraints, budget, closest, backends, statuse
             raw, _, refusals = b.estimate(topology, setup, workload)
             dev = int((1 + reserve_frac) * sum(r[2] for r in raw if r[1] == "device")) + sum(x.bytes for x in dev_over)
             host = sum(r[2] for r in raw if r[1] == "host") + sum(x.bytes for x in host_over)
-            if not refusals and dev + budget["headroom"] <= budget["device"] and host <= budget["host"]:
+            margin = max(budget["headroom"], getattr(b, "minimum_headroom", lambda *a: 0)(setup, dev))
+            if not refusals and dev + margin <= budget["device"] and host <= budget["host"]:
                 out.append(f"{words}: {dev / GiB:.2f} GiB device + {host / GiB:.2f} GiB host fits")
                 break
         else:

@@ -586,6 +586,46 @@ def residency(setup: dict) -> str | None:
     return {"device": "device", "stream": "host"}.get(setup.get("placement"))
 
 
+# Conservative admission policy after DQ7, separate from every estimator coefficient and reserve fraction.
+DQ7_STREAM_HEADROOM = 2_400_000_000  # decimal bytes, rounded above the observed maximum 2,395,904,403 B
+DQ7_RESULTS = "https://github.com/pjordanandrsn/experts4bit-qlora/blob/main/bench/dq7/RESULTS-dq7.md"
+
+
+def planning_warnings(topology) -> list:
+    return ["Dense estimates are not calibrated out of sample: DQ7 measured driver device use up to 2.4 GB "
+            "above the full streamed plan and found Llama allocator underestimates. Streamed plans require "
+            "at least max(2.4 GB, 20% of the full device plan) headroom, even if less is requested. This empirical refusal "
+            "margin is not a general fit guarantee; the development executor opt-in remains. Evidence: " + DQ7_RESULTS]
+
+
+def minimum_headroom(setup, device_bytes=0) -> int:
+    """Mandatory streamed admission margin; never an allocator estimate or a calibrated reserve."""
+    return max(DQ7_STREAM_HEADROOM, -(-device_bytes//5)) if setup.get("placement") == "stream" else 0
+
+
+def scope_warnings(topology, setup, workload) -> list:
+    if setup.get("placement") != "stream":
+        return []
+    shape = (topology.model_type, topology.hidden_size, topology.intermediate_size,
+             topology.n_layers, topology.heads, topology.kv_heads, topology.head_dim, topology.vocab_size)
+    shapes = {("qwen3", 5120, 17408, 40, 40, 8, 128, 151936),
+              ("qwen3", 5120, 25600, 64, 64, 8, 128, 151936),
+              ("llama", 4096, 14336, 32, 32, 8, 128, 128256)}
+    upper = 2048 if shape == ("qwen3", 5120, 25600, 64, 64, 8, 128, 151936) else 4096
+    lower = 2048 if upper == 2048 else 512
+    if (shape not in shapes or not lower <= workload.seq_len <= upper
+            or workload.micro_batch != 1 or workload.grad_accum != 1 or workload.steps != 2
+            or setup.get("base") != "nf4" or setup.get("adapter_dtype") != "fp32"
+            or setup.get("r") != 16 or setup.get("alpha") != 32 or set(setup.get("targets", ())) != set(ROLES)
+            or setup.get("attn_impl") != "sdpa" or workload.optimizer != "adamw"
+            or workload.learning_rate != 2e-4 or workload.lr_schedule != "constant"
+            or setup.get("loss_chunk") != (0 if topology.model_type == "llama" else 512)):
+        return ["Streamed plan is outside DQ7's measured subject/sequence/recipe range (Qwen3-14B and Llama-3.1-8B "
+                "512-4096, Qwen3-32B 2048 only; two steps, micro-batch1/accum1, NF4 fp32 r16 SDPA AdamW). "
+                "The empirical headroom floor cannot establish fit beyond that range."]
+    return []
+
+
 def plan_warnings(setup: dict, gpu) -> list:
     if setup.get("placement") == "stream" and gpu.pcie_width_current.value and gpu.pcie_width_max.value and \
             gpu.pcie_width_current.value < gpu.pcie_width_max.value:

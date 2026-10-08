@@ -37,6 +37,20 @@ Inspect the selected setup before execution. Fix a priced field when needed, for
 `--fix placement=stream`. Estimates are not an out-of-memory guarantee; calibration has not licensed replacing
 the dense backend's inferred 20% reserve yet. `expandable_segments` remains a caller-controlled setting.
 
+DQ7's [actual executor reading](https://github.com/pjordanandrsn/experts4bit-qlora/blob/main/bench/dq7/RESULTS-dq7.md)
+is **VOID**: Qwen3-32B resident 4096 was refused before loading, and two registered anchor arms are missing.
+Completed Llama allocator estimates fall below their measured peaks at 2048/4096 in both placements. Every completed
+streamed full-device plan also understates sampled driver use, by as much as 2,395,904,403 bytes, despite its 20% reserve.
+The bitwise tiny CUDA proof passes; no successful out-of-sample or reserve calibration follows.
+
+Every dense plan therefore warns about this measurement. Streamed candidates require at least **2,400,000,000 bytes
+(2.4 GB decimal)** admission headroom, **20% of the full device estimate rounded up**, and the normal policy or caller-requested
+headroom, whichever is largest. A smaller `--headroom` cannot bypass it. This floor is rounded above the largest observed device-total
+shortfall; the proportional floor rounds above DQ7's maximum driver/plan ratio 1.196. A streamed plan outside the
+measured subjects, sequences or recipe carries another visible warning. Both floors are conservative admission policy. They do not change the allocator or reserve coefficients and cannot
+establish a general fit guarantee. The required margin is recorded in the plan budget and candidate bounds separately from all itemized estimates,
+so receipts and DQ4 allocator comparisons keep their original meanings. The development execution opt-in remains.
+
 The receipt identifies backend `dense`, echoes the setup and keeps allocator/reserved/driver peaks and step time
 alongside the estimate. Frozen integrity hashes the first and last decoder layers, including their offloaded homes
 and quantization states. It is explicitly sampled, not a hash of the whole checkpoint. A frozen-weight mutation or
