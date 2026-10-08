@@ -1,6 +1,10 @@
 """Dense adapter-training plans: candidates, the itemized estimate against experts4bit-qlora's measured DQ4 peaks,
 choices across card sizes and refusals. Configs are built in code; nothing is
 downloaded and no weight is read."""
+import hashlib
+import json
+from pathlib import Path
+
 import pytest
 
 tr = pytest.importorskip("transformers")
@@ -43,6 +47,69 @@ def q32():
 def allocator(c):
     return sum(ln.bytes for ln in c.lines if ln.where == "device"
                and not ln.name.startswith(("CUDA context", "allocator reserve")))
+
+
+@needs_offload
+@pytest.mark.parametrize("base", ["nf4", "bf16"])
+def test_small_frozen_weights_remain_priced_when_no_weight_reaches_streaming_threshold(base):
+    topology = dense.describe(tr.LlamaConfig(**SMALL))
+    setup = dict(base=base, placement="device", adapter_dtype="fp32", r=16, alpha=32,
+                 targets=("attn_in", "attn_out", "mlp_in", "mlp_out"), loss_chunk=0, attn_impl="sdpa")
+    resident, _, refused_r = dense.estimate(topology, setup, Workload(seq_len=64))
+    streamed, _, refused_s = dense.estimate(topology, {**setup, "placement": "stream"}, Workload(seq_len=64))
+    if refused_r or refused_s:
+        pytest.skip(f"the installed runtime cannot price this base: {refused_r or refused_s}")
+    def frozen_device(lines):
+        return sum(row[2] for row in lines if row[1] == "device"
+                   and row[0].startswith("frozen decoder linears"))
+    # All packed weights in this tiny architecture are below 1 MiB. Nothing moves, so no frozen bytes disappear.
+    assert frozen_device(resident) > 0 and frozen_device(streamed) == frozen_device(resident)
+    assert next(row[2] for row in streamed if row[0] == "frozen decoder linears, pinned host homes") == 0
+    # The retained frozen-weight charge must not absorb LoRA, which is already priced independently.
+    for name in ("LoRA adapters", "adapter gradients", "optimizer state (adamw)"):
+        assert next(row[2] for row in resident if row[0] == name) == next(row[2] for row in streamed if row[0] == name)
+
+
+@needs_offload
+def test_smollm3_keeps_36_mib_of_packed_kv_weights_on_device():
+    if not hasattr(tr, "SmolLM3Config"):
+        pytest.skip("SmolLM3 requires the registered transformers family")
+    topology = dense.describe(tr.SmolLM3Config(hidden_size=2048, intermediate_size=11008, num_hidden_layers=36,
+                                              num_attention_heads=16, num_key_value_heads=4, head_dim=128,
+                                              vocab_size=128256, max_position_embeddings=65536))
+    setup = dict(base="nf4", placement="stream", adapter_dtype="fp32", r=16, alpha=32,
+                 targets=("attn_in", "attn_out", "mlp_in", "mlp_out"), loss_chunk=0, attn_impl="sdpa")
+    lines, _, refused = dense.estimate(topology, setup, Workload(seq_len=512))
+    if refused:
+        pytest.skip(f"the installed runtime cannot price NF4 streaming: {refused}")
+    assert next(row[2] for row in lines if row[0] == "frozen decoder linears, kept on device") == 36 << 20
+    assert topology.n_layers == 36
+
+
+# Snapshotted from the committed pre-fix estimator and the exact DQ9 config files.
+# These are config-only estimates, with no model weights or hardware measurements.
+DQ9_FIXTURES = Path(__file__).parent / "fixtures" / "dq9"
+DQ9_REFERENCE = json.loads((DQ9_FIXTURES / "prior-estimates.json").read_text())
+
+
+@needs_offload
+@pytest.mark.parametrize("row", DQ9_REFERENCE["rows"],
+                         ids=lambda row: f"{row['subject']}-{row['placement']}-{row['seq']}")
+def test_kept_weight_correction_is_zero_on_every_dq9_subject_placement_and_rung(row):
+    config = DQ9_FIXTURES / (row["subject"] + ".json")
+    assert hashlib.sha256(config.read_bytes()).hexdigest() == DQ9_REFERENCE["config_sha256"][row["subject"]]
+    topology = dense.describe(str(config))
+    # Every frozen NF4 code matrix reaches the engine's unchanged 1 MiB cutoff.
+    assert min((lin.in_features * lin.out_features + 1) // 2 for lin in topology.layer_linears) >= 1 << 20
+    setup = dict(base="nf4", placement=row["placement"], adapter_dtype="fp32", r=16, alpha=32,
+                 targets=("attn_in", "attn_out", "mlp_in", "mlp_out"),
+                 loss_chunk=0 if row["subject"] == "llama31_8b" else 512, attn_impl="sdpa")
+    lines, _, refused = dense.estimate(topology, setup, Workload(seq_len=row["seq"], steps=2))
+    assert not refused
+    assert not any(line[0] == "frozen decoder linears, kept on device" for line in lines)
+    assert sum(line[2] for line in lines if line[1] == "device") == row["device_bytes"]
+    assert sum(line[2] for line in lines if line[1] == "device" and
+               line[0].startswith("frozen decoder linears")) == row["frozen_device_bytes"]
 
 
 def test_linear_biases_are_priced_once_with_the_other_parameters():

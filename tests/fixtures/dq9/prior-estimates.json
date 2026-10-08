@@ -1,0 +1,138 @@
+{
+  "schema": "dense-kept-frozen-reference/1",
+  "source_commit": "10cb4a69604fcd844c8c3c529f369a51d8a4f44a",
+  "source_sha256": "40fcd574d65e7aba1bad7b33f0113b835903bab74cf36e010f43daa6eedb6437",
+  "config_sha256": {
+    "llama31_8b": "54acfad3cffe057640904ca8a1e83525e6551c70c7a04c641f5a9eda0bbf64bd",
+    "qwen3_14b": "e73c3664ca09b10a673fef0c22e8a6b456201d49bd4713c9691f775720e8857a",
+    "qwen3_32b": "97e295b63283935788fac5e4f8860862a56d4089538cafc93f0431f2ebe483bb"
+  },
+  "rows": [
+    {
+      "subject": "llama31_8b",
+      "placement": "device",
+      "seq": 512,
+      "device_bytes": 7436872704,
+      "frozen_device_bytes": 3600416768
+    },
+    {
+      "subject": "llama31_8b",
+      "placement": "device",
+      "seq": 2048,
+      "device_bytes": 10275016707,
+      "frozen_device_bytes": 3600416768
+    },
+    {
+      "subject": "llama31_8b",
+      "placement": "device",
+      "seq": 4096,
+      "device_bytes": 14059208710,
+      "frozen_device_bytes": 3600416768
+    },
+    {
+      "subject": "llama31_8b",
+      "placement": "stream",
+      "seq": 512,
+      "device_bytes": 4165315584,
+      "frozen_device_bytes": 328859648
+    },
+    {
+      "subject": "llama31_8b",
+      "placement": "stream",
+      "seq": 2048,
+      "device_bytes": 7003459587,
+      "frozen_device_bytes": 328859648
+    },
+    {
+      "subject": "llama31_8b",
+      "placement": "stream",
+      "seq": 4096,
+      "device_bytes": 10787651590,
+      "frozen_device_bytes": 328859648
+    },
+    {
+      "subject": "qwen3_14b",
+      "placement": "device",
+      "seq": 512,
+      "device_bytes": 12164152001,
+      "frozen_device_bytes": 6815692800
+    },
+    {
+      "subject": "qwen3_14b",
+      "placement": "device",
+      "seq": 2048,
+      "device_bytes": 12920707844,
+      "frozen_device_bytes": 6815692800
+    },
+    {
+      "subject": "qwen3_14b",
+      "placement": "device",
+      "seq": 4096,
+      "device_bytes": 14749291153,
+      "frozen_device_bytes": 6815692800
+    },
+    {
+      "subject": "qwen3_14b",
+      "placement": "stream",
+      "seq": 512,
+      "device_bytes": 5888424641,
+      "frozen_device_bytes": 539965440
+    },
+    {
+      "subject": "qwen3_14b",
+      "placement": "stream",
+      "seq": 2048,
+      "device_bytes": 6644980484,
+      "frozen_device_bytes": 539965440
+    },
+    {
+      "subject": "qwen3_14b",
+      "placement": "stream",
+      "seq": 4096,
+      "device_bytes": 8473563793,
+      "frozen_device_bytes": 539965440
+    },
+    {
+      "subject": "qwen3_32b",
+      "placement": "device",
+      "seq": 512,
+      "device_bytes": 22798910977,
+      "frozen_device_bytes": 16098017280
+    },
+    {
+      "subject": "qwen3_32b",
+      "placement": "device",
+      "seq": 2048,
+      "device_bytes": 24317258957,
+      "frozen_device_bytes": 16098017280
+    },
+    {
+      "subject": "qwen3_32b",
+      "placement": "device",
+      "seq": 4096,
+      "device_bytes": 27013869978,
+      "frozen_device_bytes": 16098017280
+    },
+    {
+      "subject": "qwen3_32b",
+      "placement": "stream",
+      "seq": 512,
+      "device_bytes": 7683687937,
+      "frozen_device_bytes": 982794240
+    },
+    {
+      "subject": "qwen3_32b",
+      "placement": "stream",
+      "seq": 2048,
+      "device_bytes": 9202035917,
+      "frozen_device_bytes": 982794240
+    },
+    {
+      "subject": "qwen3_32b",
+      "placement": "stream",
+      "seq": 4096,
+      "device_bytes": 11898646938,
+      "frozen_device_bytes": 982794240
+    }
+  ]
+}
