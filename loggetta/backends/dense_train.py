@@ -138,6 +138,11 @@ def frozen_digest(model):
 
 
 def run(plan, *, seed=0, warmup=2, log=print, adapter_dir=None):
+    from ..execution import PlanNotExecutable
+    from . import dense
+
+    if plan.constraints.allow_development_executor is not True:
+        raise PlanNotExecutable(dense.planned_only_reason("train"))
     import torch
     from transformers import AutoTokenizer
 

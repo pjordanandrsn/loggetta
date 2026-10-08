@@ -180,17 +180,39 @@ def test_execute_dispatches_dense_and_preserves_setup(checkpoint, monkeypatch):
         seen["plan"] = received
         return {"status": "OK", "measured": {}, "correctness": {}, "engaged": {"backend": "dense"}, "data": {}}
 
-    monkeypatch.setattr(dense_train, "run", run)
-    monkeypatch.delenv("LOGGETTA_DENSE_EXECUTE", raising=False)
-    with pytest.raises(PlanNotExecutable, match="LOGGETTA_DENSE_EXECUTE=1"):
+    with pytest.raises(PlanNotExecutable, match="--allow-development-executor"):
         execute(p, hardware=hw(24), prov={"sources": {}}, log=lambda *a: None)
     assert not seen
-    monkeypatch.setenv("LOGGETTA_DENSE_EXECUTE", "1")
+    p = replace(p, constraints=replace(p.constraints, allow_development_executor=True))
+    monkeypatch.setattr(dense_train, "run", run)
     receipt = execute(p, hardware=hw(24), prov={"sources": {}}, log=lambda *a: None)
     assert seen["plan"] is p
     assert receipt["setup"] == p.selected.setup
     assert receipt["backend"] == "dense"
     assert receipt["plan"]["selected"]["backend"] == "dense"
+    assert receipt["plan"]["constraints"]["allow_development_executor"] is True
+
+
+def test_cli_saved_plan_development_opt_in_is_typed_and_default_is_omitted(checkpoint, tmp_path, monkeypatch):
+    from loggetta.cli import main
+    from loggetta import execution
+    from loggetta.plan import ExecutionPlan
+
+    directory, _ = checkpoint
+    p = make_plan(directory)
+    saved = tmp_path / "plan.json"
+    saved.write_text(p.to_json())
+    assert "allow_development_executor" not in p.to_dict()["constraints"]
+    assert not ExecutionPlan.from_dict(p.to_dict()).constraints.allow_development_executor
+    seen = []
+    def run(received, **kwargs):
+        seen.append(received.constraints.allow_development_executor)
+        return {"run_id": "fixture", "status": "OK"}
+    monkeypatch.setattr(execution, "execute", run)
+    monkeypatch.setattr(execution, "summarize", lambda _: "fixture")
+    assert main(["execute", str(saved)]) == 0
+    assert main(["execute", str(saved), "--allow-development-executor"]) == 0
+    assert seen == [False, True]
 
 
 def test_dense_integrity_detects_a_frozen_weight_mutation(checkpoint):

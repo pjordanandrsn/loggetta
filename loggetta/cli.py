@@ -71,6 +71,8 @@ def _common(p):
                    help="refuse setups whose host-to-device traffic alone provably exceeds this step time")
     p.add_argument("--observations", help="directory of earlier receipts: measured evidence the plan learns from")
     p.add_argument("--trust-remote-code", action="store_true")
+    p.add_argument("--allow-development-executor", action="store_true",
+                   help="explicitly permit an executor still awaiting its registered GPU proof")
     p.add_argument("--hardware", help="plan for a saved hardware profile (inspect --json) instead of probing this machine")
 
 
@@ -120,7 +122,8 @@ def _plan(a):
         hw = probe()
     c = Constraints(device=a.device, vram_budget=_gib(a.vram), ram_budget=_gib(a.ram), headroom=_gib(a.headroom),
                     expert_residency=None if a.experts == "any" else (a.experts,), fixed=_parse_fixed(a.fix),
-                    objective=a.objective, target_s_per_step=a.target_s_per_step)
+                    objective=a.objective, target_s_per_step=a.target_s_per_step,
+                    allow_development_executor=a.allow_development_executor)
     return plan(topo, hw, w, c, observations=load_observations(a.observations), data_profile=profile)
 
 
@@ -144,6 +147,8 @@ def main(argv=None) -> int:
     pe.add_argument("--out", default="receipts", help="receipt directory")
     pe.add_argument("--seed", type=int, default=0)
     pe.add_argument("--adapter-out", help="fresh adapter directory (default: OUT/RUN_ID/adapter)")
+    pe.add_argument("--allow-development-executor", action="store_true",
+                    help="explicitly permit an executor still awaiting its registered GPU proof")
     pt = sub.add_parser("train", help="plan, then execute a feasible plan through its backend and write a receipt")
     _common(pt)
     pt.add_argument("--out", default="receipts", help="receipt directory")
@@ -171,6 +176,9 @@ def main(argv=None) -> int:
 
         with open(a.plan) as f:
             p = ExecutionPlan.from_dict(json.load(f))
+        if a.allow_development_executor:
+            from dataclasses import replace
+            p = replace(p, constraints=replace(p.constraints, allow_development_executor=True))
     else:
         try:
             p = _plan(a)

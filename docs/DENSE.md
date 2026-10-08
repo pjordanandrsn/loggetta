@@ -3,7 +3,7 @@
 This is the development executor for dense training plans. The released MoE training path is unchanged. CPU tests
 exercise real tiny transformers models, PEFT adapters and e4b dense-offload handles; the CUDA/NF4 path and capacity
 calibration require the registered GPU proof and reading before a release claim.
-Execution requires the explicit opt-in `LOGGETTA_DENSE_EXECUTE=1` until the registered DQ7 CUDA proof passes.
+Execution requires the explicit opt-in `--allow-development-executor` until the registered DQ7 CUDA proof passes.
 
 ## What executes
 
@@ -29,7 +29,7 @@ Use the same data validation, assistant loss, packing and schedule controls as [
 
 ```sh
 loggetta plan Qwen/Qwen3-8B --dataset ./train.jsonl --format text --seq 512 --steps 20
-LOGGETTA_DENSE_EXECUTE=1 loggetta train Qwen/Qwen3-8B --dataset ./train.jsonl --format text --seq 512 --steps 20 \
+loggetta train --allow-development-executor Qwen/Qwen3-8B --dataset ./train.jsonl --format text --seq 512 --steps 20 \
   --out runs/dense --adapter-out adapters/dense
 ```
 

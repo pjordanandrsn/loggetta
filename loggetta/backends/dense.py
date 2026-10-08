@@ -566,11 +566,8 @@ def run_tag(setup: dict) -> str:
 
 
 def executor(kind: str):
-    """Opt in to the development executor pending DQ7; other workloads remain unimplemented."""
+    """Return the executor, which requires a typed development opt-in pending DQ7."""
     if kind == "train":
-        import os
-        if os.environ.get("LOGGETTA_DENSE_EXECUTE") != "1":
-            return None
         from .dense_train import run
 
         return run
@@ -580,8 +577,8 @@ def executor(kind: str):
 def planned_only_reason(kind: str) -> str:
     if kind == "train":
         return ("dense execution is a development executor pending the registered CUDA proof (DQ7); "
-                "set LOGGETTA_DENSE_EXECUTE=1 to run it; see "
-                "https://github.com/pjordanandrsn/loggetta/blob/main/docs/DENSE.md")
+                "use --allow-development-executor (Constraints.allow_development_executor=True) to run it; "
+                "see docs/DENSE.md")
     return f"the dense backend does not execute {kind!r} workloads"
 
 

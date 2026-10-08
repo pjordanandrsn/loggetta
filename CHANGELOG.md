@@ -8,7 +8,7 @@
   is checked against the loaded structure and echoed in a dense ExecutionReceipt. Sampled frozen-layer integrity,
   adapter movement, memory and timing share the measured loop with MoE. Dense adapters use PEFT with checksummed
   export/reload; existing MoE adapters retain their native format. PEFT >=0.21.2 is a base dependency for all installs;
-  0.21.2 is the tested floor. Dense execution requires `LOGGETTA_DENSE_EXECUTE=1` until the registered DQ7 proof passes.
+  0.21.2 is the tested floor. Dense execution requires `--allow-development-executor` until the registered DQ7 proof passes.
   CPU tiny-model checks cover exact checkpoint reconstruction, resident/streamed loss and gradient equality,
   actual chunked loss and adapter precision on reload. CUDA/NF4 and capacity calibration await a registered lane;
   this entry claims no new GPU measurement. The e4b floor remains 0.49.0.
