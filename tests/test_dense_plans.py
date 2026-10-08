@@ -1,5 +1,5 @@
 """Dense adapter-training plans: candidates, the itemized estimate against experts4bit-qlora's measured DQ4 peaks,
-choices across card sizes, refusals, and plans that say they are planned only. Configs are built in code; nothing is
+choices across card sizes and refusals. Configs are built in code; nothing is
 downloaded and no weight is read."""
 import pytest
 
@@ -152,15 +152,12 @@ def test_targets_choose_the_adapted_roles():
     assert f"{2 * per_layer:,} parameters" in lora.detail
 
 
-def test_dense_plans_are_planned_only():
-    from loggetta.execution import PlanNotExecutable, execute
-    from test_execution import hw as small_hw
+def test_dense_training_executor_is_available_and_serving_remains_planned_only():
+    from loggetta.backends.dense_train import run
 
-    t = dense.describe(tr.LlamaConfig(**SMALL))
-    p = plan(t, small_hw(), Workload(seq_len=64), backends=(dense,))
-    assert p.status == "feasible"
-    with pytest.raises(PlanNotExecutable, match="planned only in this release"):
-        execute(p, hardware=small_hw())
+    assert "pending the registered CUDA proof" in dense.planned_only_reason("train")
+    assert dense.executor("train") is run
+    assert dense.executor("serve") is None
 
 
 def test_a_moe_backends_receipts_do_not_set_a_dense_plans_reserve():

@@ -140,7 +140,7 @@ def run(plan, *, seed: int = 0, warmup: int = 2, log=print, adapter_dir: str | N
 
 
 def train_loop(model, trainable, model_id, w, smi, meas, *, revision=None, seed=0, warmup=2, log=print,
-               prepared_data=None, device="cuda") -> dict:
+               prepared_data=None, device="cuda", frozen_digest=None, frozen_kind="expert") -> dict:
     """The measured loop, shared by every arm that must be comparable: fixed-shape packed blocks, configurable AdamW learning rate,
     gradient accumulation, clip 1.0. Fills ``meas`` and returns the correctness record."""
     import torch
@@ -159,7 +159,8 @@ def train_loop(model, trainable, model_id, w, smi, meas, *, revision=None, seed=
         blocks, data_info = prepared_data.blocks, prepared_data.info
     is_cuda = torch.device(device).type == "cuda"
     sync = torch.cuda.synchronize if is_cuda else lambda: None
-    digest_before = _expert_digest(model)
+    digest = frozen_digest or _expert_digest
+    digest_before = digest(model)
     b_norm = lambda: sum(float(p.detach().float().norm()) for n, p in model.named_parameters()  # noqa: E731
                          if p.requires_grad and "lora_B" in n)
     b_norm_before = b_norm()
@@ -250,7 +251,7 @@ def train_loop(model, trainable, model_id, w, smi, meas, *, revision=None, seed=
     meas.update(step_seconds=step_s, s_per_step_median=statistics.median(timed),
                 tokens_per_s=w.tokens_per_microbatch * w.grad_accum / statistics.median(timed),
                 timed_steps=f"{warmup + 1 if len(step_s) > warmup else 1}..{w.steps}")
-    digest_after = _expert_digest(model)
+    digest_after = digest(model)
     b_norm_after = b_norm()
     third = max(1, len(losses) // 3)
     correctness = {
@@ -259,13 +260,13 @@ def train_loop(model, trainable, model_id, w, smi, meas, *, revision=None, seed=
         "loss_first_third_mean": statistics.mean(losses[:third]),
         "loss_last_third_mean": statistics.mean(losses[-third:]),
         "loss_decreased": statistics.mean(losses[-third:]) < statistics.mean(losses[:third]),
-        "frozen_expert_bytes_unchanged": digest_before == digest_after,
-        "frozen_expert_digest": digest_after,
-        "frozen_expert_checked_stacks": list(digest_before),
+        f"frozen_{frozen_kind}_bytes_unchanged": bool(digest_before) and digest_before == digest_after,
+        f"frozen_{frozen_kind}_digest": digest_after,
+        f"frozen_{frozen_kind}_checked_stacks": list(digest_before),
         "adapter_B_norm_before": b_norm_before,
         "adapter_B_norm_after": b_norm_after,
         "adapters_moved": b_norm_after > b_norm_before,
         "steps_without_trained_tokens": skipped,
     }
-    ok = correctness["all_finite"] and correctness["frozen_expert_bytes_unchanged"] and correctness["adapters_moved"]
+    ok = correctness["all_finite"] and correctness[f"frozen_{frozen_kind}_bytes_unchanged"] and correctness["adapters_moved"]
     return {"measured": meas, "correctness": correctness, "data": data_info, "status": "OK" if ok else "ALARM"}

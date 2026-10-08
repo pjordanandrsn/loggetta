@@ -57,6 +57,7 @@ def test_train_real_lora_export_reload_preserves_logits_and_frozen_base(tmp_path
         out = experts4bit_train.train_loop(model, [p for p in model.parameters() if p.requires_grad],
                                            "no-network", w, sampler, {}, prepared_data=prepared, device="cpu")
     assert out["status"] == "OK" and frozen_digest(model) == before
+    assert out["correctness"]["frozen_expert_digest"]
     path = tmp_path / "adapter"
     result = save_adapter(model, Tokenizer(), path, plan, data=out["data"], report={"commit": "abc123"}, seed=0)
     manifest = read_manifest(path)
@@ -70,6 +71,32 @@ def test_train_real_lora_export_reload_preserves_logits_and_frozen_base(tmp_path
     assert torch.equal(model(ids).logits, fresh(ids).logits)
     for trained, restored in zip(model.parameters(), fresh.parameters()):
         assert torch.equal(trained, restored)
+
+
+@pytest.mark.parametrize("empty", [False, True])
+def test_moe_loop_requires_a_nonempty_frozen_digest(tmp_path, monkeypatch, empty):
+    from experts4bit_qlora import ExpertsNbit
+    from loggetta.backends import experts4bit_train
+
+    model = TinyModel()
+    model.frozen_expert = ExpertsNbit(1, 64, 64, device="cpu")
+    with torch.no_grad():
+        model.frozen_expert.gate_up_proj.zero_()
+        model.frozen_expert.down_proj.zero_()
+        model.frozen_expert.gate_up_absmax.fill_(1)
+        model.frozen_expert.down_absmax.fill_(1)
+    if empty:
+        monkeypatch.setattr(experts4bit_train, "_expert_digest", lambda _: {})
+    spec = TrainingData(str(jsonl(tmp_path, [{"text": "abcdefghijklmno"}])))
+    workload = Workload(seq_len=4, steps=2, data=spec.to_dict())
+    sampler = SimpleNamespace(peak=0, interval=0, samples=0, anon_peak=0, shmem_peak=0, file_peak=0, required_peak=0)
+    with prepare_data(Tokenizer(), 2, 4, spec) as data:
+        result = experts4bit_train.train_loop(model, [p for p in model.parameters() if p.requires_grad],
+                                              "no-network", workload, sampler, {}, prepared_data=data, device="cpu")
+    assert result["correctness"]["adapters_moved"] and result["correctness"]["all_finite"]
+    assert result["status"] == ("ALARM" if empty else "OK")
+    assert bool(result["correctness"]["frozen_expert_digest"]) is (not empty)
+    assert result["correctness"]["frozen_expert_bytes_unchanged"] is (not empty)
 
 
 def make_artifact(tmp_path):

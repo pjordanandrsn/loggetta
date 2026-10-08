@@ -98,6 +98,8 @@ class Constraints:
     objective: str = "speed"
     #: refuse a candidate whose PROVABLE lower bound on step time exceeds this (seconds); never a prediction
     target_s_per_step: float | None = None
+    #: explicit permission for a backend executor still awaiting its registered GPU proof
+    allow_development_executor: bool = False
 
 
 @dataclass(frozen=True)
@@ -159,6 +161,8 @@ class ExecutionPlan:
 
     def to_dict(self) -> dict:
         out = asdict(self)
+        if out["constraints"]["allow_development_executor"] is False:
+            del out["constraints"]["allow_development_executor"]
         # Optional v1 additions: old plans still round-trip byte-for-byte, including their omitted defaults.
         if out["workload"]["data"] is None:
             del out["workload"]["data"]
