@@ -8,10 +8,11 @@
   is checked against the loaded structure and echoed in a dense ExecutionReceipt. Sampled frozen-layer integrity,
   adapter movement, memory and timing share the measured loop with MoE. Dense adapters use PEFT with checksummed
   export/reload; existing MoE adapters retain their native format. PEFT >=0.21.2 is a base dependency for all installs;
-  0.21.2 is the tested floor. Dense execution requires `--allow-development-executor` until the registered DQ7 proof passes.
+  0.21.2 is the tested floor. Dense execution requires `--allow-development-executor` pending prospective
+  capacity/calibration validation and DQ8’s registered 24 GB boundary.
   CPU tiny-model checks cover exact checkpoint reconstruction, resident/streamed loss and gradient equality,
-  actual chunked loss and adapter precision on reload. CUDA/NF4 and capacity calibration await a registered lane;
-  this entry claims no new GPU measurement. The e4b floor remains 0.49.0.
+  actual chunked loss and adapter precision on reload. The tiny CUDA/NF4 proof passed; DQ7’s capacity reading is
+  VOID and reserve calibration remains unlicensed. The e4b floor remains 0.49.0.
 - **Frozen integrity fails closed.** An empty sampled expert digest now marks a MoE run `ALARM`; checking no frozen
   bytes cannot pass integrity. Normal non-empty frozen expert digests retain their previous behavior.
 
@@ -26,14 +27,17 @@
   - **Checked in-sample:** the activation slope is fitted to DQ4, and against DQ4's measured peaks at Qwen3-32B the
     estimate is +1.9 to +3.1% resident and +3.0 to +8.7% streamed, never under.
   - **Out of sample, it misses** (experts4bit-qlora DQ7, RTX 5090, 2026-10-08; VOID as a lane because one anchor arm
-    could not run). The allocator estimate held on Qwen3-14B (+1.5 to +4.9%) but fell below the measured peak on
-    Llama-3.1-8B at 2048 and 4096 tokens (-2.0 to -6.4%). The plan's device total, reserve included, was below the
-    measured driver peak on every streamed arm, by up to 2.4 GB. So a dense plan is not yet a capacity guarantee,
+    could not run). Individual Qwen3-14B allocator estimates were above their observed peaks (+1.5 to +4.9%), while
+    estimates fell below the measured peak on Llama-3.1-8B at 2048 and 4096 tokens (-2.0 to -6.4%). The plan's device total, reserve included, was below the
+    measured driver peak on every streamed arm, by up to 2.4 GB, and on resident Llama 4096 by 820,943,251 bytes.
+    These partial observations do not license a capacity or calibration pass,
     and dense execution stays behind `--allow-development-executor`.
   - **Refused, in words:** streaming that would free nothing, attention that would change semantics, a sequence past
     the model's positions, int8.
-  - `bench/dense_plan_sweep.py` plans 14 real configs on 16–48 GB cards
-    (`evidence/2026-10-07-dense-plan-sweep`).
+  - `bench/dense_plan_sweep.py` plans 14 pinned configs on stated 16–48 GB cards
+    (`evidence/2026-10-08-dense-plan-sweep`; estimator-only, with enforced streamed headroom).
+    The unpinned 2026-10-07 table predates #26/#28. Comparing by model name, four feasible cells now refuse:
+    Qwen2.5-72B at 32 GB, Qwen3-32B at 16 GB, Gemma-2-9B and Gemma-3-12B at 24 GB. Neither table proves capacity.
 - **Reserve slack is learned per backend.** A plan's reserve, including the fallback, comes only from its own backend's
   receipts. The GPU's CUDA context and host baseline stay shared. Receipts that do not name their backend count as
   experts4bit's, so MoE plans are unchanged.

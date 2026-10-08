@@ -1,0 +1,16 @@
+| model | 16 GB | 24 GB (4090) | 32 GB (5090) | 48 GB |
+|---|---|---|---|---|
+| Qwen_Qwen2.5-72B-Instruct | refused (nf4 base, streamed): device 28.02 + headroom 5.60 GiB > budget 15.50 GiB | refused (nf4 base, streamed): device 28.02 + headroom 5.60 GiB > budget 23.52 GiB | refused (nf4 base, streamed): device 28.02 + headroom 5.60 GiB > budget 31.30 GiB | nf4 streamed 28.0 GiB |
+| Qwen_Qwen3-1.7B | bf16 resident 6.2 GiB | bf16 resident 6.2 GiB | bf16 resident 6.2 GiB | bf16 resident 6.2 GiB |
+| Qwen_Qwen3-14B | nf4 streamed 10.0 GiB | nf4 resident 17.0 GiB | nf4 resident 17.0 GiB | bf16 resident 38.7 GiB |
+| Qwen_Qwen3-32B | refused (nf4 base, streamed): device 13.80 + headroom 2.76 GiB > budget 15.50 GiB | nf4 streamed 13.8 GiB | nf4 streamed 13.8 GiB | nf4 resident 30.7 GiB |
+| Qwen_Qwen3-4B | bf16 resident 12.1 GiB | bf16 resident 12.1 GiB | bf16 resident 12.1 GiB | bf16 resident 12.1 GiB |
+| Qwen_Qwen3-8B | nf4 resident 11.1 GiB | nf4 resident 11.1 GiB | bf16 resident 22.5 GiB | bf16 resident 22.5 GiB |
+| microsoft_phi-4 | nf4 streamed 12.5 GiB | nf4 resident 19.8 GiB | nf4 resident 19.8 GiB | bf16 resident 42.0 GiB |
+| mistralai_Mistral-7B-v0.3 | nf4 resident 9.2 GiB | bf16 resident 20.7 GiB | bf16 resident 20.7 GiB | bf16 resident 20.7 GiB |
+| mistralai_Mistral-Small-24B-Base-2501 | refused (nf4 base, streamed): device 15.95 + headroom 3.19 GiB > budget 15.50 GiB | nf4 streamed 16.0 GiB | nf4 resident 27.8 GiB | nf4 resident 27.8 GiB |
+| unsloth_Llama-3.1-8B | nf4 streamed 12.6 GiB | nf4 resident 16.2 GiB | bf16 resident 27.7 GiB | bf16 resident 27.7 GiB |
+| unsloth_Llama-3.3-70B-Instruct | refused (nf4 base, streamed): device 25.71 + headroom 5.14 GiB > budget 15.50 GiB | refused (nf4 base, streamed): device 25.71 + headroom 5.14 GiB > budget 23.52 GiB | nf4 streamed 25.7 GiB | nf4 streamed 25.7 GiB |
+| unsloth_gemma-2-9b | refused (nf4 base, streamed): device 19.69 + headroom 3.94 GiB > budget 15.50 GiB | refused (nf4 base, streamed): device 19.69 + headroom 3.94 GiB > budget 23.52 GiB | nf4 resident 24.1 GiB | bf16 resident 37.8 GiB |
+| unsloth_gemma-3-12b-it | refused (nf4 base, streamed): device 20.89 + headroom 4.18 GiB > budget 15.50 GiB | refused (nf4 base, streamed): device 20.89 + headroom 4.18 GiB > budget 23.52 GiB | nf4 resident 26.6 GiB | bf16 resident 44.4 GiB |
+| unsloth_gemma-3-27b-it | refused (nf4 base, streamed): device 24.85 + headroom 4.97 GiB > budget 15.50 GiB | refused (nf4 base, streamed): device 24.85 + headroom 4.97 GiB > budget 23.52 GiB | nf4 streamed 24.9 GiB | nf4 resident 38.7 GiB |

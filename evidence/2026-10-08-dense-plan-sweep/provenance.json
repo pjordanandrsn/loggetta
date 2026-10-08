@@ -1,0 +1,24 @@
+{
+  "schema": "dense-sweep-provenance/1",
+  "loggetta_source_commit": "efe1c93d55a09a66d760f9f5f7a0232e15e7e5a0",
+  "python": "3.14.8",
+  "versions": {
+    "torch": "2.14.1",
+    "transformers": "5.18.0",
+    "experts4bit-qlora": "0.50.0",
+    "grouped-nf4-gemm": "0.43.0"
+  },
+  "source_sha256": {
+    "bench/dense_plan_sweep.py": "2438ec6c8f85aed0cf99b7f536d6c47f655d7fc4270173bcbd58e494616d31ca",
+    "loggetta/backends/dense.py": "5360f07597ddb337e1be0585c84a5fd59eda5c67ef955424b295e4ed169413bf",
+    "loggetta/planner.py": "a11116dd8ec7a29bf6aa96d6fc457834b2947f20cde6c06404f56102102b8f81",
+    "experts4bit_qlora/engines/dense_offload.py": "4542fc8ad6ebfda36a64029958b5230bbb2850bed9d2a7cedfa658ee0d012bf9",
+    "experts4bit_qlora/engines/chunked_lm_loss.py": "e9896786af62263dead1f4f9cb97af2d00bb6509cb2a08919e910d55d04f3e98"
+  },
+  "weights_read": false,
+  "gpu_measurement": false,
+  "receipts_used": false,
+  "capacity_licensed": false,
+  "recorded_at": "2026-10-08T21:30:12+00:00",
+  "output_written_at_from_filesystem_mtime": "2026-10-08T21:28:42+00:00"
+}

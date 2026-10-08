@@ -1,0 +1,119 @@
+{
+  "schema": "dense-sweep-inputs/1",
+  "original_input_identity": "UNKNOWN; old table has no pinned config bytes",
+  "comparison": "by model name only",
+  "sources": [
+    {
+      "model_id": "Qwen/Qwen2.5-72B-Instruct",
+      "revision": "495f39366efef23836d0cfae4fbe635880d2be31",
+      "config_sha256": "14ca217334fe0fd10148413592d68c99eeb33431ed89c1afa130fee560be2a29",
+      "config_path": "configs/Qwen_Qwen2.5-72B-Instruct.json",
+      "url": "https://huggingface.co/Qwen/Qwen2.5-72B-Instruct/resolve/495f39366efef23836d0cfae4fbe635880d2be31/config.json",
+      "retrieved_at": "2026-10-08T21:28:22+00:00"
+    },
+    {
+      "model_id": "Qwen/Qwen3-1.7B",
+      "revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+      "config_sha256": "1ddb5b89ebc90dcb417a45c213d818577e65976454d29385c8f6140771d95197",
+      "config_path": "configs/Qwen_Qwen3-1.7B.json",
+      "url": "https://huggingface.co/Qwen/Qwen3-1.7B/resolve/70d244cc86ccca08cf5af4e1e306ecf908b1ad5e/config.json",
+      "retrieved_at": "2026-10-08T21:28:22+00:00"
+    },
+    {
+      "model_id": "Qwen/Qwen3-14B",
+      "revision": "40c069824f4251a91eefaf281ebe4c544efd3e18",
+      "config_sha256": "e73c3664ca09b10a673fef0c22e8a6b456201d49bd4713c9691f775720e8857a",
+      "config_path": "configs/Qwen_Qwen3-14B.json",
+      "url": "https://huggingface.co/Qwen/Qwen3-14B/resolve/40c069824f4251a91eefaf281ebe4c544efd3e18/config.json",
+      "retrieved_at": "2026-10-08T21:28:22+00:00"
+    },
+    {
+      "model_id": "Qwen/Qwen3-32B",
+      "revision": "9216db5781bf21249d130ec9da846c4624c16137",
+      "config_sha256": "97e295b63283935788fac5e4f8860862a56d4089538cafc93f0431f2ebe483bb",
+      "config_path": "configs/Qwen_Qwen3-32B.json",
+      "url": "https://huggingface.co/Qwen/Qwen3-32B/resolve/9216db5781bf21249d130ec9da846c4624c16137/config.json",
+      "retrieved_at": "2026-10-08T21:28:22+00:00"
+    },
+    {
+      "model_id": "Qwen/Qwen3-4B",
+      "revision": "1cfa9a7208912126459214e8b04321603b3df60c",
+      "config_sha256": "8ba006f74fecfaaeb392872a60f4a480e7ec9860153d2e1b769ec81f9a147f8a",
+      "config_path": "configs/Qwen_Qwen3-4B.json",
+      "url": "https://huggingface.co/Qwen/Qwen3-4B/resolve/1cfa9a7208912126459214e8b04321603b3df60c/config.json",
+      "retrieved_at": "2026-10-08T21:28:22+00:00"
+    },
+    {
+      "model_id": "Qwen/Qwen3-8B",
+      "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+      "config_sha256": "f7c4eadfbbf522470667b797a3c89be2524832d2d599797248dc304fff447c30",
+      "config_path": "configs/Qwen_Qwen3-8B.json",
+      "url": "https://huggingface.co/Qwen/Qwen3-8B/resolve/b968826d9c46dd6066d109eabc6255188de91218/config.json",
+      "retrieved_at": "2026-10-08T21:28:22+00:00"
+    },
+    {
+      "model_id": "microsoft/phi-4",
+      "revision": "2db69c1c3e91a05d2c64a3185acfbaf36f744e25",
+      "config_sha256": "07eedad2c48798b6e3728e4a1b75e0e092019a375ba725a40e40c78d13664045",
+      "config_path": "configs/microsoft_phi-4.json",
+      "url": "https://huggingface.co/microsoft/phi-4/resolve/2db69c1c3e91a05d2c64a3185acfbaf36f744e25/config.json",
+      "retrieved_at": "2026-10-08T21:28:22+00:00"
+    },
+    {
+      "model_id": "mistralai/Mistral-7B-v0.3",
+      "revision": "caa1feb0e54d415e2df31207e5f4e273e33509b1",
+      "config_sha256": "affafc6478ec0fd07a32f0ca57aa2fc57743f4d17d6730f86a96ac24d1507f99",
+      "config_path": "configs/mistralai_Mistral-7B-v0.3.json",
+      "url": "https://huggingface.co/mistralai/Mistral-7B-v0.3/resolve/caa1feb0e54d415e2df31207e5f4e273e33509b1/config.json",
+      "retrieved_at": "2026-10-08T21:28:23+00:00"
+    },
+    {
+      "model_id": "mistralai/Mistral-Small-24B-Base-2501",
+      "revision": "b0a2e4ed093c26997495ae625528f81ea04b749f",
+      "config_sha256": "ff5f8d1747db4e16def20db719d867e74d0b764330249357351b2b44520b8001",
+      "config_path": "configs/mistralai_Mistral-Small-24B-Base-2501.json",
+      "url": "https://huggingface.co/mistralai/Mistral-Small-24B-Base-2501/resolve/b0a2e4ed093c26997495ae625528f81ea04b749f/config.json",
+      "retrieved_at": "2026-10-08T21:28:23+00:00"
+    },
+    {
+      "model_id": "unsloth/Llama-3.1-8B",
+      "revision": "3f0d51f8e5640f98f1a96ea9044a0e55c0a83814",
+      "config_sha256": "6afa9efa4f16af2fc1375dab28f02691c078520385599b54a57e8e1ee7ee4056",
+      "config_path": "configs/unsloth_Llama-3.1-8B.json",
+      "url": "https://huggingface.co/unsloth/Llama-3.1-8B/resolve/3f0d51f8e5640f98f1a96ea9044a0e55c0a83814/config.json",
+      "retrieved_at": "2026-10-08T21:28:23+00:00"
+    },
+    {
+      "model_id": "unsloth/Llama-3.3-70B-Instruct",
+      "revision": "99cd0d2c829e92a67c844f9144c2509632e5c87f",
+      "config_sha256": "2427aebfcced3177803fc7cd5571cc8e4833b9560791ada65df86d8ed855efce",
+      "config_path": "configs/unsloth_Llama-3.3-70B-Instruct.json",
+      "url": "https://huggingface.co/unsloth/Llama-3.3-70B-Instruct/resolve/99cd0d2c829e92a67c844f9144c2509632e5c87f/config.json",
+      "retrieved_at": "2026-10-08T21:28:23+00:00"
+    },
+    {
+      "model_id": "unsloth/gemma-2-9b",
+      "revision": "9145841c83add11c48155cd7bb87d8656703f997",
+      "config_sha256": "709470e3c0728defae28a02649409008625584d95861c3b969c9d585e986f652",
+      "config_path": "configs/unsloth_gemma-2-9b.json",
+      "url": "https://huggingface.co/unsloth/gemma-2-9b/resolve/9145841c83add11c48155cd7bb87d8656703f997/config.json",
+      "retrieved_at": "2026-10-08T21:28:23+00:00"
+    },
+    {
+      "model_id": "unsloth/gemma-3-12b-it",
+      "revision": "9478e665381f42974aa06177b019352fb6291876",
+      "config_sha256": "8b94af769e10ed3e1ddf9d101db08844bb8f9ac5d60f16c72bb2070ccba941a1",
+      "config_path": "configs/unsloth_gemma-3-12b-it.json",
+      "url": "https://huggingface.co/unsloth/gemma-3-12b-it/resolve/9478e665381f42974aa06177b019352fb6291876/config.json",
+      "retrieved_at": "2026-10-08T21:28:23+00:00"
+    },
+    {
+      "model_id": "unsloth/gemma-3-27b-it",
+      "revision": "7a5a3053dbd5d1d58e48159e87b9df2fc545a49a",
+      "config_sha256": "a7d75383e1089a270c376275ab413cb74052d24041677be7344179c2c5ac17f5",
+      "config_path": "configs/unsloth_gemma-3-27b-it.json",
+      "url": "https://huggingface.co/unsloth/gemma-3-27b-it/resolve/7a5a3053dbd5d1d58e48159e87b9df2fc545a49a/config.json",
+      "retrieved_at": "2026-10-08T21:28:23+00:00"
+    }
+  ]
+}
