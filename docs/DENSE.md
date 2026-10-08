@@ -66,3 +66,7 @@ Qwen3-32B is an in-sample reproducibility anchor. A different Qwen size and a no
 allocator estimate ever falls below the measured peak. The DQ4 overestimate brackets (4% resident and 10% streamed)
 are predictions for those new subjects, rather than a pass condition tuned on the fitting subject. Calibration will use
 only the dense backend's own receipts under a separate registered replacement rule.
+
+**DQ7's result (2026-10-08).** The estimate held on Qwen3-14B but fell below the measured peak on Llama-3.1-8B at 2048
+and 4096 tokens, by the same bytes resident and streamed. And the plan's device total was below the measured driver
+peak on every streamed arm, by up to 2.4 GB. Until a re-read clears it, leave that much headroom on a streamed plan.
