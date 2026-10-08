@@ -95,3 +95,39 @@ def test_a_dense_model_reaches_the_planner_through_the_dense_backend():
     assert p.status == "feasible" and p.model["model_type"] == "llama" and p.selected.backend == "dense"
     moe = describe_model(tr.Qwen3MoeConfig(**SMALL, num_experts=4, moe_intermediate_size=32, head_dim=16))
     assert not isinstance(moe, DenseTopology)                              # a MoE model stays experts4bit's
+
+
+@pytest.mark.parametrize("model_type", [
+    "gemma4_unified", "gemma4_unified_text", "gemma4_assistant", "gemma4_unified_assistant", "dbrx", "reformer",
+])
+def test_unsupported_default_configs_refuse_without_raising(model_type):
+    from loggetta.model import Refused, describe_model
+
+    if model_type not in tr.CONFIG_MAPPING:
+        pytest.skip(f"transformers {tr.__version__} does not include {model_type}")
+    config = tr.AutoConfig.for_model(model_type)
+    topology = describe_model(config)
+    if isinstance(topology, Refused):
+        assert topology.reasons["dense"], model_type
+    else:
+        assert topology.refusal, model_type
+
+
+@pytest.mark.parametrize("stage", ["config", "build", "chunked_loss"])
+@pytest.mark.parametrize("error", [AssertionError, ValueError, ImportError])
+def test_external_description_errors_become_named_refusals(monkeypatch, stage, error):
+    def fail(*args, **kwargs):
+        raise error("description regression")
+
+    model = tr.LlamaConfig(**SMALL)
+    if stage == "config":
+        monkeypatch.setattr(tr.AutoConfig, "from_pretrained", fail)
+        model = "unknown/model"
+    elif stage == "build":
+        monkeypatch.setattr(tr.AutoModelForCausalLM, "from_config", fail)
+    else:
+        loss = pytest.importorskip("experts4bit_qlora.engines.chunked_lm_loss")
+        monkeypatch.setattr(loss, "chunked_lm_loss_refusal", fail)
+    topology = dense.describe(model)
+    assert error.__name__ in topology.refusal
+    assert "description regression" in topology.refusal

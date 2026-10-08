@@ -24,6 +24,8 @@ class Refused:
         return self._first
 
     def __getattr__(self, name):
+        if name.startswith("_"):
+            raise AttributeError(name)
         return getattr(self._first, name)
 
 

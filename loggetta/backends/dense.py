@@ -178,6 +178,22 @@ def _refused(model, config, why, prov, **extra):
 def describe(model, *, revision=None, trust_remote_code=False):
     """``model`` (a hub id, a local snapshot or a ``PretrainedConfig``) as a :class:`DenseTopology`, from its config
     and a meta-device module tree; no weight is read."""
+    from ..model import NoModelProvider
+
+    try:
+        return _describe(model, revision=revision, trust_remote_code=trust_remote_code)
+    except NoModelProvider:
+        raise
+    except Exception as e:
+        # Third-party configs and model builders may raise family-specific exception types. Treat every such
+        # failure as a refusal; even reading identifying config attributes again could repeat the exception.
+        return DenseTopology(model=str(model) if isinstance(model, (str, bytes)) else type(model).__name__,
+                             model_type=None, architecture=None, revision=revision,
+                             refusal=f"the dense backend cannot describe it safely ({type(e).__name__}: {e})"[:400],
+                             provenance={"structure": "description failed before safe admission"})
+
+
+def _describe(model, *, revision=None, trust_remote_code=False):
     try:
         import torch
         import transformers
@@ -197,7 +213,7 @@ def describe(model, *, revision=None, trust_remote_code=False):
             config = AutoConfig.from_pretrained(model, revision=revision, trust_remote_code=trust_remote_code)
         except ValueError as e:                # e.g. a model type that needs its own remote modeling code
             return DenseTopology(model=name, model_type=None, architecture=None, revision=None, provenance=prov,
-                                 refusal=f"its config cannot be read here ({e}"[:300] + ")")
+                                 refusal=f"its config cannot be read here ({type(e).__name__}: {e})"[:400])
     q = getattr(config, "quantization_config", None)
     if q:
         method = q.get("quant_method") if isinstance(q, dict) else getattr(q, "quant_method", "?")
@@ -266,10 +282,10 @@ def describe(model, *, revision=None, trust_remote_code=False):
         notes.append(f"sliding-window attention ({config_t.sliding_window} tokens) in some or all layers")
     try:
         from experts4bit_qlora.engines.chunked_lm_loss import chunked_lm_loss_refusal
-
-        chunked = chunked_lm_loss_refusal(tree)
     except ImportError:
         chunked = "experts4bit-qlora's chunked LM loss is not installed"
+    else:
+        chunked = chunked_lm_loss_refusal(tree)
     refusal = None
     if not any(lin.role for lin in first):
         refusal = "no decoder-layer linear classifies as an attention or MLP projection: nothing to adapt"

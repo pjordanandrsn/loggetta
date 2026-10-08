@@ -240,3 +240,17 @@ def test_when_every_backend_refuses_each_reason_reaches_the_plan():
     p = plan(t, hw(), Workload(seq_len=512), backends=(Toy, OtherBackend))
     assert p.refusal["reasons"] == ["toy: toy knows no such model", "other: the other backend plans nothing yet"]
     assert p.model["model_type"] == "toy"
+
+
+@pytest.mark.parametrize("operation", ["copy", "deepcopy", "pickle"])
+def test_refused_descriptions_survive_copy_and_pickle(operation):
+    import copy
+    import pickle
+
+    topology = describe_model("toy/unknown", backends=(Toy, OtherBackend))
+    restored = (pickle.loads(pickle.dumps(topology)) if operation == "pickle"
+                else getattr(copy, operation)(topology))
+    assert restored.model == topology.model
+    assert restored.backend == topology.backend
+    assert restored.reasons == topology.reasons
+    assert restored.description == topology.description
