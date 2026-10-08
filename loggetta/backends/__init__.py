@@ -6,6 +6,7 @@ Each module here is the planner's adapter to one backend. It describes a model i
 for serving ``fill_knobs`` and ``resolve``) by asking the backend's own packages, and hands a feasible plan back to
 them (``executor``, ``run_tag``). A plain list, not a plugin registry: there is one backend today, and that interface is
 what a second one would have to provide. Generalize when that second backend exists, not before."""
-from . import experts4bit
+from . import dense, experts4bit
 
-BACKENDS = (experts4bit,)
+#: asked in this order: a MoE model is experts4bit's, and the dense backend describes what it refuses
+BACKENDS = (experts4bit, dense)

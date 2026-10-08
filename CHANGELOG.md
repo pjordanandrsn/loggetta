@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **A second backend, `dense`, describes dense decoder models without reading weights** (config + a meta-device
+  tree). `inspect` and `plan` now reach a dense model through it instead of stopping at the MoE loader's refusal.
+  - Every decoder-layer linear is classified by structural role from its shape: attention in/out, MLP in/out. Names
+    only break ties, so fused `qkv_proj` / `gate_up_proj` (Phi-3) classify like separate projections; anything left
+    over stays frozen and is reported.
+  - Parameter counts, tied heads, and attention implementations are reported, including softcapping that SDPA would
+    drop (Gemma 2), along with whether experts4bit-qlora's chunked loss covers the class.
+  - MoE, pre-quantized and non-decoder models are refused in words.
+  - Config, model-build and chunked-loss errors become refusals naming the exception type; refused descriptions
+    can be copied or pickled without recursion.
+  - Training plans for dense models come next. Today such a plan says the backend described the model but does not
+    plan the workload yet.
+
 ## 0.3.1 — 2026-10-08
 
 **0.3.1.** Documentation only; the package code is identical to 0.3.0. The PyPI page is now shorter than the README and

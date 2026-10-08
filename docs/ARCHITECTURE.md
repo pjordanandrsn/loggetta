@@ -274,6 +274,14 @@ trainer's.
   until then.
 - Nothing in the planner changes.
 
+**The dense backend** (`backends/dense.py`, after experts4bit in `BACKENDS`) describes what the MoE loader refuses.
+- It owns that description, because transformers is its loader: the config, plus the module tree on `meta`.
+- Decoder-layer linears are classified by role from shape against the config's widths (`classify`), so LoRA targets
+  are not a per-family name list.
+- What structure cannot show comes from the package that knows it: the model class's declared attention
+  implementations (transformers) and chunked-loss coverage (experts4bit-qlora's `chunked_lm_loss_refusal`).
+- It plans no workload yet (`WORKLOADS = ()`). Its candidates, estimate and executor are the next steps.
+
 **A new backend.** Add `backends/<name>.py` with the contract in section 4, including `executor` and `run_tag`.
 List it in `BACKENDS`, and give it a `WORKLOADS` tuple.
 - Selection, refusal, rendering and `execute` are backend-agnostic.
