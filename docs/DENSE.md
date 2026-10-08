@@ -60,6 +60,8 @@ without changing logits. CPU streaming tests lower e4b's tensor-size threshold s
 production execution retains e4b's threshold. These tests are correctness evidence, not GPU timing or capacity
 evidence. No new dense kernel is proposed: the DQ1 speed primitive was a negative result.
 
-The registered CUDA lane must prove the harness before its reading, test resident/streamed deterministic agreement,
-and check allocator estimates against the unchanged DQ4 brackets: never under, within 4% resident and 10% streamed.
-Calibration will use only the dense backend's own receipts under a separate registered replacement rule.
+The registered CUDA lane must prove the harness before its reading and test resident/streamed deterministic agreement.
+Qwen3-32B is an in-sample reproducibility anchor. A different Qwen size and a non-Qwen family must test whether the
+allocator estimate ever falls below the measured peak. The DQ4 overestimate brackets (4% resident and 10% streamed)
+are predictions for those new subjects, rather than a pass condition tuned on the fitting subject. Calibration will use
+only the dense backend's own receipts under a separate registered replacement rule.
