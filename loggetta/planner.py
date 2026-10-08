@@ -49,7 +49,7 @@ OVERHEAD_USES = ("context", "reserve", "residual", "host_growth", "baseline", "c
 def licensed(obs, use):
     """Whether receipt ``obs`` may teach the planner ``use`` (one of ``OVERHEAD_USES``)."""
     if (any(key in obs for key in ("dq7", "dq9", "dq10"))
-            or obs.get("plan", {}).get("constraints", {}).get("dense_reserve_policy") is not None):
+            or ((obs.get("plan") or {}).get("constraints") or {}).get("dense_reserve_policy") is not None):
         return False  # Raw dense diagnosis/holdouts never grant an observation-import licence.
     scope = obs.get("licensed_for")
     return scope is None or use in scope
