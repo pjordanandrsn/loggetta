@@ -1,0 +1,33 @@
+{
+  "schema": "dense-sweep-comparison/1",
+  "comparison": "by model name only; original inputs unpinned/unavailable",
+  "cells": 56,
+  "changed_cells": 37,
+  "feasible_to_refused": [
+    {
+      "model": "Qwen/Qwen2.5-72B-Instruct",
+      "card": "32 GB (5090)",
+      "old": "nf4 streamed 26.6 GiB",
+      "new": "refused (nf4 base, streamed): device 28.02 + headroom 5.60 GiB > budget 31.30 GiB"
+    },
+    {
+      "model": "Qwen/Qwen3-32B",
+      "card": "16 GB",
+      "old": "nf4 streamed 13.8 GiB",
+      "new": "refused (nf4 base, streamed): device 13.80 + headroom 2.76 GiB > budget 15.50 GiB"
+    },
+    {
+      "model": "unsloth/gemma-2-9b",
+      "card": "24 GB (4090)",
+      "old": "nf4 resident 21.8 GiB",
+      "new": "refused (nf4 base, streamed): device 19.69 + headroom 3.94 GiB > budget 23.52 GiB"
+    },
+    {
+      "model": "unsloth/gemma-3-12b-it",
+      "card": "24 GB (4090)",
+      "old": "nf4 streamed 18.5 GiB",
+      "new": "refused (nf4 base, streamed): device 20.89 + headroom 4.18 GiB > budget 23.52 GiB"
+    }
+  ],
+  "capacity_licensed": false
+}

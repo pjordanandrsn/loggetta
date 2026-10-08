@@ -31,9 +31,8 @@ The plan shows where weights will live, estimated memory use, and why alternativ
 It checks the budget before downloading model weights. Estimates can miss; they are not an out-of-memory guarantee.
 
 **GPU training needs Linux, a supported NVIDIA CUDA GPU, and compatible PyTorch.**
-The released training path is single-GPU MoE training. Dense execution requires `--allow-development-executor` pending
-the registered DQ7 CUDA proof; the development executor and its validation scope are
-documented in [Dense training](docs/DENSE.md). Serving placement can be planned; server launch uses the runtime separately.
+The released training path is single-GPU MoE training. Dense execution still requires `--allow-development-executor`:
+its memory estimate has not yet passed a capacity reading. See [Dense training](docs/DENSE.md). Serving placement can be planned; server launch uses the runtime separately.
 
 ## Train on your data
 
@@ -76,8 +75,8 @@ optimizer-resume checkpoints. Save/reload passes real-adapter CPU tests; the ful
 | Reuse measurements | `loggetta plan MODEL --observations runs/` |
 | Plan serving placement | `loggetta plan MODEL --workload serve --context 4096 --concurrency 1` |
 
-`train` combines planning and execution. Dense-model planning, multi-GPU execution, server launch,
-and throughput prediction are still outside the current command surface.
+`train` combines planning and execution. Dense training can be planned and executed with the development opt-in.
+Multi-GPU execution, server launch and throughput prediction remain outside the current command surface.
 
 ## Measured results
 

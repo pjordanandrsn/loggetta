@@ -1,9 +1,10 @@
 # Dense adapter training
 
 This is the development executor for dense training plans. The released MoE training path is unchanged. CPU tests
-exercise real tiny transformers models, PEFT adapters and e4b dense-offload handles; the CUDA/NF4 path and capacity
-calibration require the registered GPU proof and reading before a release claim.
-Execution requires the explicit opt-in `--allow-development-executor` until the registered DQ7 CUDA proof passes.
+exercise real tiny transformers models, PEFT adapters and e4b dense-offload handles. The tiny CUDA/NF4 correctness
+proof passed, but DQ7's capacity reading is VOID. Execution still requires `--allow-development-executor`: removing
+it needs separately reviewed prospective capacity and calibration evidence, the registered 24 GB boundary reading,
+and an evidence-linked gate-removal change. DQ8 has not been drawn. See [D7's release boundary](../bench/D7-PREREG.md).
 
 ## What executes
 
@@ -41,7 +42,11 @@ DQ7's [actual executor reading](https://github.com/pjordanandrsn/experts4bit-qlo
 is **VOID**: Qwen3-32B resident 4096 was refused before loading, and two registered anchor arms are missing.
 Completed Llama allocator estimates fall below their measured peaks at 2048/4096 in both placements. Every completed
 streamed full-device plan also understates sampled driver use, by as much as 2,395,904,403 bytes, despite its 20% reserve.
-The bitwise tiny CUDA proof passes; no successful out-of-sample or reserve calibration follows.
+The resident Llama 4096 plan understates driver use by 820,943,251 bytes as well. The mandatory margin below applies
+to streamed candidates; it does not establish resident capacity.
+Individual Qwen3-14B allocator estimates were above their observed peaks; those partial observations do not license
+a lane pass. Qwen3-32B's anchor residuals remain unattributed. The tiny CUDA proof passed, but no successful
+out-of-sample or reserve calibration follows.
 
 Every dense plan therefore warns about this measurement. Streamed candidates require at least **2,400,000,000 bytes
 (2.4 GB decimal)** admission headroom, **20% of the full device estimate rounded up**, and the normal policy or caller-requested
@@ -75,16 +80,13 @@ without changing logits. CPU streaming tests lower e4b's tensor-size threshold s
 production execution retains e4b's threshold. These tests are correctness evidence, not GPU timing or capacity
 evidence. No new dense kernel is proposed: the DQ1 speed primitive was a negative result.
 
-The registered CUDA lane must prove the harness before its reading and test resident/streamed deterministic agreement.
-Qwen3-32B is an in-sample reproducibility anchor. A different Qwen size and a non-Qwen family must test whether the
-allocator estimate ever falls below the measured peak. The DQ4 overestimate brackets (4% resident and 10% streamed)
-are predictions for those new subjects, rather than a pass condition tuned on the fitting subject. Calibration will use
-only the dense backend's own receipts under a separate registered replacement rule.
+After the workspace correction below, prospective capacity and reserve validation require a new reviewed
+registration. Known-subject diagnostic readings can investigate load-cache attribution, but cannot substitute
+for new out-of-sample subjects or the separate 24 GB boundary. No 5090 reserve transfers to a 4090.
 
-**DQ7's result (2026-10-08).** The estimate held on Qwen3-14B but fell below the measured peak on Llama-3.1-8B at 2048
-and 4096 tokens, by the same bytes resident and streamed. And the plan's device total was below the measured driver
-peak on every streamed arm, by up to 2.4 GB. Until a re-read clears it, leave that much headroom on a streamed plan.
-
+The [current pinned config-only sweep](../evidence/2026-10-08-dense-plan-sweep/README.md) includes the streamed floor
+and full-logit correction. The unpinned 2026-10-07 table predates both; comparison is by model name only. Four
+model/card choices change from feasible to refused. Neither sweep establishes capacity.
 
 ## Full-logit workspace correction
 
