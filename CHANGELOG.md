@@ -23,8 +23,13 @@
       gradients, AdamW, and experts4bit-qlora's `offload_plan` for streaming.
     - *heuristic:* activations scaled to DQ4's measured slope; the chunked-loss workspace from `chunked_loss_bytes`.
     - Linear biases are counted once, with norms and other parameters.
-  - **Checked in-sample only:** the activation slope is fitted to DQ4, and against DQ4's measured peaks at Qwen3-32B the
-    estimate is +1.9 to +3.1% resident and +3.0 to +8.7% streamed, never under. A second model is not checked yet.
+  - **Checked in-sample:** the activation slope is fitted to DQ4, and against DQ4's measured peaks at Qwen3-32B the
+    estimate is +1.9 to +3.1% resident and +3.0 to +8.7% streamed, never under.
+  - **Out of sample, it misses** (experts4bit-qlora DQ7, RTX 5090, 2026-10-08; VOID as a lane because one anchor arm
+    could not run). The allocator estimate held on Qwen3-14B (+1.5 to +4.9%) but fell below the measured peak on
+    Llama-3.1-8B at 2048 and 4096 tokens (-2.0 to -6.4%). The plan's device total, reserve included, was below the
+    measured driver peak on every streamed arm, by up to 2.4 GB. So a dense plan is not yet a capacity guarantee,
+    and dense execution stays behind `--allow-development-executor`.
   - **Refused, in words:** streaming that would free nothing, attention that would change semantics, a sequence past
     the model's positions, int8.
   - `bench/dense_plan_sweep.py` plans 14 real configs on 16–48 GB cards
