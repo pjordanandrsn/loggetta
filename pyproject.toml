@@ -46,6 +46,9 @@ Issues = "https://github.com/pjordanandrsn/loggetta/issues"
 [tool.setuptools.packages.find]
 include = ["loggetta*"]
 
+[tool.setuptools.package-data]
+loggetta = ["dense_dq10_policy.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = ["gpu: needs a CUDA device and downloads/loads a real model"]

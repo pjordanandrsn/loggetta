@@ -48,6 +48,9 @@ OVERHEAD_USES = ("context", "reserve", "residual", "host_growth", "baseline", "c
 
 def licensed(obs, use):
     """Whether receipt ``obs`` may teach the planner ``use`` (one of ``OVERHEAD_USES``)."""
+    if (any(key in obs for key in ("dq7", "dq9", "dq10"))
+            or obs.get("plan", {}).get("constraints", {}).get("dense_reserve_policy") is not None):
+        return False  # Raw dense diagnosis/holdouts never grant an observation-import licence.
     scope = obs.get("licensed_for")
     return scope is None or use in scope
 
@@ -573,6 +576,14 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
                     learned_cache[ck] = learned_serve_overheads(b, topology, keyed, b_obs, slack_key)
                 learned = tuple(MemoryLine(*x) for x in learned_cache[ck])
             lines = tuple(MemoryLine(*r) for r in raw) + (reserve,) + learned + tuple(dev_over) + tuple(host_over)
+            if constraints.dense_reserve_policy is not None:
+                try:
+                    if not hasattr(b, "memory_policy"):
+                        raise ValueError("the selected backend has no dense reserve policy")
+                    policy_lines = b.memory_policy(topology, gpu, keyed, workload, constraints, alloc)
+                    lines = tuple(MemoryLine(*r) for r in raw) + policy_lines + tuple(host_over)
+                except ValueError as error:
+                    refusals = list(refusals) + [str(error)]
             dev = sum(ln.bytes for ln in lines if ln.where == "device")
             host = sum(ln.bytes for ln in lines if ln.where == "host")
             return lines, dev, host, unmodelled, refusals
@@ -690,6 +701,8 @@ def _suggest(topology, workload, constraints, budget, closest, backends, statuse
                    "processes hold)")
     if closest.host_bytes > budget["host"]:
         out.append(f"{(closest.host_bytes - budget['host']) / GiB:.2f} GiB more host memory")
+    if constraints.dense_reserve_policy is not None:
+        return out + ["Explicit DQ10 policy: replan a registered subject/rung/setup; no default-policy relaxation."]
     for b in backends:
         for words, setup in getattr(b, "relaxed_candidates", lambda *a: [])(topology, workload, constraints,
                                                                             statuses[b.NAME]):

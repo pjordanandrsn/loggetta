@@ -74,6 +74,15 @@ model = load_adapter("adapters/dense", device="cuda")
 
 ## Validation boundary
 
+Registered DQ10 runs can explicitly select `Constraints(dense_reserve_policy="dq10", allocator_profile="default")`.
+This prospective policy prices training reserve and driver overhead separately from the allocator estimate;
+its frozen values and scope are in [the policy artifact](../loggetta/dense_dq10_policy.json). It applies only to the
+registered local Mistral/SmolLM3 configs, 5090 card/driver, runtime, recipe and sequence rungs. Its runner must verify
+the default allocator before CUDA initialization. Invalid selections refuse, and execution rechecks the policy;
+the receipt records its SHA-256. The shipped default, mandatory margin and executor opt-in are unchanged.
+DQ9 fitting rows and DQ10 observations grant no automatic import. New-family holdouts and a separately reviewed
+default change are still required, followed by the independent DQ8 24 GB gate before opt-in removal.
+
 The CPU tests reconstruct checkpoint tensors exactly, compare streamed/resident deterministic losses and all LoRA
 gradients, execute chunked Qwen3 loss, detect frozen-weight mutation, and train/export/reload real PEFT adapters
 without changing logits. CPU streaming tests lower e4b's tensor-size threshold so tiny weights actually stream;

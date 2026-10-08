@@ -143,6 +143,12 @@ def run(plan, *, seed=0, warmup=2, log=print, adapter_dir=None):
 
     if plan.constraints.allow_development_executor is not True:
         raise PlanNotExecutable(dense.planned_only_reason("train"))
+    from ..dense_policy import validate_plan
+
+    try:
+        memory_policy = validate_plan(plan)
+    except ValueError as error:
+        raise PlanNotExecutable(str(error)) from error
     import torch
     from transformers import AutoTokenizer
 
@@ -180,6 +186,8 @@ def run(plan, *, seed=0, warmup=2, log=print, adapter_dir=None):
                                 device=f"cuda:{plan.constraints.device}", frozen_digest=frozen_digest,
                                 frozen_kind="dense")
         result["engaged"] = prepared.report
+        if memory_policy is not None:
+            result["engaged"]["memory_policy"] = memory_policy
         if target is not None:
             if result["status"] != "OK":
                 result["artifact_error"] = "integrity checks failed; no reusable adapter was exported"

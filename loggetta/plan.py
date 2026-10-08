@@ -100,6 +100,10 @@ class Constraints:
     target_s_per_step: float | None = None
     #: explicit permission for a backend executor still awaiting its registered GPU proof
     allow_development_executor: bool = False
+    #: named prospective dense memory hypothesis; None keeps the shipped policy
+    dense_reserve_policy: str | None = None
+    #: explicit allocator declaration for a registered memory policy; its runner verifies before CUDA initialization
+    allocator_profile: str | None = None
 
 
 @dataclass(frozen=True)
@@ -163,6 +167,9 @@ class ExecutionPlan:
         out = asdict(self)
         if out["constraints"]["allow_development_executor"] is False:
             del out["constraints"]["allow_development_executor"]
+        for key in ("dense_reserve_policy", "allocator_profile"):
+            if out["constraints"][key] is None:
+                del out["constraints"][key]
         # Optional v1 additions: old plans still round-trip byte-for-byte, including their omitted defaults.
         if out["workload"]["data"] is None:
             del out["workload"]["data"]

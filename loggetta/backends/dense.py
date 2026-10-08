@@ -600,6 +600,13 @@ def planning_warnings(topology) -> list:
             "margin is not a general fit guarantee; the development executor opt-in remains. Evidence: " + DQ7_RESULTS]
 
 
+def memory_policy(topology, gpu, setup, workload, constraints, allocator_bytes):
+    """Explicit registered hypothesis pricing; invalid selection refuses rather than falling back."""
+    from ..dense_policy import lines
+
+    return lines(topology, gpu, setup, workload, constraints, allocator_bytes)
+
+
 def minimum_headroom(setup, device_bytes=0) -> int:
     """Mandatory streamed admission margin; never an allocator estimate or a calibrated reserve."""
     return max(DQ7_STREAM_HEADROOM, -(-device_bytes//5)) if setup.get("placement") == "stream" else 0
