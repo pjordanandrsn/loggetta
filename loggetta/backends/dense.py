@@ -473,14 +473,12 @@ def estimate(topology, setup, workload):
     base, ab, r = setup["base"], ADAPTER_BYTES[setup["adapter_dtype"]], setup["r"]
     roles = set(setup["targets"])
     lines, unmodelled = [], []
-    streamed_layer, stays_layer, lora_layer, bias_layer = [], 0, 0, 0
+    streamed_layer, stays_layer, lora_layer = [], 0, 0
     for lin in t.layer_linears:
         n = lin.in_features * lin.out_features
         moving, stays = _linear_bytes(n, base)
         streamed_layer.append(moving)
         stays_layer += stays
-        if lin.bias:
-            bias_layer += 2 * lin.out_features
         if lin.role in roles:
             lora_layer += r * (lin.in_features + lin.out_features)
     weights = L * sum(streamed_layer)
@@ -505,7 +503,7 @@ def estimate(topology, setup, workload):
                       "each layer copied for its forward and again for its backward (an upper bound)"))
     lines.append(("embeddings + lm head (bf16)", "device", 2 * (t.embedding_params + t.head_params), "derived",
                   "input embeddings" + (" tied to the head" if t.tied_embeddings else " and the untied lm head")))
-    other = 2 * t.other_params + L * bias_layer
+    other = 2 * t.other_params                  # the topology already includes linear biases here
     if other:
         lines.append(("norms, biases and other parameters (bf16)", "device", other, "derived", ""))
     lora = L * lora_layer

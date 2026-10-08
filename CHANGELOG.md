@@ -9,6 +9,7 @@
     - *derived:* weights, embeddings/head, LoRA (fp32 r16 α32 on every classified projection by default),
       gradients, AdamW, and experts4bit-qlora's `offload_plan` for streaming.
     - *heuristic:* activations scaled to DQ4's measured slope; the chunked-loss workspace from `chunked_loss_bytes`.
+    - Linear biases are counted once, with norms and other parameters.
   - **Checked:** against DQ4's measured peaks at Qwen3-32B, the estimate is +1.9 to +3.1% resident and +3.0 to +8.7%
     streamed, never under.
   - **Refused, in words:** streaming that would free nothing, attention that would change semantics, a sequence past

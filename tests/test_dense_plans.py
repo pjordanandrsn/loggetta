@@ -45,6 +45,27 @@ def allocator(c):
                and not ln.name.startswith(("CUDA context", "allocator reserve")))
 
 
+def test_linear_biases_are_priced_once_with_the_other_parameters():
+    import torch
+    from accelerate import init_empty_weights
+
+    config = tr.Qwen2Config(**SMALL)
+    topology = dense.describe(config)
+    with init_empty_weights():
+        tree = tr.AutoModelForCausalLM.from_config(config, dtype=torch.bfloat16)
+    # Count the real model's parameters independently of the topology's accounting. Qwen2 has q/k/v biases.
+    assert any(lin.bias for lin in topology.layer_linears)
+    excluded = {id(tree.get_input_embeddings().weight), id(tree.get_output_embeddings().weight)}
+    excluded.update(id(mod.weight) for name, mod in tree.named_modules()
+                    if isinstance(mod, torch.nn.Linear) and ".layers." in name)
+    other_params = sum(p.numel() for p in tree.parameters() if id(p) not in excluded)
+    assert other_params == topology.other_params
+    result = plan(topology, hw(24), Workload(seq_len=128),
+                  Constraints(fixed={"base": "bf16", "placement": "device"}), backends=(dense,))
+    lines = {ln.name: ln for ln in result.selected.lines}
+    assert lines["norms, biases and other parameters (bf16)"].bytes == 2 * other_params
+
+
 @pytest.mark.parametrize("placement,intercept", [("device", 19.45), pytest.param("stream", 5.37, marks=needs_offload)])
 @pytest.mark.parametrize("seq", [2048, 4096, 7168, 14336])
 def test_the_estimate_brackets_dq4s_measured_peaks_at_qwen3_32b(q32, placement, intercept, seq):
