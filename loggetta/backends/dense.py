@@ -525,7 +525,9 @@ def estimate(topology, setup, workload):
             loss_bytes = min(T, setup["loss_chunk"]) * V * 10 + T * H * 2
             loss_detail = "one chunk of logits at 10 B per logit (this experts4bit-qlora cannot state it)"
     else:
-        loss_bytes, loss_detail = T * V * 10, "full logits: bf16, fp32 upcast and fp32 grad"
+        # Generic full-logit CE backward overlaps saved log-softmax, NLL grad and softmax grad:
+        # three distinct fp32 [T,V] tensors. DQ7's CPU/CUDA operator census identifies the missing buffer.
+        loss_bytes, loss_detail = T * V * 12, "full-logit backward: saved fp32 log-softmax + fp32 NLL grad + fp32 logits grad"
     per_token = ACTIVATION_COEFFICIENT * (boundaries + layer_work)
     if T * layer_work > loss_bytes:
         act = int(T * per_token)

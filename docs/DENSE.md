@@ -84,3 +84,19 @@ only the dense backend's own receipts under a separate registered replacement ru
 **DQ7's result (2026-10-08).** The estimate held on Qwen3-14B but fell below the measured peak on Llama-3.1-8B at 2048
 and 4096 tokens, by the same bytes resident and streamed. And the plan's device total was below the measured driver
 peak on every streamed arm, by up to 2.4 GB. Until a re-read clears it, leave that much headroom on a streamed plan.
+
+
+## Full-logit workspace correction
+
+The DQ7 diagnosis identifies a concrete missing buffer in the full-logit loss path. At the pinned torch 2.8 and
+transformers 5.18 versions, CPU and CUDA operator census both observe three distinct fp32 `[tokens, vocabulary]`
+tensors simultaneously in log-softmax backward: saved log-softmax output, incoming NLL gradient, and outgoing
+logits gradient. Dense full-logit loss now prices **12 bytes per logit**, replacing the old 10-byte allowance.
+The activation coefficient, chunked-loss calculation and inferred 20% reserve are unchanged.
+
+The [census and receipts](../bench/dq7-loss-diagnosis/loss-cuda.json) preserve the measured tensor bytes and runtime
+source hashes. This is a derived workspace correction, not a new whole-model reading or a refitted coefficient.
+At Llama 4096 the extra `2 × tokens × vocab` term is 1,050,673,152 bytes, exceeding DQ7's observed allocator miss by
+about 0.39 GB; that surplus remains visible. DQ7 stays VOID, and no capacity pass, reserve calibration, gate removal
+or release follows from recomputing historical estimates. Load-cache attribution and a full-model reread require
+reviewed telemetry and registration. The developmental execution opt-in remains.
