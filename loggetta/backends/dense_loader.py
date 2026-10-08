@@ -30,6 +30,7 @@ def load_base(model, setup, *, device="cuda", revision=None):
     from . import dense
 
     directory = snapshot(model, revision)
+    from experts4bit_qlora.engines.dense_offload import MIN_BYTES
     config = AutoConfig.from_pretrained(directory, trust_remote_code=False)
     topology = dense.describe(config)
     if topology.refusal or not topology.uniform:
@@ -111,7 +112,7 @@ def load_base(model, setup, *, device="cuda", revision=None):
                 quant.bias = torch.nn.Parameter(read(keys[name + ".bias"]).to(torch.bfloat16), requires_grad=False)
                 handled.add(name + ".bias")
             quant = quant.to(device)
-            if setup["placement"] == "stream":
+            if setup["placement"] == "stream" and quant.weight.numel() * quant.weight.element_size() >= MIN_BYTES:
                 # Keep quant_state on the GPU. Only packed codes move to the offload handles' CPU homes.
                 quant.weight.data = quant.weight.data.cpu()
             parent_name, leaf = name.rsplit(".", 1)
@@ -128,7 +129,8 @@ def load_base(model, setup, *, device="cuda", revision=None):
         tensor = read(keys[name])
         dtype = torch.bfloat16 if tensor.is_floating_point() else tensor.dtype
         layer_weight = name.endswith(".weight") and name.rsplit(".", 1)[0] in linears
-        destination = "cpu" if setup["placement"] == "stream" and layer_weight else device
+        streamable = layer_weight and tensor.numel() * torch.empty((), dtype=dtype).element_size() >= MIN_BYTES
+        destination = "cpu" if setup["placement"] == "stream" and streamable else device
         set_module_tensor_to_device(tree, name, destination, value=tensor.to(dtype))
     tree.tie_weights()
     # Non-persistent buffers (e.g. rotary frequencies) are initialized by the model class rather than checkpointed.
