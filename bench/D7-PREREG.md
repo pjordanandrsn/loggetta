@@ -37,6 +37,8 @@ The DQ4 allocator brackets must still pass without calibration. Apply the candid
 source label; the held-out gate is ceil(E * (1 + f)) >= R_holdout, in bytes. One byte below fails.
 Also require ceil(E * f) >= R_holdout - A_holdout, so a high allocator estimate cannot hide an under-reserved
 cached-block term. These two gates are both required for every cohort; publish every held-out residual.
+Print the unchanged 20% reserve charge and ceil(E * 1.20) beside the derived charge and ceil(E * (1 + f))
+for every holdout. This is a reporting comparison; it cannot alter either gate or the holdout partition.
 
 A passing cohort licenses reserve only, scoped to its dense topology, GPU/card capacity, driver/runtime pins,
 exact base/placement/rank/alpha/adapter dtype/targets/attention/loss setup, default allocator, micro-batch1,
