@@ -7,10 +7,13 @@
   NF4 quantization handles one decoder linear at a time, and streamed codes stay on the host. The selected setup
   is checked against the loaded structure and echoed in a dense ExecutionReceipt. Sampled frozen-layer integrity,
   adapter movement, memory and timing share the measured loop with MoE. Dense adapters use PEFT with checksummed
-  export/reload; existing MoE adapters retain their native format. PEFT 0.21.2 is the tested dependency floor.
+  export/reload; existing MoE adapters retain their native format. PEFT >=0.21.2 is a base dependency for all installs;
+  0.21.2 is the tested floor. Dense execution requires `LOGGETTA_DENSE_EXECUTE=1` until the registered DQ7 proof passes.
   CPU tiny-model checks cover exact checkpoint reconstruction, resident/streamed loss and gradient equality,
   actual chunked loss and adapter precision on reload. CUDA/NF4 and capacity calibration await a registered lane;
   this entry claims no new GPU measurement. The e4b floor remains 0.49.0.
+- **Frozen integrity fails closed.** An empty sampled expert digest now marks a MoE run `ALARM`; checking no frozen
+  bytes cannot pass integrity. Normal non-empty frozen expert digests retain their previous behavior.
 
 - **Dense adapter-training plans.** The dense backend now plans `train` for dense models.
   - **Candidates:** bf16 base resident, NF4 base resident, NF4 base streamed from pinned host memory. Speed order:

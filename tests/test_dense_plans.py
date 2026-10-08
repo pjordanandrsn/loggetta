@@ -152,9 +152,13 @@ def test_targets_choose_the_adapted_roles():
     assert f"{2 * per_layer:,} parameters" in lora.detail
 
 
-def test_dense_backend_executes_training_and_keeps_other_workloads_unimplemented():
+def test_dense_training_executor_requires_opt_in_and_serving_remains_planned_only(monkeypatch):
     from loggetta.backends.dense_train import run
 
+    monkeypatch.delenv("LOGGETTA_DENSE_EXECUTE", raising=False)
+    assert dense.executor("train") is None
+    assert "pending the registered CUDA proof" in dense.planned_only_reason("train")
+    monkeypatch.setenv("LOGGETTA_DENSE_EXECUTE", "1")
     assert dense.executor("train") is run
     assert dense.executor("serve") is None
 

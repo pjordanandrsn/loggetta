@@ -31,7 +31,8 @@ The plan shows where weights will live, estimated memory use, and why alternativ
 It checks the budget before downloading model weights. Estimates can miss; they are not an out-of-memory guarantee.
 
 **GPU training needs Linux, a supported NVIDIA CUDA GPU, and compatible PyTorch.**
-The released training path is single-GPU MoE training. The development dense executor and its validation scope are
+The released training path is single-GPU MoE training. Dense execution requires `LOGGETTA_DENSE_EXECUTE=1` pending
+the registered DQ7 CUDA proof; the development executor and its validation scope are
 documented in [Dense training](docs/DENSE.md). Serving placement can be planned; server launch uses the runtime separately.
 
 ## Train on your data

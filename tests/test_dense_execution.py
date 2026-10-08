@@ -170,6 +170,8 @@ def test_dense_training_receipt_integrity_and_peft_reload(checkpoint, tmp_path):
 
 
 def test_execute_dispatches_dense_and_preserves_setup(checkpoint, monkeypatch):
+    from loggetta.execution import PlanNotExecutable
+
     directory, _ = checkpoint
     p = make_plan(directory)
     seen = {}
@@ -179,6 +181,11 @@ def test_execute_dispatches_dense_and_preserves_setup(checkpoint, monkeypatch):
         return {"status": "OK", "measured": {}, "correctness": {}, "engaged": {"backend": "dense"}, "data": {}}
 
     monkeypatch.setattr(dense_train, "run", run)
+    monkeypatch.delenv("LOGGETTA_DENSE_EXECUTE", raising=False)
+    with pytest.raises(PlanNotExecutable, match="LOGGETTA_DENSE_EXECUTE=1"):
+        execute(p, hardware=hw(24), prov={"sources": {}}, log=lambda *a: None)
+    assert not seen
+    monkeypatch.setenv("LOGGETTA_DENSE_EXECUTE", "1")
     receipt = execute(p, hardware=hw(24), prov={"sources": {}}, log=lambda *a: None)
     assert seen["plan"] is p
     assert receipt["setup"] == p.selected.setup
