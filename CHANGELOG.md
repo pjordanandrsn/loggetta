@@ -13,6 +13,14 @@
   - Training plans for dense models come next. Today such a plan says the backend described the model but does not
     plan the workload yet.
 
+## 0.3.1 — 2026-10-08
+
+**0.3.1.** Documentation only; the package code is identical to 0.3.0. The PyPI page is now shorter than the README and
+consistent with it, and its replication link works again: it pointed at an experts4bit-qlora changelog fragment that the
+0.49.0 release folded away (#15). The Unsloth comparison is quoted as GPU time, as experts4bit-qlora 0.50.0 quotes it:
+Unsloth spends 1.92× e4b's GPU time per step, and 2.80× its wall-clock time on an AMD EPYC 7713 host (#16). It still needs
+experts4bit-qlora 0.49.0 or later.
+
 ## 0.3.0 — 2026-10-08
 
 **0.3.0.** Train on your own data and keep the adapters. This is the first PyPI release since 0.1.3; 0.2.0 was never
