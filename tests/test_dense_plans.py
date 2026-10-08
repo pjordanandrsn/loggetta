@@ -97,9 +97,10 @@ def test_a_48_gb_card_keeps_the_base_exact(q14):
 
 
 @needs_offload
-def test_a_small_card_streams_the_frozen_layers_and_prices_the_host_and_the_link(q14):
+def test_a_14gib_card_streams_the_frozen_layers_and_prices_the_host_and_the_link(q14):
     dense._late_bound_reason.cache_clear()
-    p = plan(q14, hw(12), Workload(seq_len=4096), backends=(dense,))
+    # DQ7 now requires 2.4 GB streamed headroom; the former 12 GiB case is separately tested as refused.
+    p = plan(q14, hw(14), Workload(seq_len=4096), backends=(dense,))
     if dense._late_bound_reason() is not None:
         pytest.skip("the installed bitsandbytes cannot free offloaded weights here")
     s = p.selected
@@ -175,3 +176,70 @@ def test_a_moe_backends_receipts_do_not_set_a_dense_plans_reserve():
     assert p.selected.backend == "dense" and reserve.basis == "inferred" and "default 20%" in reserve.detail
     context = next(ln for ln in p.selected.lines if ln.name.startswith("CUDA context"))
     assert context.bytes == 600 << 20                                             # the GPU's context is shared
+
+
+@needs_offload
+def test_streamed_dq7_headroom_floor_is_mandatory_at_one_byte_boundary(q14, monkeypatch):
+    from loggetta.execution import compare
+    from loggetta.plan import ExecutionPlan
+
+    monkeypatch.setattr(dense, "_late_bound_reason", lambda: None)
+    fixed = {"base": "nf4", "placement": "stream", "loss_chunk": 512}
+    c = Constraints(fixed=fixed, headroom=0)
+    wide = plan(q14, hw(200), Workload(seq_len=4096), c, backends=(dense,))
+    device = wide.selected.device_bytes
+    required = max(dense.DQ7_STREAM_HEADROOM, -(-device//5))
+    from dataclasses import replace
+    exact = plan(q14, hw(200), wide.workload, replace(c, vram_budget=device+required), backends=(dense,))
+    short = plan(q14, hw(200), wide.workload, replace(c, vram_budget=device+required-1), backends=(dense,))
+    assert exact.status == "feasible" and short.status == "refused"
+    assert exact.budget["headroom"] == required == short.budget["headroom"]
+    assert exact.selected.bounds["device_headroom_bytes"] == required
+    assert exact.selected.device_bytes == device
+    assert any("2.4 GB" in w and "DQ7" in w for w in exact.warnings)
+    assert any("2.4 GB" in w for w in short.warnings)
+    assert compare(exact, {})["device_allocator"]["estimated"] == allocator(wide.selected)
+    assert ExecutionPlan.from_dict(exact.to_dict()).to_dict() == exact.to_dict()
+    assert "headroom" in exact.render() and "headroom" in short.render()
+    high = plan(q14, hw(200), wide.workload, replace(c, headroom=required+1), backends=(dense,))
+    assert high.budget["headroom"] == required+1
+
+
+def test_dense_warnings_include_refusals_and_resident_plans(q14):
+    resident = plan(q14, hw(48), Workload(seq_len=4096), backends=(dense,))
+    assert resident.selected.setup["placement"] == "device"
+    assert "device_headroom_bytes" not in resident.selected.bounds
+    assert any("DQ7" in w and "Llama" in w for w in resident.warnings)
+    refused = plan(q14, hw(1), Workload(seq_len=4096), backends=(dense,))
+    assert refused.status == "refused" and any("DQ7" in w for w in refused.warnings)
+
+
+@needs_offload
+def test_headroom_bounds_without_link_probe_render_and_time_target(q14, monkeypatch):
+    monkeypatch.setattr(dense, "_late_bound_reason", lambda: None)
+    monkeypatch.setattr("loggetta.planner.link_bandwidth", lambda *a: (None, "inferred", "fixture"))
+    p = plan(q14, hw(24), Workload(seq_len=4096),
+             Constraints(fixed={"base": "nf4", "placement": "stream"}, headroom=0, target_s_per_step=100),
+             backends=(dense,))
+    assert p.status == "feasible"
+    assert p.selected.bounds == {"device_headroom_bytes": max(dense.DQ7_STREAM_HEADROOM, -(-p.selected.device_bytes//5))}
+    assert "transfer bound" not in p.render()
+
+
+@needs_offload
+def test_large_streamed_plans_receive_proportional_margin_and_scope_warning(q32, monkeypatch):
+    monkeypatch.setattr(dense, "_late_bound_reason", lambda: None)
+    p = plan(q32, hw(200), Workload(seq_len=8192),
+             Constraints(fixed={"base": "nf4", "placement": "stream"}, headroom=0), backends=(dense,))
+    assert p.budget["headroom"] == -(-p.selected.device_bytes//5) > dense.DQ7_STREAM_HEADROOM
+    assert any("outside DQ7" in warning for warning in p.warnings)
+
+
+@needs_offload
+def test_step_count_and_schedule_do_not_create_memory_scope_warning(q14, monkeypatch):
+    monkeypatch.setattr(dense, "_late_bound_reason", lambda: None)
+    p = plan(q14, hw(24), Workload(seq_len=2048, steps=20, learning_rate=1e-4, lr_schedule="cosine"),
+             Constraints(fixed={"base": "nf4", "placement": "stream"}, headroom=0), backends=(dense,))
+    assert p.status == "feasible" and p.budget["headroom"] >= dense.DQ7_STREAM_HEADROOM
+    assert any("DQ7" in warning for warning in p.warnings)
+    assert not any("outside DQ7" in warning for warning in p.warnings)
