@@ -2,9 +2,9 @@
 
 This is the development executor for dense training plans. The released MoE training path is unchanged. CPU tests
 exercise real tiny transformers models, PEFT adapters and e4b dense-offload handles. The tiny CUDA/NF4 correctness
-proof passed, but DQ7’s capacity reading is VOID. Execution still requires `--allow-development-executor`: removing
+proof passed, but DQ7's capacity reading is VOID. Execution still requires `--allow-development-executor`: removing
 it needs separately reviewed prospective capacity and calibration evidence, the registered 24 GB boundary reading,
-and an evidence-linked gate-removal change. DQ8 has not been drawn. See [D7’s release boundary](../bench/D7-PREREG.md).
+and an evidence-linked gate-removal change. DQ8 has not been drawn. See [D7's release boundary](../bench/D7-PREREG.md).
 
 ## What executes
 
@@ -45,7 +45,7 @@ streamed full-device plan also understates sampled driver use, by as much as 2,3
 The resident Llama 4096 plan understates driver use by 820,943,251 bytes as well. The mandatory margin below applies
 to streamed candidates; it does not establish resident capacity.
 Individual Qwen3-14B allocator estimates were above their observed peaks; those partial observations do not license
-a lane pass. Qwen3-32B’s anchor residuals remain unattributed. The tiny CUDA proof passed, but no successful
+a lane pass. Qwen3-32B's anchor residuals remain unattributed. The tiny CUDA proof passed, but no successful
 out-of-sample or reserve calibration follows.
 
 Every dense plan therefore warns about this measurement. Streamed candidates require at least **2,400,000,000 bytes

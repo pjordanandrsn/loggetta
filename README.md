@@ -31,9 +31,8 @@ The plan shows where weights will live, estimated memory use, and why alternativ
 It checks the budget before downloading model weights. Estimates can miss; they are not an out-of-memory guarantee.
 
 **GPU training needs Linux, a supported NVIDIA CUDA GPU, and compatible PyTorch.**
-The released training path is single-GPU MoE training. Dense execution requires `--allow-development-executor` pending
-prospective capacity/calibration validation and DQ8’s registered 24 GB boundary; the development executor and its scope are
-documented in [Dense training](docs/DENSE.md). Serving placement can be planned; server launch uses the runtime separately.
+The released training path is single-GPU MoE training. Dense execution still requires `--allow-development-executor`:
+its memory estimate has not yet passed a capacity reading. See [Dense training](docs/DENSE.md). Serving placement can be planned; server launch uses the runtime separately.
 
 ## Train on your data
 
