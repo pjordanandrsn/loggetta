@@ -10,8 +10,8 @@
       gradients, AdamW, and experts4bit-qlora's `offload_plan` for streaming.
     - *heuristic:* activations scaled to DQ4's measured slope; the chunked-loss workspace from `chunked_loss_bytes`.
     - Linear biases are counted once, with norms and other parameters.
-  - **Checked:** against DQ4's measured peaks at Qwen3-32B, the estimate is +1.9 to +3.1% resident and +3.0 to +8.7%
-    streamed, never under.
+  - **Checked in-sample only:** the activation slope is fitted to DQ4, and against DQ4's measured peaks at Qwen3-32B the
+    estimate is +1.9 to +3.1% resident and +3.0 to +8.7% streamed, never under. A second model is not checked yet.
   - **Refused, in words:** streaming that would free nothing, attention that would change semantics, a sequence past
     the model's positions, int8.
   - **Executing a dense plan** says it is planned only.
