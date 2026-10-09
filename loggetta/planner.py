@@ -129,9 +129,12 @@ def reserve_fraction(gpu, setup, observations, default, model=None, kind="train"
        transfer. Not for serving: its slack is 0.06-1.5%, so the anchor ratio divides one measurement's noise by
        another's (a 2.8% OLMoE slack on an RTX 5090 came out as 4.0 GiB of reserve on an RTX 4090, and gpt-oss-20b's
        as 10.4 GiB, through a ~14x ratio of two Qwen3-30B slacks under 1%);
-    3. this GPU + setup, another model: measured, but for a different model;
+    3. serving only: this GPU + setup, another model: measured, but for a different model. Training never borrows
+       another model's slack (#43): granite-3.1-3b-a800m planned with OLMoE's 0.222 measured 0.228 itself, and its plan
+       sat under the driver peak (1.014);
     4. the largest slack measured on this GPU, conservative (a smaller borrowed figure would make the unmeasured
-       candidate look cheaper than the measured one);
+       candidate look cheaper than the measured one). For training it is a bound, never below ``DEFAULT_RESERVE_FRAC``:
+       one small sibling (granite-4.0-h-tiny's 0.083) must not price a model nothing measured;
     5. serving only: the largest slack measured for this setup on any GPU (heuristic: borrowed across cards; all-VRAM
        serving measured 0.06-1.46% on two cards, where training slack moved 8-39% with model and card);
     6. ``default``.
@@ -196,10 +199,16 @@ def reserve_fraction(gpu, setup, observations, default, model=None, kind="train"
                     return f, "heuristic", (f"transferred: {frac(there):.3f} measured for this model on {gname(there)} "
                                             f"(receipt {there.get('run_id')}) x anchor {mname(anchor_here)} "
                                             f"{frac(anchor_here):.3f} here / {frac(anchor_there):.3f} there = {f:.3f}")
-    if here:
+    if here and kind == "serve":
         h = pick(here)
         return frac(h), "measured", (f"receipt {h.get('run_id')} (this GPU and setup, model {mname(h)}) = {frac(h):.3f}")
     same_gpu = [o for o in usable if gname(o) == gpu.name]
+    if same_gpu and kind != "serve":
+        worst = max(same_gpu, key=frac)
+        f = max(frac(worst), DEFAULT_RESERVE_FRAC)
+        return f, "policy", (f"no receipt for this model on this GPU, and training never borrows another model's slack: "
+                             f"a conservative bound, the largest slack measured on this GPU (receipt {worst.get('run_id')} = "
+                             f"{frac(worst):.3f}), at least the {DEFAULT_RESERVE_FRAC:.0%} default = {f:.3f}")
     if same_gpu:
         worst = max(same_gpu, key=frac)
         return frac(worst), "measured", (f"no receipt for this setup; the largest slack measured on this GPU, receipt "

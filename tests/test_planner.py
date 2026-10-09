@@ -320,7 +320,7 @@ def test_a_measured_link_replaces_the_pcie_ceiling(topo):
 
 def test_reserve_slack_comes_from_the_matching_setup(topo):
     def rec(rid, residency, alloc, reserved):
-        return {"schema": "execution-receipt/1", "run_id": rid, "status": "OK",
+        return {"schema": "execution-receipt/1", "run_id": rid, "status": "OK", "model": {"model": topo.model},
                 "hardware": {"gpu": {"name": "Test GPU", "driver": "575.64.05"}},
                 "setup": {"expert_residency": residency, "expert_kernel": "grouped_nf4"},
                 "measured": {"cuda_context_bytes": 100 << 20, "device_peak_bytes": alloc, "device_reserved_peak_bytes": reserved}}
@@ -334,7 +334,7 @@ def test_reserve_slack_comes_from_the_matching_setup(topo):
 
 def test_an_unmeasured_setup_gets_the_conservative_slack(topo):
     def rec(rid, residency, alloc, reserved):
-        return {"schema": "execution-receipt/1", "run_id": rid, "status": "OK",
+        return {"schema": "execution-receipt/1", "run_id": rid, "status": "OK", "model": {"model": topo.model},
                 "hardware": {"gpu": {"name": "Test GPU", "driver": "575.64.05"}},
                 "setup": {"expert_residency": residency, "expert_kernel": "grouped_nf4"},
                 "measured": {"cuda_context_bytes": 100 << 20, "device_peak_bytes": alloc, "device_reserved_peak_bytes": reserved}}
@@ -721,3 +721,33 @@ def test_isolated_packing_is_priced_in_the_plan(topo):
     assert mask.bytes == 1024 * 1024 * 3 and mask.where == "device"
     assert any(r.startswith("isolated packing: 100 rows of 1,024 tokens, 88% filled") for r in p.reasons)
     assert "isolated packing" in p.render()
+
+
+def test_training_never_borrows_another_models_slack(topo):
+    """#43, item 2: granite-3.1-3b-a800m planned with OLMoE's measured 0.222 (this GPU and setup, another model) and sat
+    under its driver peak; its own slack was 0.228. A model with no receipt of its own on this GPU gets a conservative
+    bound instead: the largest slack measured on this GPU, never below the default."""
+    def rec(rid, model, residency, alloc, reserved):
+        return {"schema": "execution-receipt/1", "run_id": rid, "status": "OK", "model": {"model": model},
+                "hardware": {"gpu": {"name": "Test GPU", "driver": "575.64.05"}},
+                "setup": {"expert_residency": residency, "expert_kernel": "grouped_nf4"},
+                "measured": {"cuda_context_bytes": 100 << 20, "device_peak_bytes": alloc, "device_reserved_peak_bytes": reserved}}
+
+    def reserve(obs):
+        p = plan(topo, hw(), Workload(seq_len=512), Constraints(fixed={"expert_kernel": "grouped_nf4", "attn_4bit": False},
+                                                                expert_residency=("device",)), observations=obs)
+        line = next(ln for ln in p.selected.lines if ln.name.startswith("allocator reserve"))
+        alloc = sum(ln.bytes for ln in p.selected.lines if ln.where == "device" and ln.basis in ("derived", "heuristic"))
+        return line, line.bytes / alloc
+
+    # a sibling measured on this GPU with the candidate's whole setup, and one with another placement
+    line, frac = reserve([rec("sibling-same-setup", "other/model", "device", 100, 122),
+                          rec("sibling-host", "other/model", "host", 100, 139)])
+    assert line.basis == "policy" and "never borrows" in line.detail and "sibling-host" in line.detail
+    assert abs(frac - 0.39) < 1e-3                       # the largest on this GPU, not the same-setup sibling's 0.22
+    # a small sibling slack does not price a model nothing measured: the bound is at least the default
+    line, frac = reserve([rec("small-sibling", "other/model", "device", 100, 108)])
+    assert line.basis == "policy" and abs(frac - 0.20) < 1e-3
+    # the model's own receipt still wins, measured
+    line, frac = reserve([rec("own", topo.model, "device", 100, 112), rec("sibling-host", "other/model", "host", 100, 139)])
+    assert line.basis == "measured" and "own" in line.detail and abs(frac - 0.12) < 1e-3
