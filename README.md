@@ -36,9 +36,9 @@ its memory estimate has not yet passed a capacity reading. See [Dense training](
 
 ## New in 0.4.0
 
-- **Dense models, development-gated.** `plan` and `inspect` handle dense decoder models. Their training runs only with
-  `--allow-development-executor`: the dense memory estimate has not passed a capacity reading.
-  See [Dense training](docs/DENSE.md).
+- **Dense models: planned, not supported for training.** Dense plans are estimates checked in sample; out of sample
+  (DQ7) they missed, and the DQ10 reading is pending. Dense execution needs `--allow-development-executor` until
+  DQ8's 24 GB reading passes. See [Dense training](docs/DENSE.md).
 - **The DQ10 reserve policy is opt-in,** for registered dense runs. Defaults do not change.
 - **MoE training estimates price the `grouped_nf4` backward pass.** OLMoE plans on an RTX A2000 were about 0.2 GiB short;
   in sample they now cover the measured peak. Near a budget, a plan may pick the reference kernel or host residency
@@ -102,7 +102,7 @@ Their speed results below come from matched training runs, not planner benchmark
 | :--- | :--- |
 | **Qwen3-30B-A3B QLoRA · RTX 5090** | Unsloth spends **1.92×** e4b's GPU time per step, and **2.80×** its wall-clock time on an AMD EPYC 7713 host. Comparable held-out loss; Unsloth peaked lower (24.27 vs 26.16 GB). [Result](https://github.com/pjordanandrsn/experts4bit-qlora/blob/main/bench/h2h-2026-10-02/tc1/RESULTS-tc1-pos69.md) |
 | **Why two numbers** | GPU time doesn't depend on the host. Unsloth runs about 14× e4b's CPU operations per step, so its wall-clock time grows on a slower host. Earlier wall-clock readings, before e4b's current defaults: 2.352× and 2.468×. |
-| **Planner memory check · Qwen3-30B-A3B · RTX 5090** | After calibration from earlier runs: **24.54 GiB** estimated process peak, **24.34 GiB** measured. One in-sample case, not a guarantee. In the MoE audit, one RTX A2000 training plan is still under its measured peak (1.014×), where it borrows another model's reserve. [Plan vs run](https://github.com/pjordanandrsn/loggetta/blob/main/docs/RESULTS.md) · [MoE audit](https://github.com/pjordanandrsn/loggetta/blob/main/evidence/2026-10-09-moe-plan-vs-driver-after-gnf4/README.md) |
+| **Planner memory check · Qwen3-30B-A3B · RTX 5090** | After calibration from earlier runs: **24.54 GiB** estimated process peak, **24.34 GiB** measured. One in-sample case, not a guarantee. In the MoE audit re-run after 0.4.0's `grouped_nf4` term (`evidence/2026-10-09-moe-plan-vs-driver-after-gnf4`), one RTX A2000 training plan is still under its measured peak (1.014×), where it borrows another model's reserve. [Plan vs run](https://github.com/pjordanandrsn/loggetta/blob/main/docs/RESULTS.md) · [MoE audit](https://github.com/pjordanandrsn/loggetta/blob/main/evidence/2026-10-09-moe-plan-vs-driver-after-gnf4/README.md) |
 
 The comparison used torch 2.12.1+cu130 and transformers 5.5.0 for both frameworks, with matched adapters, initialization, and tokens.
 Results apply to those workloads and hosts. See the runtime's [current results](https://github.com/pjordanandrsn/experts4bit-qlora/blob/main/docs/STATUS.md) for newer packed-training work.

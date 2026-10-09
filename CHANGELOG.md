@@ -6,9 +6,9 @@
 `grouped_nf4` kernel's backward pass. Serve plans for one sequence say which speed-ups the server runs.
 <!-- RELEASE: add the absmax digest fix to this lead and to "Fixes" once it merges, then date the heading at the tag. -->
 
-- **Dense models are development-gated.** Loggetta describes and plans dense decoder models and can run their
-  training, but only with `--allow-development-executor`. The dense memory estimate has not passed a capacity reading
-  (DQ7 is VOID), so a dense plan is not a capacity guarantee.
+- **Dense models are development-gated.** Loggetta describes and plans dense decoder models. Their plans are
+  estimates checked in sample: out of sample (DQ7, VOID) they missed, and the DQ10 reading is pending. Dense training
+  runs only with `--allow-development-executor` until DQ8's 24 GB reading passes. Dense training is not supported yet.
 - **The DQ10 reserve policy is opt-in.** It is a registered hypothesis for registered dense runs. Shipped defaults do
   not change.
 - **The MoE training estimate prices the `grouped_nf4` backward pass.** OLMoE estimates on the RTX A2000 were about
