@@ -21,5 +21,7 @@
   replays) the estimate now sits 90–114 MiB over the allocated peak, the cost of a bound. The reference kernel, the
   Qwen3-30B receipts (the loss branch is larger) and the granite receipts do not move; the granite runs stay 56–69 MiB
   under, which this term does not explain. `bench/gnf4_terms_in_sample.py` prints the table.
+- **Plans near a budget may change setup.** A `grouped_nf4` training plan is now larger, so where resident
+  `grouped_nf4` used to fit just barely, a plan may now pick the reference kernel or host residency.
 - **Dense plans are unchanged:** byte-identical on a 36-case matrix, before and after.
 - **Tests:** `tests/test_gnf4_training_terms.py`, `tests/test_dense_unchanged_by_moe_terms.py`.
