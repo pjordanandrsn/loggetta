@@ -148,9 +148,9 @@
    }
   },
   {
-   "allocated_peak_bytes": 3283577344,
+   "allocated_peak_bytes": 3283576832,
    "driver_peak_bytes": 3686793216,
-   "run": "2026-10-09-a2000-granite-train-residual/runs/G/receipts/granite-3.1-3b-a800m-instruct-device-grouped_nf4-t1024-20261009T145928Z-ce9e5abb",
+   "run": "2026-10-09-a2000-granite-train-residual/runs/G2/receipts/granite-3.1-3b-a800m-instruct-device-grouped_nf4-t1024-20261009T160437Z-a178340f",
    "today": {
     "none": {
      "allocator_estimate_bytes": 3258953728,
@@ -762,7 +762,7 @@
    "status": "OK"
   },
   {
-   "allocated_peak_bytes": 3283577344,
+   "allocated_peak_bytes": 3283576832,
    "allocator_estimate_bytes": 3258953728,
    "card": "NVIDIA RTX A2000 12GB",
    "driver_peak_bytes": 3686793216,
@@ -770,16 +770,16 @@
    "kind": "train",
    "note": "",
    "parts": {
-    "allocator": 24623616,
+    "allocator": 24623104,
     "context": -394264576,
     "context_line": "inferred: default; no receipt on file measured this GPU + driver",
-    "reserve": -391181209,
+    "reserve": -391180697,
     "reserve_line": "inferred: default 20% of the allocator estimate; no receipt on file measured this GPU + driver"
    },
    "placement": "resident (experts on device)",
    "plan_total_bytes": 4447615385,
    "plan_under_driver": false,
-   "run": "2026-10-09-a2000-granite-train-residual/runs/G/receipts/granite-3.1-3b-a800m-instruct-device-grouped_nf4-t1024-20261009T145928Z-ce9e5abb",
+   "run": "2026-10-09-a2000-granite-train-residual/runs/G2/receipts/granite-3.1-3b-a800m-instruct-device-grouped_nf4-t1024-20261009T160437Z-a178340f",
    "source": "loggetta plan",
    "status": "OK"
   },

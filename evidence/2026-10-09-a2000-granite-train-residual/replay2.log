@@ -1,0 +1,64 @@
+start=2026-10-09T16:04:31Z
+No dataset supplied: using the documented Alpaca demonstration, repeated as needed.
+Using the latest cached version of the dataset since tatsu-lab/alpaca couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'default' at /workspace/hf/datasets/tatsu-lab___alpaca/default/0.0.0/dce01c9b08f87459cf36a430d809084718273017 (last modified on Sat Aug  1 18:52:09 2026).
+Data ready: 12288 tokens from 122 rows; 1 pass(es); full-sequence, including prompts.
+[16:04:39]   checkpoint: ibm-granite/granite-3.1-3b-a800m-instruct @ a02780686e08a03fe0d2679a293b5c74a90efa89 (requested main, unpinned)
+[16:04:39]   fusing + quantizing experts (up to 32x40) to nf4 (streaming)...
+[16:04:49]   quantized experts on 32/32 MoE layers (40 experts each)
+[16:04:49]   loading non-expert weights (attention/embeddings/router/norms/dense-mlp)...
+  step 1/12  loss 1.6382  4.59s  peak 2.86 GiB
+  step 5/12  loss 1.3197  1.68s  peak 3.06 GiB
+  step 10/12  loss 1.3925  1.62s  peak 3.06 GiB
+  step 12/12  loss 1.0627  1.64s  peak 3.06 GiB
+run granite-3.1-3b-a800m-instruct-device-grouped_nf4-t1024-20261009T160437Z-a178340f status OK (37s); E4B_ABSMAX_DQ='0' PYTORCH_CUDA_ALLOC_CONF='expandable_segments:True'
+estimate 3.035 GiB | measured allocated peak 3.058 | replayed training peak 3.058 | residual +23.5 MiB | the receipt re-run: 3.090
+the plan's device items (reserve and context excluded):
+     1620.0 MiB  frozen expert stacks
+      576.0 MiB  activations
+      531.9 MiB  dense weights (bf16)
+      190.0 MiB  optimizer state (adamw)
+       95.0 MiB  adapter gradients
+       90.0 MiB  expert LoRA adapters
+        5.0 MiB  attention LoRA adapters
+live at the training peak (trace event 362947 of 384383, training from 45920), by allocating frame:
+     1620.0 MiB  x128   experts4bit_qlora/_vendor/experts.py:427 _quantize_stack  [30.00 MiB x32, 15.00 MiB x32, 3.75 MiB x32]
+      531.9 MiB  x226   experts4bit_qlora/loader.py:1418 _read  [4.50 MiB x64, 144.01 MiB x1, 1.50 MiB x64]
+      392.1 MiB  x3     ?  [192.01 MiB x2, 8.12 MiB x1]
+      192.0 MiB  x2     transformers/loss/loss_utils.py:40 fixed_cross_entropy  [192.01 MiB x1, 0.00 MiB x1]
+       96.0 MiB  x32    transformers/models/granitemoe/modeling_granitemoe.py:361 forward  [3.00 MiB x32]
+       95.0 MiB  x384   torch/optim/adam.py:178 _init_group  [0.94 MiB x64, 0.62 MiB x32, 0.31 MiB x32]
+       95.0 MiB  x384   torch/optim/adam.py:182 _init_group  [0.94 MiB x64, 0.62 MiB x32, 0.31 MiB x32]
+       90.0 MiB  x128   experts4bit_qlora/loader.py:1739 load_moe_4bit_streaming  [0.94 MiB x64, 0.62 MiB x32, 0.31 MiB x32]
+        8.1 MiB  x1     experts4bit_qlora/lora.py:787 forward  [8.12 MiB x1]
+        3.0 MiB  x128   experts4bit_qlora/lora.py:780 __init__  [0.02 MiB x128]
+        3.0 MiB  x1     transformers/models/granitemoe/modeling_granitemoe.py:432 forward  [3.00 MiB x1]
+        3.0 MiB  x1     transformers/models/granitemoe/modeling_granitemoe.py:446 forward  [3.00 MiB x1]
+        2.0 MiB  x128   experts4bit_qlora/lora.py:781 __init__  [0.02 MiB x64, 0.01 MiB x64]
+        0.1 MiB  x2     transformers/models/granitemoe/modeling_granitemoe.py:110 forward  [0.06 MiB x2]
+        0.1 MiB  x10    experts4bit_qlora/engines/fast.py:778 fused_experts_train_forward  [0.06 MiB x1, 0.00 MiB x5, 0.00 MiB x1]
+        0.0 MiB  x1     loggetta/backends/experts4bit_train.py:226 train_loop  [0.01 MiB x1]
+        0.0 MiB  x1     transformers/models/granitemoe/modeling_granitemoe.py:436 forward  [0.00 MiB x1]
+        0.0 MiB  x1     experts4bit_qlora/engines/rmsnorm_train.py:109 forward  [0.00 MiB x1]
+        0.0 MiB  x32    bitsandbytes/functional.py:854 get_4bit_type  [0.00 MiB x32]
+        0.0 MiB  x2     experts4bit_qlora/loader.py:1846 load_moe_4bit_streaming  [0.00 MiB x2]
+        0.0 MiB  x1     experts4bit_qlora/engines/fast.py:800 fused_experts_train_forward  [0.00 MiB x1]
+        0.0 MiB  x2     loggetta/backends/experts4bit_train.py:240 train_loop  [0.00 MiB x2]
+rc=0
+| live at the training peak, MiB | G2 |
+|---|---|
+| frozen expert stacks (resident) | 1620.0 |
+| dense weights (bf16) | 531.9 |
+| other (incl. unattributed frames) | 502.4 |
+| logits and loss | 192.0 |
+| optimizer state (adamw) | 190.0 |
+| expert LoRA adapters | 90.0 |
+| attention LoRA adapters | 5.0 |
+| fused grouped kernel workspaces | 0.1 |
+| **replayed peak** | **3131.4** |
+| measured allocated peak | 3131.5 |
+| plan's allocator estimate | 3108.0 |
+| residual (measured − estimate) | +23.5 |
+
+- G2: kernel grouped_nf4, residency device, E4B_ABSMAX_DQ='0'; plan's activations 576.0 MiB: 32 saved layer inputs (T x H bf16) + max(logits and loss in bf16+fp32+fp32 = 0.50 GB, 2 x one layer's recompute = 0.12 GB) at T=1024
+end=2026-10-09T16:05:17Z
