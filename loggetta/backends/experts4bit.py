@@ -538,7 +538,125 @@ def estimate(topology, setup: dict, workload):
     fp = estimate_qlora_footprint(topology, QLoRASetup(**setup), tokens_per_microbatch=workload.tokens_per_microbatch,
                                   optimizer=workload.optimizer)
     lines = [(i.name, i.where, i.bytes, i.basis, i.detail) for i in fp.items]
-    return lines, fp.unmodelled, fp.refusals
+    unmodelled = fp.unmodelled
+    if not fp.refusals and setup.get("expert_kernel") == "grouped_nf4":
+        line = _gnf4_backward_line(topology, setup, workload.tokens_per_microbatch, lines)
+        if line is not None:
+            lines.append(line)
+        unmodelled = tuple(unmodelled) + GNF4_UNMODELLED
+    return lines, unmodelled, fp.refusals
+
+
+# --- grouped_nf4 training: the MoE layer backward's working set (#43) -------------------------------------------------
+# experts4bit-qlora's activation item is ``boundaries + max(logits, 2 x one layer)``, whose layer term counts T x top_k
+# routed rows and does not depend on the kernel. With grouped-nf4-gemm the training peak moves into an MoE layer's
+# backward (#44, OLMoE on the A2000), where the kernel's padded LoRA delta and its fused workspaces are live.
+# The routing that sizes the padded delta is data-dependent, so it is priced as a BOUND in shape, never a constant.
+#
+# grouped-nf4-gemm exposes no public sizing or route helper, so its rules are mirrored here from kernel/nf4_qlora.py.
+# tests/test_gnf4_training_terms.py pins each one against the installed package: a kernel change fails that test
+# instead of drifting silently away from this estimate.
+
+#: ``_PAD_BYTES_LIMIT``: the ``auto`` route takes the per-expert loop (nothing padded) when the padded block,
+#: ``G x widest x (K + N)`` at the activations' itemsize, would exceed this
+GNF4_PAD_BYTES_LIMIT = 2 * 2 ** 30
+#: ``_PAD_BUCKETS_AUTO_MIN_ROWS``: a call with at least this many routed rows (T x top_k) pads by buckets (0.42.0+)
+GNF4_PAD_BUCKETS_MIN_ROWS = 16384
+#: ``_PAD_BUCKET_RATIO``: within a bucket the widest group has at most this many times the narrowest's rows, so the
+#: buckets hold at most this many times the routed rows
+GNF4_PAD_BUCKET_RATIO = 2
+#: ``T x top_k x first_out`` bf16 buffers live at the grouped kernel's backward peak (#44: fused_experts_train_
+#: forward, fused_grouped_lora, gemm_4bit_grouped, _scaled and nf4_qlora's forward, 32 MiB each on OLMoE at T=1024)
+GNF4_FUSED_WORKSPACES = 5
+GNF4_UNMODELLED = (
+    "grouped_nf4 LoRA-delta overrides read at run time and not by this estimate: NF4_QLORA_LORA_PATH, "
+    "NF4_QLORA_PAD_BYTES_LIMIT, NF4_QLORA_PAD_WASTE_LIMIT, NF4_QLORA_PAD_BUCKETS(_MIN_ROWS), "
+    "NF4_QLORA_PAD_BUCKETS_LADDER, NF4_QLORA_SINGLE_LADDER, NF4_QLORA_COMPACT_DELTA",
+)
+
+
+def _ladder_up(n: int) -> int:
+    """grouped-nf4-gemm's ``_ladder_up``: the smallest rung >= ``n``, every integer up to 4 and then four rungs per
+    octave (``{4, 5, 6, 7} x 2**k``), so a rung is under 1.25 x ``n``."""
+    n = int(n)
+    if n <= 4:
+        return max(n, 0)
+    step = 1 << (n.bit_length() - 3)
+    return -(-n // step) * step
+
+
+def gnf4_padded_rows_bound(*, n_experts: int, top_k: int, tokens: int, hidden: int, first_out: int,
+                           intermediate: int, adapter_dtype: str) -> tuple:
+    """``(rows, how)``: an upper bound on the padded LoRA delta's rows in one MoE layer pass of ``tokens`` tokens.
+
+    The single padded block is ``G x widest`` rows (``_lora_delta_padded``): ``G`` routed-to experts, at most
+    ``min(E, T x top_k)``, each padded to the hottest one's rows, at most ``T`` (an expert sees a token once). Then:
+
+    * the ``auto`` route pads only while ``G x widest x (K + N) x 2`` stays under ``GNF4_PAD_BYTES_LIMIT``; the smaller
+      ``K + N`` of the two projections (gate_up: H + first_out; down: I + H) gives the widest cap any padded call has;
+    * fp32 adapters take the single-block ladder (``NF4_QLORA_SINGLE_LADDER=auto``, grouped-nf4-gemm 0.44.0): ``G`` and
+      ``widest`` each rounded up to a rung, at most 1.5625 x the single block. Bounding it on older releases, which
+      have no ladder, only overstates;
+    * a call with at least ``GNF4_PAD_BUCKETS_MIN_ROWS`` routed rows pads by buckets instead, at most
+      ``GNF4_PAD_BUCKET_RATIO x T x top_k`` rows.
+    """
+    routed = tokens * top_k
+    if routed >= GNF4_PAD_BUCKETS_MIN_ROWS:
+        return (GNF4_PAD_BUCKET_RATIO * routed,
+                f"bucketed (T x top_k = {routed} >= {GNF4_PAD_BUCKETS_MIN_ROWS}): "
+                f"at most {GNF4_PAD_BUCKET_RATIO} x T x top_k rows")
+    g, w = min(n_experts, routed), tokens
+    cap = GNF4_PAD_BYTES_LIMIT // (min(hidden + first_out, intermediate + hidden) * 2)
+    single = min(g * w, cap)
+    how = f"single block: min(E, T x top_k) x T = {g} x {w}" + (f", capped at {cap} by the pad route" if cap < g * w
+                                                              else "")
+    if adapter_dtype == "fp32":
+        rows = min(_ladder_up(g) * _ladder_up(w), -(-single * 25 // 16))
+        return rows, how + f", on the fp32 single-block ladder: {rows}"
+    return single, how
+
+
+def _gnf4_backward_line(topology, setup: dict, tokens: int, lines: list):
+    """The grouped kernel's MoE-backward working set above experts4bit-qlora's activation item, or None if that item
+    already covers it. The backward branch is ``boundaries + padded LoRA delta + fused workspaces``; the activation
+    item is ``boundaries + max(logits, 2 x layer)``, so the line is what the branch exceeds it by. The expert LoRA
+    gradients live there are already priced (the 'adapter gradients' line)."""
+    act = next((ln[2] for ln in lines if ln[0] == "activations"), None)
+    k = topology.top_k or 0
+    if act is None or not k or not topology.expert_stacks:
+        return None
+    ab = 4 if setup.get("adapter_dtype") == "fp32" else 2
+    T, H = int(tokens), topology.hidden_size
+    boundaries = topology.n_layers * T * H * 2
+    best = None
+    for st in topology.expert_stacks:
+        first_out = _first_out(st)
+        ws = GNF4_FUSED_WORKSPACES * T * k * first_out * 2
+        rows, how = 0, "experts not trained: no LoRA delta"
+        if setup.get("train_experts", True):
+            rows, how = gnf4_padded_rows_bound(n_experts=st.n_experts, top_k=k, tokens=T, hidden=st.hidden,
+                                               first_out=first_out, intermediate=st.intermediate,
+                                               adapter_dtype=setup.get("adapter_dtype", "bf16"))
+        padded = rows * (st.hidden + first_out + st.intermediate) * ab
+        if best is None or padded + ws > best[0] + best[1]:
+            best = (padded, ws, rows, how, st, first_out)
+    padded, ws, rows, how, st, first_out = best
+    extra = boundaries + padded + ws - act
+    if extra <= 0:
+        return None
+    return ("grouped_nf4 MoE backward (above the activation item)", "device", extra, "heuristic",
+            f"boundaries {boundaries / 2**20:.1f} MiB + padded LoRA delta {padded / 2**20:.1f} MiB "
+            f"({rows} rows x (H + first_out + I = {st.hidden} + {first_out} + {st.intermediate}) x {ab} B; {how}) "
+            f"+ fused workspaces {ws / 2**20:.1f} MiB ({GNF4_FUSED_WORKSPACES} x T x top_k x first_out bf16) "
+            f"- the activation item {act / 2**20:.1f} MiB; a bound in shape (#43, #44)")
+
+
+def _first_out(stack) -> int:
+    """Per-expert output width of the first projection (2I gated, I not), as experts4bit-qlora's recipe reads it."""
+    n = 1
+    for d in stack.first_shape:
+        n *= d
+    return n // (stack.n_experts * stack.hidden)
 
 
 def speed_rank(setup: dict) -> tuple:

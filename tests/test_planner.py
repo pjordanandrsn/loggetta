@@ -52,7 +52,8 @@ def _between_host_and_resident(topo):
                                                                objective="min_vram")).selected.device_bytes
     resident = plan(topo, hw(), Workload(seq_len=512), Constraints(expert_residency=("device",),
                                                                    objective="min_vram")).selected.device_bytes
-    assert resident - host > 1 * GiB, "fixture too small for the test"
+    # 0.99 GiB here since the grouped kernel's backward line (#43) made the cheapest resident setup the reference kernel
+    assert resident - host > GiB // 2, "fixture too small for the test"
     budget = (host + resident) // 2
     return (budget + 512 * (1 << 20)) / GiB              # free memory such that budget - headroom sits between them
 
