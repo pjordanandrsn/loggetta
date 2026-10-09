@@ -27,7 +27,7 @@ The code and the tests are the source of truth; this file says where things live
 - Section 1 records the two lower packages as they were when this layer was started: experts4bit-qlora (e4b)
   v0.45.0, origin/main `7b3b6aa5`, and grouped-nf4-gemm (gnf4) v0.37.0, origin/main `c6455de`, inspected on
   2026-10-04.
-- The interfaces in section 4 are released: e4b 0.48.0 and gnf4 0.41.0 first shipped them, and `min_hot_rows` and
+- The interfaces in section 4 are released: e4b 0.48.0 and gnf4 0.39.0 first shipped them, and `min_hot_rows` and
   `usable_buckets` followed in e4b 0.49.0, the floor Loggetta requires.
 
 ## 1. What the two packages already were (from the code, not the READMEs)
@@ -62,7 +62,7 @@ The code and the tests are the source of truth; this file says where things live
   - no memory estimate before load;
   - no capability query on the device;
   - about 97 `E4B_*` plus about 30 bare env vars as configuration, some read on every forward;
-  - the training CLI (`train.py`) never reaches the grouped kernel;
+  - the training CLI (`train.py`) reaches the grouped kernel only through its arena path (`TRAIN_ARENA`);
   - the only automatic memory decision was halving `TOKEN_BUDGET` after an OOM.
 
 **Already right, and kept.** The two packages share one byte-identical `docs/system-manifest.json` that states
@@ -119,17 +119,20 @@ the ownership split and the dependency direction (`experts4bit-qlora -> grouped-
 | running a training plan: building the model, adapters, engines and kernels | e4b `prepare_qlora_training`, called by the backend's executor | e4b knows how; the executor adds only the measured loop and integrity checks |
 
 **Rejected abstractions.**
-- No plugin framework. `backends/__init__.py` is a one-element tuple.
+- No plugin framework. `backends/__init__.py` is a plain tuple: `(experts4bit, dense)`.
 - No `KernelProvider` interface. The one kernel question the planner needs ("can this device train through the
   grouped kernel, by which route?") is one function in the kernel package.
 - No YAML config. Plans are typed dataclasses, and the CLI maps flags onto them.
 - No topology type in the planner. It uses e4b's `MoETopology` directly rather than mirroring it.
 
-## 4. Interfaces between the layers (all that exist)
+## 4. Interfaces between the layers (the main ones)
+
+Smaller helpers also cross these boundaries and are not listed here, e.g. `usable_buckets`, `estimate_env`, the
+chunked-loss and dense-offload helpers, and gnf4's `nf4_route.MIN_CAPABILITY`.
 
 **gnf4 → e4b (new):**
 ```python
-nf4_route.route_for(capability, *, has_grouped_mm, requested="auto") -> (route | None, reason)
+nf4_route.route_for(capability, *, has_grouped_mm, requested="auto", n_groups=None) -> (route | None, reason)
 ```
 
 **e4b → Loggetta (new):**
@@ -256,7 +259,8 @@ it used, and with what basis:
 - allocator reserve slack, matched by setup key, model, GPU and workload kind (`reserve_fraction`), in order:
   1. this GPU, setup and model (same-shape receipts first);
   2. training only: the same model and setup on another GPU, transferred through an anchor model;
-  3. this GPU and setup, another model;
+  3. serving only: this GPU and setup, another model (training never borrows another model's slack; it takes
+     step 4 as a bound, at least the 20% default, #49);
   4. the largest slack measured on this GPU;
   5. serving only: the largest slack for this setup on any GPU (heuristic);
   6. the default.
@@ -309,8 +313,9 @@ trainer's.
 List it in `BACKENDS`, and give it a `WORKLOADS` tuple.
 - Selection, refusal, rendering and `execute` are backend-agnostic.
 - The planner names no training setup field: slack is matched on the backend's `SLACK_KEYS`, a receipt's
-  residency is asked of the backend that ran it, and warnings and relaxations are the backend's. The serve
-  suggestion's context/concurrency search still reads two `ServeSetup` fields (SERVING-PRESSURE-TEST).
+  residency is asked of the backend that ran it, and warnings and relaxations are the backend's. Two serving reads
+  remain: the suggestion's context/concurrency search reads two `ServeSetup` fields (SERVING-PRESSURE-TEST), and the
+  learned-overhead cache keys on `placement`.
 
 **A new kernel** behind e4b is e4b's business: it shows up as a `QLoRASetup.expert_kernel` value with a
 `setup_refusals` rule and a capability probe answered by the kernel package.
@@ -329,7 +334,7 @@ _See `docs/RESULTS.md`._
 
 **What a rename does not touch:**
 - No serialized format names the project: `execution-plan/1`, `execution-receipt/1`, `estimate-validation/1`.
-- No env var is read.
+- No env var is read, apart from `CUDA_VISIBLE_DEVICES` when detecting the GPU.
 - No protocol string exists.
 - The lower packages' new APIs do not mention it, and neither do their changelogs or PRs.
 

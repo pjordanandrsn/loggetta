@@ -3,6 +3,24 @@
 Short answers. Detail is in [ARCHITECTURE.md](ARCHITECTURE.md), [RESULTS.md](RESULTS.md) and
 [SERVING-PRESSURE-TEST.md](SERVING-PRESSURE-TEST.md).
 
+> **Correction (2026-10-09).** This report is dated and is left as written. A claims audit against the committed
+> evidence found these lines out of date:
+> - **Prefill-graph pool:** +0.23 / +0.56 GiB, not +0.24 / +0.57.
+> - **Serving slack:** up to 4.88% at all-VRAM (gpt-oss, SV3) and as low as 4.08% under the solver (SV4), not
+>   0.06–1.5% and 8–15%.
+> - **The tiered placement** was checked on two models and cards: Qwen3-30B-A3B on an RTX 4090 (SV4) and ERNIE-4.5-21B
+>   on the RTX A2000.
+> - **int4 plans:** q_exp and q_both land 0.19 GiB over the driver peak; the int4 + prefill-graph plan lands 0.007 GiB
+>   under it.
+> - **Six families served:** +0.8–1.8% is SV3's four arms; across the six families the peaks run −4.2% to +4.1% of
+>   the estimate.
+> - **A2000 runs:** seven planned receipts, not six (R1, R1b, R3, R3b, R4, R5, R6); the +0.01 to +0.21 GiB range holds.
+> - **e4b #1141** merged on 2026-10-05. Loggetta now has two backends (experts4bit, dense).
+> - **Above 8B:** Qwen3.6-35B-A3B and gpt-oss-20b (SV3, RTX 5090) and ERNIE-4.5-21B (A2000) were also run, not only
+>   Qwen3-30B-A3B.
+>
+> Current figures are in [RESULTS.md](RESULTS.md).
+
 **What it is, in one sentence.** Loggetta turns a workload, a machine and constraints into an inspectable
 `ExecutionPlan`. It hands that plan to the backend that knows how to run it, and keeps the `ExecutionReceipt` as
 evidence for the next plan. Loggetta decides what should execute; the backend knows how to execute it.

@@ -58,15 +58,16 @@ choose among those mechanisms before loading, to say why, and to record the choi
 - The leaks were `Candidate.label()` and the planner's "why" text, which read training field names. Serving v1
   moved both into the backend (`label(setup)`, `explain(...)`). Three more moved later: slack matching uses the
   backend's `SLACK_KEYS` only, and the PCIe-width warning and the "allow host-backed experts" suggestion are the
-  backend's `plan_warnings` and `relaxed_candidates`. The planner still names setup fields in one place: the serve
-  suggestion's context/concurrency search (`max_tokens_per_seq`, `max_seqs`).
+  backend's `plan_warnings` and `relaxed_candidates`. The planner still names setup fields in two places: the serve
+  suggestion's context/concurrency search (`max_tokens_per_seq`, `max_seqs`) and serving's learned-overhead cache key
+  (`placement`).
 
 **3. Multi-GPU is not assumed away.** `HardwareProfile.gpus` is a list and `Constraints.device` an index. A
 multi-GPU plan would add per-device budgets; nothing assumes there is exactly one.
 
 ## What does not fit yet (deferred, stated)
 
-- **The first-chunk prefill graph's pool** (on by default in experts4bit-qlora 0.47.0, +3.3 GiB at 30B) is not
+- **The first-chunk prefill graph's pool** (on by default in experts4bit-qlora 0.47.0, +0.56 GiB at 30B with NF4 experts; the +3.3 GiB once cited was the int4 stack) is not
   priced. Plans set `prefill_graph=0` unless the caller fixes it.
 - **Decode graphs below sm_89.** They need the fused FP8 KV append, which Triton cannot compile there (found on the
   A2000). Plans offer graphs only where experts4bit-qlora's `fused_append_unsupported` says they run (e4b#1090).
