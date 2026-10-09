@@ -32,3 +32,8 @@ jobs:
           python -m pip install -e ".[${{ matrix.extras }}]"
       - name: Test
         run: pytest -q
+      - name: The absmax digest regression must run, not skip (#47)
+        if: matrix.lane == 'released backend'
+        run: |
+          pytest -q -rs tests/test_absmax_digest.py | tee absmax-digest.out
+          grep -q "3 passed" absmax-digest.out && ! grep -q -i "skipped" absmax-digest.out

@@ -8,7 +8,7 @@ timing, memory sampling, and the integrity checks a receipt records. Fixed shape
 comparable across runs and with the plan.
 
 One check reads experts4bit-qlora's storage directly: ``_expert_digest`` hashes the frozen expert bytes by the
-attribute names of ``ExpertsNbit`` and of the offload handles' host homes.
+attribute and buffer names of ``ExpertsNbit`` and of the offload handles' host homes.
 """
 from __future__ import annotations
 
@@ -35,8 +35,28 @@ def packed_blocks(tokenizer, n_blocks: int, seq_len: int, dataset="tatsu-lab/alp
     return [ids[k * seq_len:(k + 1) * seq_len] for k in range(n_blocks)], {"dataset": dataset, "examples_used": i}
 
 
+#: The buffers experts4bit-qlora's ``compress_expert_absmax_`` stores in place of one projection's fp32 absmax
+#: (``<which>_absmax_q`` / ``_s`` / ``_off`` / ``_code``, every release since 0.49.0). It is the default for resident
+#: ``grouped_nf4`` training, and it leaves a guard under the old ``<which>_absmax`` name that raises on any use.
+_COMPRESSED_ABSMAX = ("_absmax_q", "_absmax_s", "_absmax_off", "_absmax_code")
+
+
+def _stored_expert_tensors(base) -> dict:
+    """What one ``ExpertsNbit`` stack STORES for its frozen weights: the packed codes and, per projection, the absmax as
+    it is held -- the fp32 buffer, or the double-quantized payload when experts4bit-qlora compressed it. Nothing is
+    decompressed: the digest is of the stored bytes. Without compression the names, and so the digest, are as before."""
+    out = {n: getattr(base, n) for n in ("gate_up_proj", "down_proj")}
+    for which in ("gate_up", "down"):
+        if which + _COMPRESSED_ABSMAX[0] in base._buffers:
+            out.update({which + s: base._buffers[which + s] for s in _COMPRESSED_ABSMAX})
+        else:
+            out[which + "_absmax"] = getattr(base, which + "_absmax")
+    return out
+
+
 def _expert_digest(model, layers=(0, -1)) -> dict:
-    """sha256 of the frozen packed expert bytes (+ absmax) of a few stacks, wherever they live (device or host home)."""
+    """sha256 of the frozen expert bytes as stored (packed codes + absmax, fp32 or double-quantized) of a few stacks,
+    wherever they live (device or host home)."""
     import torch
     from experts4bit_qlora import ExpertsNbit, offload_handles
 
@@ -45,7 +65,7 @@ def _expert_digest(model, layers=(0, -1)) -> dict:
     out = {}
     for li in layers:
         base = bases[li]
-        tensors = {n: getattr(base, n) for n in ("gate_up_proj", "down_proj", "gate_up_absmax", "down_absmax")}
+        tensors = _stored_expert_tensors(base)
         if tensors["gate_up_proj"].numel() == 0 and handles:   # offloaded: the bytes are in the host home
             tensors = dict(handles[li].home)
         sha = hashlib.sha256()
