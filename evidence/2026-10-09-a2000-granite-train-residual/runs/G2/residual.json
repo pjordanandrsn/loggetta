@@ -1,0 +1,286 @@
+{
+ "schema": "train-residual/1",
+ "receipt": "evidence/2026-10-04-rtx-a2000/granite-3.1-3b-a800m-instruct-device-grouped_nf4-t1024-20261004T180058Z.json",
+ "setup": {
+  "adapter_dtype": "bf16",
+  "alpha": 16,
+  "attn_4bit": false,
+  "blocksize": 64,
+  "dgrad": true,
+  "expert_kernel": "grouped_nf4",
+  "expert_residency": "device",
+  "keep_moe_layers": 0,
+  "pin": true,
+  "quant_type": "nf4",
+  "r": 8,
+  "train_attention": true,
+  "train_experts": true
+ },
+ "workload": {
+  "concurrency": null,
+  "context_len": null,
+  "grad_accum": 1,
+  "kind": "train",
+  "micro_batch": 2,
+  "optimizer": "adamw",
+  "phase": null,
+  "seq_len": 512,
+  "steps": 12
+ },
+ "estimate_device": {
+  "frozen expert stacks": 1698695168,
+  "dense weights (bf16)": 557789184,
+  "expert LoRA adapters": 94371840,
+  "attention LoRA adapters": 5242880,
+  "adapter gradients": 99614720,
+  "optimizer state (adamw)": 199229440,
+  "activations": 604010496
+ },
+ "measured": {
+  "device_peak_bytes": 3283576832,
+  "device_reserved_peak_bytes": 3544186880,
+  "driver_process_peak_bytes": 3686793216
+ },
+ "replayed_peak_bytes": 3283557480,
+ "peak_event": 362947,
+ "train_mark": 45920,
+ "trace_events": 384383,
+ "run_id": "granite-3.1-3b-a800m-instruct-device-grouped_nf4-t1024-20261009T160437Z-a178340f",
+ "provenance": {
+  "argv": [
+   "bench/train_residual.py",
+   "evidence/2026-10-04-rtx-a2000/granite-3.1-3b-a800m-instruct-device-grouped_nf4-t1024-20261004T180058Z.json",
+   "--out",
+   "/workspace/granite-attr/runs/G2"
+  ],
+  "python": "3.10.12",
+  "sources": {
+   "experts4bit_qlora": {
+    "file": "/workspace/granite-attr/venv/lib/python3.10/site-packages/experts4bit_qlora/__init__.py"
+   },
+   "nf4_grouped": {
+    "file": "/workspace/granite-attr/venv/lib/python3.10/site-packages/nf4_grouped.py"
+   },
+   "loggetta": {
+    "file": "/workspace/granite-attr/loggetta/bench/../loggetta/__init__.py"
+   }
+  },
+  "versions": {
+   "torch": "2.11.0+cu128",
+   "triton": "3.6.0",
+   "transformers": "5.19.0",
+   "bitsandbytes": "0.50.2",
+   "accelerate": "1.15.0",
+   "experts4bit-qlora": "0.51.0",
+   "grouped-nf4-gemm": "0.44.0"
+  },
+  "started_at": "2026-10-09T16:04:32Z"
+ },
+ "env": {
+  "E4B_ABSMAX_DQ": "0",
+  "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"
+ },
+ "groups": [
+  {
+   "frame": "experts4bit_qlora/_vendor/experts.py:427 _quantize_stack",
+   "bytes": 1698693120,
+   "count": 128,
+   "sizes": {
+    "31457280": 32,
+    "3932160": 32,
+    "15728640": 32,
+    "1966080": 32
+   }
+  },
+  {
+   "frame": "experts4bit_qlora/loader.py:1418 _read",
+   "bytes": 557789184,
+   "count": 226,
+   "sizes": {
+    "151004160": 1,
+    "3072": 65,
+    "1572864": 64,
+    "4718592": 64,
+    "122880": 32
+   }
+  },
+  {
+   "frame": "?",
+   "bytes": 411197440,
+   "count": 3,
+   "sizes": {
+    "8519680": 1,
+    "201338880": 2
+   }
+  },
+  {
+   "frame": "transformers/loss/loss_utils.py:40 fixed_cross_entropy",
+   "bytes": 201338884,
+   "count": 2,
+   "sizes": {
+    "201338880": 1,
+    "4": 1
+   }
+  },
+  {
+   "frame": "transformers/models/granitemoe/modeling_granitemoe.py:361 forward",
+   "bytes": 100663296,
+   "count": 32,
+   "sizes": {
+    "3145728": 32
+   }
+  },
+  {
+   "frame": "torch/optim/adam.py:178 _init_group",
+   "bytes": 99614720,
+   "count": 384,
+   "sizes": {
+    "24576": 192,
+    "8192": 64,
+    "983040": 64,
+    "655360": 32,
+    "327680": 32
+   }
+  },
+  {
+   "frame": "torch/optim/adam.py:182 _init_group",
+   "bytes": 99614720,
+   "count": 384,
+   "sizes": {
+    "24576": 192,
+    "8192": 64,
+    "983040": 64,
+    "655360": 32,
+    "327680": 32
+   }
+  },
+  {
+   "frame": "experts4bit_qlora/loader.py:1739 load_moe_4bit_streaming",
+   "bytes": 94371840,
+   "count": 128,
+   "sizes": {
+    "983040": 64,
+    "655360": 32,
+    "327680": 32
+   }
+  },
+  {
+   "frame": "experts4bit_qlora/lora.py:787 forward",
+   "bytes": 8519680,
+   "count": 1,
+   "sizes": {
+    "8519680": 1
+   }
+  },
+  {
+   "frame": "experts4bit_qlora/lora.py:780 __init__",
+   "bytes": 3145728,
+   "count": 128,
+   "sizes": {
+    "24576": 128
+   }
+  },
+  {
+   "frame": "transformers/models/granitemoe/modeling_granitemoe.py:432 forward",
+   "bytes": 3145728,
+   "count": 1,
+   "sizes": {
+    "3145728": 1
+   }
+  },
+  {
+   "frame": "transformers/models/granitemoe/modeling_granitemoe.py:446 forward",
+   "bytes": 3145728,
+   "count": 1,
+   "sizes": {
+    "3145728": 1
+   }
+  },
+  {
+   "frame": "experts4bit_qlora/lora.py:781 __init__",
+   "bytes": 2097152,
+   "count": 128,
+   "sizes": {
+    "24576": 64,
+    "8192": 64
+   }
+  },
+  {
+   "frame": "transformers/models/granitemoe/modeling_granitemoe.py:110 forward",
+   "bytes": 131072,
+   "count": 2,
+   "sizes": {
+    "65536": 2
+   }
+  },
+  {
+   "frame": "experts4bit_qlora/engines/fast.py:778 fused_experts_train_forward",
+   "bytes": 70332,
+   "count": 10,
+   "sizes": {
+    "64": 1,
+    "320": 5,
+    "1068": 1,
+    "1020": 1,
+    "1044": 1,
+    "65536": 1
+   }
+  },
+  {
+   "frame": "loggetta/backends/experts4bit_train.py:226 train_loop",
+   "bytes": 8192,
+   "count": 1,
+   "sizes": {
+    "8192": 1
+   }
+  },
+  {
+   "frame": "transformers/models/granitemoe/modeling_granitemoe.py:436 forward",
+   "bytes": 4096,
+   "count": 1,
+   "sizes": {
+    "4096": 1
+   }
+  },
+  {
+   "frame": "experts4bit_qlora/engines/rmsnorm_train.py:109 forward",
+   "bytes": 4096,
+   "count": 1,
+   "sizes": {
+    "4096": 1
+   }
+  },
+  {
+   "frame": "bitsandbytes/functional.py:854 get_4bit_type",
+   "bytes": 2048,
+   "count": 32,
+   "sizes": {
+    "64": 32
+   }
+  },
+  {
+   "frame": "experts4bit_qlora/loader.py:1846 load_moe_4bit_streaming",
+   "bytes": 256,
+   "count": 2,
+   "sizes": {
+    "128": 2
+   }
+  },
+  {
+   "frame": "experts4bit_qlora/engines/fast.py:800 fused_experts_train_forward",
+   "bytes": 160,
+   "count": 1,
+   "sizes": {
+    "160": 1
+   }
+  },
+  {
+   "frame": "loggetta/backends/experts4bit_train.py:240 train_loop",
+   "bytes": 8,
+   "count": 2,
+   "sizes": {
+    "4": 2
+   }
+  }
+ ]
+}
