@@ -158,11 +158,16 @@ def test_no_line_when_the_loss_is_the_larger_term(topo):
 
 
 def test_a_plan_carries_the_line(topo):
-    from tests.test_planner import hw
-
     from loggetta import Constraints, Workload, plan
+    from loggetta.hardware import GPU, Fact, HardwareProfile, Host
 
-    p = plan(topo, hw(free_gib=24.0, total_gib=24.0), Workload(seq_len=512, micro_batch=2),
+    r = lambda v: Fact(v, "reported")  # noqa: E731
+    gpu = GPU(index=0, vendor="nvidia", name="Test GPU", uuid=None, compute_capability=r((8, 6)),
+              memory_total=r(24 << 30), memory_free=r(24 << 30), driver=r("575.64.05"), pcie_gen_max=r(4),
+              pcie_width_max=r(16), pcie_gen_current=r(4), pcie_width_current=r(16))
+    host = Host(cpu_model=r("test cpu"), cpus=r(8), memory_total=r(64 << 30), memory_available=r(40 << 30),
+                memory_limit=r(64 << 30))
+    p = plan(topo, HardwareProfile(gpus=(gpu,), host=host, platform="Linux x86_64"), Workload(seq_len=512, micro_batch=2),
              Constraints(fixed={"expert_kernel": "grouped_nf4", "expert_residency": "device"}))
     if p.selected is None or p.selected.setup.get("expert_kernel") != "grouped_nf4":
         pytest.skip("grouped-nf4-gemm is not usable here, so no grouped_nf4 plan")

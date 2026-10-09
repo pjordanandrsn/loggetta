@@ -76,7 +76,7 @@ def main():
             print(f"\n- {x['receipt'].removesuffix('.json')}: {x['new_line_detail']}")
     if a.json:
         with open(a.json, "w") as f:
-            json.dump(rows, f, indent=1, sort_keys=True)
+            json.dump({"rows": rows}, f, indent=1, sort_keys=True)
 
 
 if __name__ == "__main__":
