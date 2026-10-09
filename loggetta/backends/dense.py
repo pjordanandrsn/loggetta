@@ -53,6 +53,11 @@ SPEED_EVIDENCE = {
 ACTIVATION_COEFFICIENT = 1.2557 / 1.0664
 #: tokens per micro-batch above which a streamed NF4 layer hides behind its compute on PCIe 4.0 x16 (DQ1's ~0.26 F/B)
 STREAM_BREAK_EVEN_TOKENS = 1760
+#: bytes per logit of one chunk of the chunked LM loss, used only when the installed experts4bit-qlora has no
+#: ``chunked_loss_bytes``: three fp32 logits-sized tensors, measured as peak allocated around experts4bit-qlora's
+#: ``chunked_causal_lm_loss`` (experts4bit-qlora #1504; its ``CHUNK_BYTES_PER_LOGIT`` follows in #1505; releases up to
+#: 0.51 state 10)
+CHUNK_LOSS_BYTES_PER_LOGIT = 12
 DEFAULT_CHUNK = 512
 GiB = 1 << 30
 ROLES = ("attn_in", "attn_out", "mlp_in", "mlp_out")
@@ -530,19 +535,21 @@ def estimate(topology, setup, workload):
             loss_bytes = chunked_loss_bytes(T, V, hidden=H, chunk=setup["loss_chunk"])
             loss_detail = f"experts4bit-qlora chunked_loss_bytes: {setup['loss_chunk']} tokens of logits at a time"
         except ImportError:
-            loss_bytes = min(T, setup["loss_chunk"]) * V * 10 + T * H * 2
-            loss_detail = "one chunk of logits at 10 B per logit (this experts4bit-qlora cannot state it)"
+            loss_bytes = min(T, setup["loss_chunk"]) * V * CHUNK_LOSS_BYTES_PER_LOGIT + T * H * 2
+            loss_detail = (f"one chunk of logits at {CHUNK_LOSS_BYTES_PER_LOGIT} B per logit (this experts4bit-qlora "
+                           "cannot state it)")
     else:
         # Generic full-logit CE backward overlaps saved log-softmax, NLL grad and softmax grad:
         # three distinct fp32 [T,V] tensors. DQ7's CPU/CUDA operator census identifies the missing buffer.
         loss_bytes, loss_detail = T * V * 12, "full-logit backward: saved fp32 log-softmax + fp32 NLL grad + fp32 logits grad"
-    per_token = ACTIVATION_COEFFICIENT * (boundaries + layer_work)
-    if T * layer_work > loss_bytes:
-        act = int(T * per_token)
-        how = "checkpointed layer inputs + one layer's recompute"
+    # the larger of the two branches AS RETURNED: comparing T x layer_work with loss_bytes before the coefficient scales
+    # the layer branch let a larger loss term switch to the smaller branch (an estimate that fell as a term rose)
+    layer_branch = int(T * ACTIVATION_COEFFICIENT * (boundaries + layer_work))
+    loss_branch = int(T * ACTIVATION_COEFFICIENT * boundaries) + loss_bytes
+    if layer_branch >= loss_branch:
+        act, how = layer_branch, "checkpointed layer inputs + one layer's recompute"
     else:
-        act = int(T * ACTIVATION_COEFFICIENT * boundaries) + loss_bytes
-        how = "checkpointed layer inputs + the loss's workspace"
+        act, how = loss_branch, "checkpointed layer inputs + the loss's workspace"
     lines.append(("activations", "device", act, "heuristic",
                   f"{how} at {T:,} tokens; per-token terms x {ACTIVATION_COEFFICIENT:.3f}, DQ4's measured slope over "
                   f"the formula's (Qwen3-32B, fp32 adapters); loss: {loss_detail}"))
