@@ -419,9 +419,12 @@ def candidates(topology, workload, constraints, status) -> list:
 def _linear_bytes(n: int, base: str) -> tuple:
     """(bytes that would stream, bytes that stay on the device) for a frozen linear of ``n`` weights. NF4: bitsandbytes
     Linear4bit with nested statistics -- 4-bit codes, an 8-bit absmax per 64 weights, an fp32 second-level scale per 256
-    absmax blocks; the codes are the packed parameter, the statistics its quant_state (never streamed)."""
+    absmax blocks, private fp32 codebooks (16 and 256 entries) and an fp32 offset. Partial blocks round up;
+    the codes are the packed parameter, the statistics its quant_state (never streamed)."""
     if base == "nf4":
-        return n // 2, n // 64 + (n // (64 * 256)) * 4
+        blocks = (n + 63) // 64
+        secondary = (blocks + 255) // 256
+        return (n + 1) // 2, blocks + secondary * 4 + (16 + 256 + 1) * 4
     return 2 * n, 0
 
 
