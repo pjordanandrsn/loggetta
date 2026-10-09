@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "loggetta"
-version = "0.3.1"
+version = "0.4.0"
 description = "Plan and run Mixture-of-Experts fine-tuning on one GPU: check the machine, fit the model, and keep a report of each run."
 readme = "PYPI.md"
 requires-python = ">=3.10"

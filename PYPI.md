@@ -17,6 +17,21 @@ loggetta plan Qwen/Qwen3-30B-A3B --seq 2048
 The plan shows where weights will live, estimated memory use, and why alternatives were rejected. It checks the budget
 before downloading model weights. Estimates can miss; they are not an out-of-memory guarantee.
 
+## New in 0.4.0
+
+- **Dense models, development-gated.** `plan` and `inspect` handle dense decoder models. Their training runs only with
+  `--allow-development-executor`: the dense memory estimate has not passed a capacity reading.
+  See [Dense training](https://github.com/pjordanandrsn/loggetta/blob/main/docs/DENSE.md).
+- **The DQ10 reserve policy is opt-in,** for registered dense runs. Defaults do not change.
+- **MoE training estimates price the `grouped_nf4` backward pass.** OLMoE plans on an RTX A2000 were about 0.2 GiB short;
+  in sample they now cover the measured peak. Near a budget, a plan may pick the reference kernel or host residency
+  where it picked resident `grouped_nf4` before.
+- **Single-stream serve plans** name the speed-ups a default server runs for the model's family, and quote a decode
+  speed only from a measured run of the same setup.
+<!-- RELEASE: add the absmax digest fix here once it merges. -->
+
+Full list: [CHANGELOG](https://github.com/pjordanandrsn/loggetta/blob/main/CHANGELOG.md).
+
 ## Train on your data
 
 ```bash
@@ -42,7 +57,7 @@ The included runtime and kernels do the compute; these are matched training runs
 | :--- | :--- |
 | **Qwen3-30B-A3B QLoRA · RTX 5090** | Unsloth spends **1.92×** e4b's GPU time per step, and **2.80×** its wall-clock time on an AMD EPYC 7713 host. Comparable held-out loss; Unsloth peaked lower (24.27 vs 26.16 GB). [Result](https://github.com/pjordanandrsn/experts4bit-qlora/blob/main/bench/h2h-2026-10-02/tc1/RESULTS-tc1-pos69.md) |
 | **Why two numbers** | GPU time doesn't depend on the host. Unsloth runs about 14× e4b's CPU operations per step, so its wall-clock time grows on a slower host. Earlier wall-clock readings, before e4b's current defaults: 2.352× and 2.468×. |
-| **Planner memory check · Qwen3-30B-A3B · RTX 5090** | **24.54 GiB** estimated process peak, **24.34 GiB** measured, after calibration from earlier runs. One in-sample case, not a guarantee: OLMoE training plans on an RTX A2000 still sit under the measured peak (up to 1.105×). [Plan vs run](https://github.com/pjordanandrsn/loggetta/blob/main/docs/RESULTS.md) · [MoE audit](https://github.com/pjordanandrsn/loggetta/blob/main/evidence/2026-10-08-moe-plan-vs-driver/README.md) |
+| **Planner memory check · Qwen3-30B-A3B · RTX 5090** | **24.54 GiB** estimated process peak, **24.34 GiB** measured, after calibration from earlier runs. One in-sample case, not a guarantee. In the MoE audit, one RTX A2000 training plan is still under its measured peak (1.014×), where it borrows another model's reserve. [Plan vs run](https://github.com/pjordanandrsn/loggetta/blob/main/docs/RESULTS.md) · [MoE audit](https://github.com/pjordanandrsn/loggetta/blob/main/evidence/2026-10-09-moe-plan-vs-driver-after-gnf4/README.md) |
 
 The comparison used torch 2.12.1+cu130 and transformers 5.5.0 for both frameworks, with matched adapters, initialization and
 tokens. Loggetta does not predict throughput.
@@ -65,8 +80,9 @@ authority.
 
 ## Scope
 
-Single-GPU MoE planning and QLoRA training; serving placement is planned, not launched. Not yet: dense models,
-multi-GPU, throughput prediction. GPU runs need Linux, an NVIDIA CUDA GPU and a compatible PyTorch. Pre-1.0.
+Single-GPU MoE planning and QLoRA training; serving placement is planned, not launched. Dense models are planned, and
+train only behind `--allow-development-executor`. Not yet: multi-GPU, throughput prediction. GPU runs need Linux, an
+NVIDIA CUDA GPU and a compatible PyTorch. Pre-1.0.
 
 [GitHub](https://github.com/pjordanandrsn/loggetta) ·
 [Results](https://github.com/pjordanandrsn/loggetta/blob/main/docs/RESULTS.md) ·
