@@ -704,7 +704,8 @@ Three planner fixes to how a serve plan borrows its allocator reserve. All plann
   - A receipt scoped by `licensed_for` still counts only for its own whole setup: SV6's licence.
 - **No anchor transfer for serving.** Moving another GPU's slack through an anchor model's ratio was built for training
   (8–39% slack). Serving slack is a few percent (up to 4.9% at all-VRAM), and the ratio of two such numbers is noise:
-  on an RTX 4090 it added 1.0–1.9 GiB to OLMoE's plans and 4.5–5.1 GiB to gpt-oss-20b's (`serve-sweep-ab.txt`).
+  on an RTX 4090, where the anchor rule is the one that applies, this section's three fixes together removed 1.0–1.9 GiB
+  from OLMoE's plans and 4.5–5.1 GiB from gpt-oss-20b's (`serve-sweep-ab.txt`).
   Serving now takes this GPU's same-setup slack from another model, as the next rule always did.
 
 **What moved** (`serve-sweep-ab.txt`, all 10 families × 4 cards × 2 workloads): 14 of 80 plans. No status, placement

@@ -16,7 +16,7 @@ Short answers. Detail is in [ARCHITECTURE.md](ARCHITECTURE.md), [RESULTS.md](RES
 >   the estimate.
 > - **A2000 runs:** seven planned receipts, not six (R1, R1b, R3, R3b, R4, R5, R6); the +0.01 to +0.21 GiB range holds.
 > - **e4b #1141** merged on 2026-10-05. Loggetta now has two backends (experts4bit, dense).
-> - **Above 8B:** Qwen3.6-35B-A3B and gpt-oss-20b (SV3, RTX 5090) and ERNIE-4.5-21B (A2000) were also run, not only
+> - **Above 8B:** Qwen3.6-35B-A3B and gpt-oss-20b (SV3, RTX 5090) and ERNIE-4.5-21B (A2000) were also served, not only
 >   Qwen3-30B-A3B.
 >
 > Current figures are in [RESULTS.md](RESULTS.md).

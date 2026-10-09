@@ -183,7 +183,8 @@ Two costs, both stated in the plan:
   quadratically.
 - **Speed:** flash attention cannot take a mask, so attention runs on SDPA's memory-efficient kernel. The speed cost
   is not modelled. Measured on an RTX A2000 (OLMoE-1B-7B, NF4, seq 2048, alternating arms): steps took 1.11x as long
-  as concatenated packing, and the allocator peak rose by the boolean mask alone (4 MiB; the plan prices 12 MiB).
+  as concatenated packing, and the allocator peak rose by the boolean mask alone (4 MiB; the plan prices 12 MiB;
+  `evidence/2026-10-07-a2000-packing-ab/packing-ab.json`).
 
 transformers derives per-example masks only when no KV cache exists. The training loop therefore passes
 `use_cache=False` together with `position_ids` (a test checks the isolation on a tiny model).
