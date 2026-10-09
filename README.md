@@ -19,6 +19,10 @@ that the selected optimizations actually ran.
 
 **One install includes the runtime and GPU kernels.**
 
+> **Limits.** Plans are estimates, not an out-of-memory guarantee. The released training path is single-GPU MoE
+> training on Linux with a supported NVIDIA CUDA GPU. Dense models are planned but not yet supported for training.
+> [Get started](#get-started) · [Dense training](docs/DENSE.md)
+
 ## Get started
 
 ```bash

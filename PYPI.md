@@ -8,6 +8,10 @@ optimizations actually ran. One install includes the runtime
 ([experts4bit-qlora](https://pypi.org/project/experts4bit-qlora/)) and the GPU kernels
 ([grouped-nf4-gemm](https://pypi.org/project/grouped-nf4-gemm/)).
 
+> **Limits.** Plans are estimates, not an out-of-memory guarantee. The released training path is single-GPU MoE
+> training on Linux with a supported NVIDIA CUDA GPU. Dense models are planned but not yet supported for training.
+> [Dense training](https://github.com/pjordanandrsn/loggetta/blob/main/docs/DENSE.md)
+
 ```bash
 pip install loggetta
 loggetta inspect
