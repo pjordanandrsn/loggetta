@@ -106,12 +106,23 @@ def test_smollm3_keeps_36_mib_of_packed_kv_weights_on_device():
 # These are config-only estimates, with no model weights or hardware measurements.
 DQ9_FIXTURES = Path(__file__).parent / "fixtures" / "dq9"
 DQ9_REFERENCE = json.loads((DQ9_FIXTURES / "prior-estimates.json").read_text())
+# Rows whose activation item now takes the larger branch as returned (see the file's "why"); the snapshot stays as taken.
+DQ9_ACTIVATION_CORRECTION = json.loads((DQ9_FIXTURES / "activation-max-correction.json").read_text())["rows"]
+#: the chunk coefficient the snapshot (and the correction above) were computed at
+DQ9_BASELINE_CHUNK_BYTES_PER_LOGIT = 10
 
 
 @needs_offload
 @pytest.mark.parametrize("row", DQ9_REFERENCE["rows"],
                          ids=lambda row: f"{row['subject']}-{row['placement']}-{row['seq']}")
-def test_kept_weight_correction_is_zero_on_every_dq9_subject_placement_and_rung(row):
+def test_kept_weight_correction_is_zero_on_every_dq9_subject_placement_and_rung(row, monkeypatch):
+    # The snapshot was taken with experts4bit-qlora's chunk coefficient at 10 B per logit, its value before #1505. Pin it
+    # (on the helper and on loggetta's fallback) so this stays a regression of the kept-weight correction at that
+    # baseline; the coefficient's own movement is covered by the activation tests below.
+    import experts4bit_qlora.engines.chunked_lm_loss as cll
+
+    monkeypatch.setattr(cll, "CHUNK_BYTES_PER_LOGIT", DQ9_BASELINE_CHUNK_BYTES_PER_LOGIT)
+    monkeypatch.setattr(dense, "CHUNK_LOSS_BYTES_PER_LOGIT", DQ9_BASELINE_CHUNK_BYTES_PER_LOGIT)
     config = DQ9_FIXTURES / (row["subject"] + ".json")
     assert hashlib.sha256(config.read_bytes()).hexdigest() == DQ9_REFERENCE["config_sha256"][row["subject"]]
     topology = dense.describe(str(config))
@@ -126,7 +137,12 @@ def test_kept_weight_correction_is_zero_on_every_dq9_subject_placement_and_rung(
     # The separate quant_state correction adds only its source-derived codebooks and offset.
     # Every registered matrix has complete blocks, so there is no rounding correction here.
     quant_state_extra = topology.n_layers * len(topology.layer_linears) * (16 + 256 + 1) * 4
-    assert sum(line[2] for line in lines if line[1] == "device") == row["device_bytes"] + quant_state_extra
+    correction = DQ9_ACTIVATION_CORRECTION.get(f"{row['subject']}-{row['placement']}-{row['seq']}")
+    if correction:
+        act = next(line for line in lines if line[0] == "activations")
+        assert act[4].startswith(correction["branch"])
+    activation_extra = correction["activation_correction_bytes"] if correction else 0
+    assert sum(line[2] for line in lines if line[1] == "device") == row["device_bytes"] + quant_state_extra + activation_extra
     assert sum(line[2] for line in lines if line[1] == "device" and
                line[0].startswith("frozen decoder linears")) == row["frozen_device_bytes"] + quant_state_extra
 
@@ -329,3 +345,45 @@ def test_step_count_and_schedule_do_not_create_memory_scope_warning(q14, monkeyp
     assert p.status == "feasible" and p.budget["headroom"] >= dense.DQ7_STREAM_HEADROOM
     assert any("DQ7" in warning for warning in p.warnings)
     assert not any("outside DQ7" in warning for warning in p.warnings)
+
+
+def test_a_larger_loss_term_never_lowers_the_activation_estimate(q32, monkeypatch):
+    """The activation item is the larger of its two branches as returned: layer inputs + one layer's recompute, or layer
+    inputs + the loss's workspace, both scaled as returned. Comparing ``T x layer_work`` with the loss workspace before the
+    coefficient scaled the layer branch let a larger loss term switch to the smaller branch: at Qwen3-32B and 2,048 tokens
+    the estimate fell when experts4bit-qlora's chunk coefficient rose from 10 to 12 B per logit."""
+    import experts4bit_qlora.engines.chunked_lm_loss as cll
+
+    def activations(coef):
+        monkeypatch.setattr(cll, "CHUNK_BYTES_PER_LOGIT", coef)
+        p = plan(q32, hw(24), Workload(seq_len=2048, micro_batch=1), Constraints())
+        assert p.selected is not None and p.selected.setup["loss_chunk"]
+        return next(ln for ln in p.selected.lines if ln.name == "activations").bytes
+
+    values = [activations(c) for c in (8, 10, 12, 16, 24)]
+    assert values == sorted(values), values
+
+
+def test_the_fallback_prices_like_the_helper_and_never_falls_as_its_coefficient_rises(q32, monkeypatch):
+    """With an experts4bit-qlora that has no ``chunked_loss_bytes``, the dense estimate uses its own named coefficient
+    (``CHUNK_LOSS_BYTES_PER_LOGIT``, 12). At the same coefficient it prices exactly as the helper does, and like the
+    helper path its activation item never falls as the coefficient rises."""
+    import sys
+
+    import experts4bit_qlora.engines.chunked_lm_loss as cll
+
+    def activations():
+        p = plan(q32, hw(24), Workload(seq_len=2048, micro_batch=1), Constraints())
+        return next(ln for ln in p.selected.lines if ln.name == "activations")
+
+    monkeypatch.setattr(cll, "CHUNK_BYTES_PER_LOGIT", 12)
+    helper = activations()
+    monkeypatch.setitem(sys.modules, "experts4bit_qlora.engines.chunked_lm_loss", None)   # the import now fails
+    assert dense.CHUNK_LOSS_BYTES_PER_LOGIT == 12
+    fallback = activations()
+    assert fallback.bytes == helper.bytes and "cannot state it" in fallback.detail
+    values = []
+    for coef in (8, 10, 12, 16, 24):
+        monkeypatch.setattr(dense, "CHUNK_LOSS_BYTES_PER_LOGIT", coef)
+        values.append(activations().bytes)
+    assert values == sorted(values), values

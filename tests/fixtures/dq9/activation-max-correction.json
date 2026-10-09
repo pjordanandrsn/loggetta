@@ -1,0 +1,8 @@
+{
+ "schema": "dq9-activation-max-correction/1",
+ "why": "prior-estimates.json was snapshotted from an estimator whose activation item compared T x layer_work with the loss workspace before ACTIVATION_COEFFICIENT scaled the layer branch. These rows took the loss branch although the layer branch, as returned, was larger. The activation item now takes the larger branch as returned; the correction is that difference. prior-estimates.json is unchanged.",
+ "rows": {
+  "qwen3_14b-device-2048": {"activation_correction_bytes": 20964932, "branch": "checkpointed layer inputs + one layer's recompute"},
+  "qwen3_14b-stream-2048": {"activation_correction_bytes": 20964932, "branch": "checkpointed layer inputs + one layer's recompute"}
+ }
+}
