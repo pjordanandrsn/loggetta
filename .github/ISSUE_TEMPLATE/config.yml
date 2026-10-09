@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/pjordanandrsn/loggetta/security/policy
+    about: Do not open a public issue — see SECURITY.md for the private channel.
+  - name: Runtime crash during training or serving
+    url: https://github.com/pjordanandrsn/experts4bit-qlora/issues
+    about: Errors inside loading, training or serving usually belong to the runtime.
+  - name: Kernel speed or build problem
+    url: https://github.com/pjordanandrsn/grouped-nf4-gemm/issues
+    about: Kernel builds and kernel speed belong to grouped-nf4-gemm.

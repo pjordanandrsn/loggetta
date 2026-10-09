@@ -6,10 +6,10 @@
 
 **Plan the run. Train the model. Keep the evidence.**
 
-[![PyPI](https://img.shields.io/pypi/v/loggetta?style=flat-square)](https://pypi.org/project/loggetta/)
+[![PyPI](https://img.shields.io/pypi/v/loggetta)](https://pypi.org/project/loggetta/)
 [![CI](https://github.com/pjordanandrsn/loggetta/actions/workflows/ci.yml/badge.svg)](https://github.com/pjordanandrsn/loggetta/actions/workflows/ci.yml)
 
-[Get started](#get-started) · [Train on your data](#train-on-your-data) · [Measured results](#measured-results) · [Docs](#documentation)
+[Get started](#get-started) · [Train on your data](#train-on-your-data) · [Measured results](#measured-results) · [Docs](#documentation) · [Hugging Face](https://huggingface.co/spaces/pjordanandrsn/research)
 
 </div>
 
@@ -36,17 +36,17 @@ its memory estimate has not yet passed a capacity reading. See [Dense training](
 
 ## New in 0.4.0
 
-- **Dense models: planned, not supported for training.** Dense plans are estimates checked in sample; out of sample
-  (DQ7) they missed, and the DQ10 reading is pending. Dense execution needs `--allow-development-executor` until
-  DQ8's 24 GB reading passes. See [Dense training](docs/DENSE.md).
-- **The DQ10 reserve policy is opt-in,** for registered dense runs. Defaults do not change.
+- **Dense models: planned, not yet supported for training.** Dense plans are estimates: they held on the runs
+  they were fitted to but missed a held-out check, and a further reading is pending. Dense execution needs
+  `--allow-development-executor` until a 24 GB capacity reading passes. See [Dense training](docs/DENSE.md).
+- **Registered dense runs can opt into a separate reserve estimate** (`dense_reserve_policy="dq10"`). Defaults do not change.
 - **MoE training estimates price the `grouped_nf4` backward pass.** OLMoE estimates on an RTX A2000 were about 0.2 GiB short;
   in sample they now cover the measured peak. Near a budget, a plan may pick the reference kernel or host residency
   where it picked resident `grouped_nf4` before.
 - **Single-stream serve plans** name the speed-ups a default server runs for the model's family, and quote a decode
   speed only from a measured run of the same setup.
 - **Fix:** resident `grouped_nf4` training runs again with experts4bit-qlora 0.49.0 or later. Loggetta 0.3.x stopped
-  before the first step (#47); the workaround was `E4B_ABSMAX_DQ=0`.
+  before the first step ([#47](https://github.com/pjordanandrsn/loggetta/issues/47)); the workaround was `E4B_ABSMAX_DQ=0`.
 
 Full list: [CHANGELOG](CHANGELOG.md).
 

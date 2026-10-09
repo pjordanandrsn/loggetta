@@ -1,0 +1,47 @@
+name: Bug report
+description: A plan is wrong, a run fails, or a report says something that did not happen.
+title: "[bug] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Full output or traceback, not just the last line.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      description: The exact `loggetta` command(s), in order.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: plan
+    attributes:
+      label: Plan and run report
+      description: Paste or attach `loggetta plan … --json` and the run report JSON, if you have them.
+      render: json
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: Output of `loggetta inspect`, plus your torch, loggetta, experts4bit-qlora and grouped-nf4-gemm versions.
+      render: shell
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Which part
+      options:
+        - inspect (hardware detection)
+        - plan (placement or memory estimate)
+        - train (run or adapter)
+        - report (what the run report records)
+        - install
+    validations:
+      required: true

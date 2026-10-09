@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "Loggetta: plan and run Mixture-of-Experts fine-tuning on one GPU"
+abstract: >-
+  Check the machine, plan a supported configuration for a Mixture-of-Experts
+  model, run QLoRA fine-tuning, and keep a JSON report of each run. Built on
+  experts4bit-qlora (runtime) and grouped-nf4-gemm (kernels).
+authors:
+  - family-names: Anderson
+    given-names: Jordan
+    email: jordan@cerinamroth.com
+repository-code: "https://github.com/pjordanandrsn/loggetta"
+url: "https://cerinamroth.com/ml/"
+license: MIT
+keywords:
+  - mixture-of-experts
+  - moe
+  - qlora
+  - fine-tuning
+  - memory-planning
+  - consumer-gpu
