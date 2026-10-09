@@ -1,0 +1,90 @@
+arm=C_host residency=host kernel=grouped_nf4 E4B_ABSMAX_DQ=<unset>
+start=2026-10-09T11:56:45Z
+Model     allenai/OLMoE-1B-7B-0924  (olmoe; allenai/OLMoE-1B-7B-0924 (olmoe, qwen2_moe): 16/16 MoE layers, E=64 H=2048 I=1024, top-8; 6.44B expert + 0.48B dense params)
+Workload  train: seq 512 x micro-batch 2 (= 1024 tokens/forward), grad-accum 1, 2 steps
+Budget    device  10.08 GiB [reported: free now]   host  26.36 GiB [reported: available now]   headroom   0.50 GiB [policy]
+Data      demonstration: tatsu-lab/alpaca, full-sequence loss, repeated as needed; learning rate 0.0002: linear warmup over 1 step(s), then cosine decay to 2e-05
+
+Selected  backend experts4bit: experts on host, grouped_nf4 kernel
+  adapter_dtype: bf16
+  alpha: 16
+  attn_4bit: False
+  blocksize: 64
+  dgrad: True
+  expert_kernel: grouped_nf4
+  expert_residency: host
+  keep_moe_layers: 0
+  pin: True
+  quant_type: nf4
+  r: 8
+  train_attention: True
+  train_experts: True
+
+Estimated memory (each line says how it is known)
+  device frozen expert stacks, one layer staged   0.21 GiB  [derived]  offload streams one layer's stack to the GPU at a time
+  host   frozen expert stacks, host homes (pinned)   3.38 GiB  [derived]  3.62 GB of nf4, blocksize 64, each pinned tensor rounded up to a power of two
+  link   expert staging, host to device per micro-batch   6.75 GiB  [derived]  each layer's stack is copied once for its forward and once for the checkpoint recompute (engines/offload.py)
+  device dense weights (bf16)                    0.89 GiB  [derived]  embeddings, attention, norms, routers, dense/shared MLPs; tied head counted once
+  device expert LoRA adapters                    0.11 GiB  [derived]  ExpertsLoRA r=8, bf16
+  device attention LoRA adapters                 0.00 GiB  [derived]  64 projections, r=8, bf16
+  device adapter gradients                       0.11 GiB  [derived]  one gradient per trainable parameter, in its dtype
+  device optimizer state (adamw)                 0.23 GiB  [derived]  exp_avg + exp_avg_sq per trainable parameter, in its dtype (torch.optim.AdamW)
+  device activations                             0.54 GiB  [heuristic]  16 saved layer inputs (T x H bf16) + max(logits and loss in bf16+fp32+fp32 = 0.52 GB, 2 x one layer's recompute = 0.20 GB) at T=1024
+  device allocator reserve (cached, unallocated blocks)   0.42 GiB  [inferred]  default 20% of the allocator estimate; no receipt on file measured this GPU + driver
+  device CUDA context + library workspaces       0.50 GiB  [inferred]  default; no receipt on file measured this GPU + driver
+  host   process baseline (torch, CUDA, libraries, model objects)   3.00 GiB  [inferred]  default; no receipt on file measured this host
+  device total                                   3.01 GiB   of  10.08 GiB budget
+  host total                                     6.38 GiB   of  26.36 GiB budget
+
+Not modelled (each can make the real peak higher)
+  - offload staging transient on the fused kernel path (unmeasured)
+  - load-time transients (the streaming loader's per-tensor quantize; host page cache)
+
+Why
+  - experts host-backed (pinned, streamed one layer at a time): chosen by objective speed
+  - expert kernel grouped_nf4: grouped-nf4-gemm 0.43.0 (training route 'fused': auto: compute capability 8.6 is not 9.0 (a call with 1 to 16 present groups takes the dense route))
+  - ordering, expert_kernel: grouped_nf4 before reference: e4b.train.h2h.unsloth.olmoe.5090.2026-09-19 (1.39 vs 14.88 s/step), gnf4.kernel.e2e-training-real-prose (4.50x on a 4090)
+  - ordering, expert_residency: device before host: host residency adds a per-layer host-to-device copy in every forward and every recompute (structural; the register has no same-card resident/offload ratio)
+  - ordering, attn_4bit: bf16 attention before NF4: NF4 attention measured 1.013x step cost for -1.34 GB (experts4bit_qlora.lora.quantize_attention_projections_4bit, audit VRAMCENSUS)
+  - ordering, pin: pinned host homes before pageable: a pageable copy is staged through a bounce buffer (CUDA), so it is slower per byte; pinned requests round up to a power of two (grouped-nf4-gemm#71), pageable ones do not
+  - fixed by the caller: {'expert_kernel': 'grouped_nf4'}
+  - activation policy: every decoder layer checkpointed (recomputed in backward); no MoE activations kept (keep_moe_layers is a dial the planner does not choose yet)
+
+Warnings
+  - 1.92 GiB of NVIDIA RTX A2000 12GB is already in use by other processes
+  - host-resident experts stream over PCIe, and the driver reports the link at x8 of x16 right now
+
+Performance  not predicted: no performance model is calibrated for this backend yet; the ordering below rests on measured relative speeds, not on a time estimate
+  transfer bound  >= 0.46 s/step: 7.25 GB host-to-device per step over <= 15.76 GB/s [inferred: theoretical PCIe gen3 x16 ceiling]
+
+Alternatives considered
+  [fits ] experts on host, grouped_nf4 kernel, pageable              device   3.01 GiB  host   6.38 GiB  objective speed: ordered by measured evidence (see Why)
+  [fits ] experts on host, grouped_nf4 kernel, NF4 attention         device   2.57 GiB  host   6.38 GiB  objective speed: ordered by measured evidence (see Why)
+  [fits ] experts on host, grouped_nf4 kernel, NF4 attention, pageable device   2.57 GiB  host   6.38 GiB  objective speed: ordered by measured evidence (see Why)
+
+Executing the selected plan through backend experts4bit...
+No dataset supplied: using the documented Alpaca demonstration, repeated as needed.
+Using the latest cached version of the dataset since tatsu-lab/alpaca couldn't be found on the Hugging Face Hub (offline mode is enabled).
+Found the latest cached dataset configuration 'default' at /workspace/hf/datasets/tatsu-lab___alpaca/default/0.0.0/dce01c9b08f87459cf36a430d809084718273017 (last modified on Sat Aug  1 18:52:09 2026).
+Data ready: 2048 tokens from 22 rows; 1 pass(es); full-sequence, including prompts.
+[11:56:58]   checkpoint: allenai/OLMoE-1B-7B-0924 @ 6d84c48581ece794365f2b8e9cfb043c68ade9c5 (requested main, unpinned)
+[11:56:58]   fusing + quantizing experts (up to 16x64) to nf4 (streaming)...
+[11:58:09]   quantized experts on 16/16 MoE layers (64 experts each)
+[11:58:09]   offloaded 16 layers' 4-bit experts to pinned CPU RAM (streamed to GPU one layer at a time during train/eval)
+[11:58:09]   loading non-expert weights (attention/embeddings/router/norms/dense-mlp)...
+  step 1/2  loss 1.8590  6.09s  peak 1.93 GiB
+  step 2/2  loss 1.2683  2.79s  peak 2.15 GiB
+
+Run OLMoE-1B-7B-0924-host-grouped_nf4-t1024-20261009T115656Z-77afe9fe: OK
+  step time  median 4.44 s (steps 1..2), 231 tokens/s  [measured]
+  loss       1.8590 -> 1.2683; first third 1.8590, last third 1.2683; finite=True
+  integrity  frozen expert bytes unchanged=True; adapters moved=True
+  memory                      estimated   measured   residual
+    device_allocator           2.09 GiB   2.15 GiB  +0.05 GiB
+    device_driver              3.01 GiB   2.38 GiB  -0.63 GiB
+    host                       6.38 GiB   5.02 GiB  -1.35 GiB
+  adapter   /workspace/absmax-repro/arms/C_host/receipts/OLMoE-1B-7B-0924-host-grouped_nf4-t1024-20261009T115656Z-77afe9fe/adapter (192 tensors; native runtime format)
+
+receipt: /workspace/absmax-repro/arms/C_host/receipts/OLMoE-1B-7B-0924-host-grouped_nf4-t1024-20261009T115656Z-77afe9fe.json
+rc=0
+end=2026-10-09T11:58:29Z
