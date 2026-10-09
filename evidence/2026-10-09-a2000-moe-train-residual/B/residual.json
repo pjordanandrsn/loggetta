@@ -1,0 +1,271 @@
+{
+ "schema": "train-residual/1",
+ "receipt": "evidence/2026-10-04-rtx-a2000/OLMoE-1B-7B-0924-device-reference-t1024-20261004T175624Z.json",
+ "setup": {
+  "adapter_dtype": "bf16",
+  "alpha": 16,
+  "attn_4bit": false,
+  "blocksize": 64,
+  "dgrad": true,
+  "expert_kernel": "reference",
+  "expert_residency": "device",
+  "keep_moe_layers": 0,
+  "pin": true,
+  "quant_type": "nf4",
+  "r": 8,
+  "train_attention": true,
+  "train_experts": true
+ },
+ "workload": {
+  "concurrency": null,
+  "context_len": null,
+  "grad_accum": 1,
+  "kind": "train",
+  "micro_batch": 2,
+  "optimizer": "adamw",
+  "phase": null,
+  "seq_len": 512,
+  "steps": 12
+ },
+ "estimate_device": {
+  "frozen expert stacks": 3623879680,
+  "dense weights (bf16)": 953421824,
+  "expert LoRA adapters": 117440512,
+  "attention LoRA adapters": 4194304,
+  "adapter gradients": 121634816,
+  "optimizer state (adamw)": 243269632,
+  "activations": 582221824
+ },
+ "measured": {
+  "device_peak_bytes": 5656214016,
+  "device_reserved_peak_bytes": 6595543040,
+  "driver_process_peak_bytes": 6738149376
+ },
+ "replayed_peak_bytes": 5653165580,
+ "peak_event": 1557873,
+ "train_mark": 44741,
+ "trace_events": 3498931,
+ "run_id": "OLMoE-1B-7B-0924-device-reference-t1024-20261009T014359Z-28877bcf",
+ "provenance": {
+  "argv": [
+   "bench/train_residual.py",
+   "evidence/2026-10-04-rtx-a2000/OLMoE-1B-7B-0924-device-reference-t1024-20261004T175624Z.json",
+   "--out",
+   "/home/node/work/loggetta-ws/runs/train-residual/B"
+  ],
+  "python": "3.11.2",
+  "sources": {
+   "experts4bit_qlora": {
+    "file": "/tmp/claude-1000/-home-node/6466efc6-7935-4484-9c48-8ef3ca48562e/scratchpad/e4b-main/experts4bit_qlora/__init__.py",
+    "commit": "5905a0cee9424e466c1fcc17cd91fb0ff1f69be6",
+    "branch": "HEAD",
+    "dirty": false
+   },
+   "nf4_grouped": {
+    "file": "/tmp/claude-1000/-home-node/6466efc6-7935-4484-9c48-8ef3ca48562e/scratchpad/gnf4-main/kernel/nf4_grouped.py",
+    "commit": "b4f93f1c62d1e3436ed45bec8ccd608c90433737",
+    "branch": "HEAD",
+    "dirty": false
+   },
+   "loggetta": {
+    "file": "/home/node/work/loggetta-ws/loggetta-trainres/bench/../loggetta/__init__.py",
+    "commit": "fa1ed17f498159e9c8ab9248ac58976a027fa733",
+    "branch": "bench/train-residual",
+    "dirty": false
+   }
+  },
+  "versions": {
+   "torch": "2.8.0+cu128",
+   "triton": "3.4.0",
+   "transformers": "5.18.0",
+   "bitsandbytes": "0.50.2",
+   "accelerate": "1.15.0",
+   "experts4bit-qlora": "0.44.0",
+   "grouped-nf4-gemm": "0.37.0"
+  },
+  "started_at": "2026-10-09T01:42:49Z"
+ },
+ "groups": [
+  {
+   "frame": "experts4bit_qlora/_vendor/experts.py:427 _quantize_stack",
+   "bytes": 3623878656,
+   "count": 64,
+   "sizes": {
+    "134217728": 16,
+    "16777216": 16,
+    "67108864": 16,
+    "8388608": 16
+   }
+  },
+  {
+   "frame": "experts4bit_qlora/loader.py:1418 _read",
+   "bytes": 953421824,
+   "count": 147,
+   "sizes": {
+    "206045184": 2,
+    "4096": 65,
+    "262144": 16,
+    "8388608": 64
+   }
+  },
+  {
+   "frame": "?",
+   "bytes": 420610048,
+   "count": 3,
+   "sizes": {
+    "8519680": 1,
+    "206045184": 2
+   }
+  },
+  {
+   "frame": "transformers/loss/loss_utils.py:40 fixed_cross_entropy",
+   "bytes": 206045188,
+   "count": 2,
+   "sizes": {
+    "206045184": 1,
+    "4": 1
+   }
+  },
+  {
+   "frame": "torch/optim/adam.py:177 _init_group",
+   "bytes": 121634816,
+   "count": 192,
+   "sizes": {
+    "32768": 128,
+    "2097152": 48,
+    "1048576": 16
+   }
+  },
+  {
+   "frame": "torch/optim/adam.py:181 _init_group",
+   "bytes": 121634816,
+   "count": 192,
+   "sizes": {
+    "32768": 128,
+    "2097152": 48,
+    "1048576": 16
+   }
+  },
+  {
+   "frame": "experts4bit_qlora/loader.py:1739 load_moe_4bit_streaming",
+   "bytes": 117440512,
+   "count": 64,
+   "sizes": {
+    "2097152": 48,
+    "1048576": 16
+   }
+  },
+  {
+   "frame": "transformers/models/olmoe/modeling_olmoe.py:402 forward",
+   "bytes": 62914560,
+   "count": 15,
+   "sizes": {
+    "4194304": 15
+   }
+  },
+  {
+   "frame": "transformers/models/olmoe/modeling_olmoe.py:113 forward",
+   "bytes": 8519680,
+   "count": 1,
+   "sizes": {
+    "8519680": 1
+   }
+  },
+  {
+   "frame": "transformers/models/olmoe/modeling_olmoe.py:55 forward",
+   "bytes": 8388608,
+   "count": 1,
+   "sizes": {
+    "8388608": 1
+   }
+  },
+  {
+   "frame": "transformers/models/olmoe/modeling_olmoe.py:471 forward",
+   "bytes": 4194304,
+   "count": 1,
+   "sizes": {
+    "4194304": 1
+   }
+  },
+  {
+   "frame": "experts4bit_qlora/lora.py:780 __init__",
+   "bytes": 2097152,
+   "count": 64,
+   "sizes": {
+    "32768": 64
+   }
+  },
+  {
+   "frame": "experts4bit_qlora/lora.py:781 __init__",
+   "bytes": 2097152,
+   "count": 64,
+   "sizes": {
+    "32768": 64
+   }
+  },
+  {
+   "frame": "transformers/models/olmoe/modeling_olmoe.py:118 forward",
+   "bytes": 262144,
+   "count": 2,
+   "sizes": {
+    "131072": 2
+   }
+  },
+  {
+   "frame": "loggetta/backends/experts4bit_train.py:206 train_loop",
+   "bytes": 8192,
+   "count": 1,
+   "sizes": {
+    "8192": 1
+   }
+  },
+  {
+   "frame": "experts4bit_qlora/lora.py:653 forward",
+   "bytes": 8192,
+   "count": 16,
+   "sizes": {
+    "512": 16
+   }
+  },
+  {
+   "frame": "transformers/models/olmoe/modeling_olmoe.py:475 forward",
+   "bytes": 4096,
+   "count": 1,
+   "sizes": {
+    "4096": 1
+   }
+  },
+  {
+   "frame": "transformers/models/olmoe/modeling_olmoe.py:57 forward",
+   "bytes": 4096,
+   "count": 1,
+   "sizes": {
+    "4096": 1
+   }
+  },
+  {
+   "frame": "bitsandbytes/functional.py:854 get_4bit_type",
+   "bytes": 1024,
+   "count": 16,
+   "sizes": {
+    "64": 16
+   }
+  },
+  {
+   "frame": "experts4bit_qlora/loader.py:1846 load_moe_4bit_streaming",
+   "bytes": 512,
+   "count": 2,
+   "sizes": {
+    "256": 2
+   }
+  },
+  {
+   "frame": "loggetta/backends/experts4bit_train.py:220 train_loop",
+   "bytes": 8,
+   "count": 2,
+   "sizes": {
+    "4": 2
+   }
+  }
+ ]
+}
