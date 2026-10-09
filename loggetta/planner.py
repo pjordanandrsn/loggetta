@@ -694,9 +694,13 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
     perf = getattr(b, "performance", lambda *a: None)(topology, sel.setup, workload, gpu, observations, st) or perf
     warnings += getattr(b, "plan_warnings", lambda *a: [])(sel.setup, gpu)
     warnings += getattr(b, "scope_warnings", lambda *a: [])(topology, sel.setup, workload)
+    prov = {"backend_versions": st.versions}
+    env = getattr(b, "estimate_env", lambda: None)()
+    if env is not None:                                    # the switches the estimate read, so execute can check them
+        prov["estimate_env"] = env
     return ExecutionPlan(status="feasible", selected=sel, alternatives=tuple(feasible[1:]) + tuple(infeasible),
                          reasons=tuple(reasons), warnings=tuple(warnings), performance=perf,
-                         provenance={"backend_versions": st.versions}, **common)
+                         provenance=prov, **common)
 
 
 def _suggest(topology, workload, constraints, budget, closest, backends, statuses, dev_over, host_over,

@@ -526,6 +526,18 @@ def fill_knobs(topology, setup: dict, workload) -> list:
     return [(k, side, hi) for k, side in (("vram_gb", "device"), ("dram_gb", "host"))]
 
 
+def estimate_env() -> dict | None:
+    """The environment switches experts4bit-qlora's estimate reads, with their values in this process, as
+    experts4bit-qlora reports them (``recipe.estimate_env``), or None where the installed release has no such accessor.
+    A plan records it; ``execute`` compares it with the running process's, since a run that sees another setting builds
+    a different model than the one priced (``E4B_CHUNKED_LM_LOSS`` changes the loss branch)."""
+    try:
+        from experts4bit_qlora.recipe import estimate_env as accessor
+    except ImportError:
+        return None
+    return dict(accessor())
+
+
 def estimate(topology, setup: dict, workload):
     """``(lines, unmodelled, refusals)`` for one setup; ``lines`` are ``(name, where, bytes, basis, detail)`` tuples."""
     if workload.kind == "serve":
