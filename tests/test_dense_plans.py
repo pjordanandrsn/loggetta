@@ -49,6 +49,22 @@ def allocator(c):
                and not ln.name.startswith(("CUDA context", "allocator reserve")))
 
 
+@pytest.mark.parametrize("n", [1024, 1025, 16384, 16385, 32768])
+def test_nf4_linear_bytes_include_every_retained_quant_state_tensor(n):
+    import torch
+
+    functional = pytest.importorskip("bitsandbytes.functional")
+    packed, state = functional.quantize_4bit(torch.zeros(n, dtype=torch.bfloat16), quant_type="nf4",
+                                           compress_statistics=True)
+    tensors = (state.absmax, state.code, state.offset, state.state2.absmax, state.state2.code)
+    retained = sum(tensor.numel() * tensor.element_size() for tensor in tensors)
+    assert dense._linear_bytes(n, "nf4") == (packed.numel() * packed.element_size(), retained)
+    # The nested codebook has private storage, so it belongs in every projection's charge.
+    _, other = functional.quantize_4bit(torch.zeros(n, dtype=torch.bfloat16), quant_type="nf4",
+                                       compress_statistics=True)
+    assert state.state2.code.data_ptr() != other.state2.code.data_ptr()
+
+
 @needs_offload
 @pytest.mark.parametrize("base", ["nf4", "bf16"])
 def test_small_frozen_weights_remain_priced_when_no_weight_reaches_streaming_threshold(base):
@@ -107,9 +123,12 @@ def test_kept_weight_correction_is_zero_on_every_dq9_subject_placement_and_rung(
     lines, _, refused = dense.estimate(topology, setup, Workload(seq_len=row["seq"], steps=2))
     assert not refused
     assert not any(line[0] == "frozen decoder linears, kept on device" for line in lines)
-    assert sum(line[2] for line in lines if line[1] == "device") == row["device_bytes"]
+    # The separate quant_state correction adds only its source-derived codebooks and offset.
+    # Every registered matrix has complete blocks, so there is no rounding correction here.
+    quant_state_extra = topology.n_layers * len(topology.layer_linears) * (16 + 256 + 1) * 4
+    assert sum(line[2] for line in lines if line[1] == "device") == row["device_bytes"] + quant_state_extra
     assert sum(line[2] for line in lines if line[1] == "device" and
-               line[0].startswith("frozen decoder linears")) == row["frozen_device_bytes"]
+               line[0].startswith("frozen decoder linears")) == row["frozen_device_bytes"] + quant_state_extra
 
 
 def test_linear_biases_are_priced_once_with_the_other_parameters():
