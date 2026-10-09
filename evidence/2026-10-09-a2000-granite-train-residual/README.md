@@ -63,3 +63,6 @@ with the loss as the peak nothing offsets it but the adapter gradients.
   G2's groups at the peak (`runs/G2/residual.json`) are G's.
 - **The check that was missing.** `tests/test_evidence_citations.py` now fails when an evidence document cites a
   receipt path that git does not track.
+
+No receipt: `granite-3.1-3b-a800m-instruct-device-grouped_nf4-t1024-20261009T145928Z-ce9e5abb` (run G). It was never
+committed and is lost; see the correction above. `runs/G/residual.json` keeps its peaks, and G2 is the committed re-run.
