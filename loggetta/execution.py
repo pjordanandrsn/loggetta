@@ -92,6 +92,24 @@ def compare(plan: ExecutionPlan, measured: dict) -> dict:
     return out
 
 
+def check_estimate_env(plan: ExecutionPlan, backend, log=print) -> dict | None:
+    """Compare the backend environment switches the plan's estimate read (``provenance.estimate_env``) with this
+    process's, and warn when they differ: the run would build a different model than the one priced. None when the plan
+    recorded none (older plans, or a backend release with no accessor). Returns what the receipt records."""
+    planned = (plan.provenance or {}).get("estimate_env")
+    if planned is None:
+        return None
+    running = getattr(backend, "estimate_env", lambda: None)()
+    if running is None:
+        running = {}
+    differs = sorted(k for k in set(planned) | set(running) if planned.get(k) != running.get(k))
+    if differs:
+        log("WARNING: this process's backend settings differ from the ones the plan was priced under: "
+            + "; ".join(f"{k} planned {planned.get(k)!r}, running {running.get(k)!r}" for k in differs)
+            + ". The run builds what this process's settings say, not what the plan priced.")
+    return {"planned": planned, "running": running, "differs": differs}
+
+
 def execute(plan: ExecutionPlan, *, out_dir: str | None = None, seed: int = 0, log=print,
             prov: dict | None = None, hardware=None, adapter_dir: str | None = None) -> dict:
     """Run ``plan`` through its backend and return the receipt (written to ``out_dir`` when given).
@@ -106,6 +124,7 @@ def execute(plan: ExecutionPlan, *, out_dir: str | None = None, seed: int = 0, l
     backend = _backend(plan.selected.backend)
     run = _executor(backend, plan.workload.kind)
     check_here(plan, hardware)
+    env_check = check_estimate_env(plan, backend, log)
     prov = prov or {**provenance(), "taken": "at execute(), after import"}
     t0 = time.time()
     model_short = plan.model["model"].rstrip("/").split("/")[-1]
@@ -124,6 +143,8 @@ def execute(plan: ExecutionPlan, *, out_dir: str | None = None, seed: int = 0, l
         "provenance": {**prov, "runtime_seconds": time.time() - t0, "seed": seed,
                        "changed_during_run": changed_since(prov)},
     }
+    if env_check is not None:
+        receipt["provenance"]["estimate_env"] = env_check
     if "artifacts" in result:
         receipt["artifacts"] = result["artifacts"]
     if "artifact_error" in result:
