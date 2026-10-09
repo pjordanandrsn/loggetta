@@ -3,8 +3,8 @@
 ## 0.4.0 — unreleased
 
 **0.4.0.** Dense models can now be planned, and run behind a development flag. MoE training estimates now price the
-`grouped_nf4` kernel's backward pass. Serve plans for one sequence say which speed-ups the server runs.
-<!-- RELEASE: add the absmax digest fix to this lead and to "Fixes" once it merges, then date the heading at the tag. -->
+`grouped_nf4` kernel's backward pass. Serve plans for one sequence say which speed-ups the server runs. And resident
+`grouped_nf4` training runs again with experts4bit-qlora 0.49.0 or later.
 
 - **Dense models are development-gated.** Loggetta describes and plans dense decoder models. Their plans are
   estimates checked in sample: out of sample (DQ7, VOID) they missed, and the DQ10 reading is pending. Dense training
@@ -16,6 +16,9 @@
   reference kernel or host residency where it picked resident `grouped_nf4` before.
 - **Single-stream serve plans** name the B=1 levers a default server runs for the model's family, and quote a decode
   figure only from a receipt of the same setup.
+- **Fix: resident `grouped_nf4` training no longer stops before its first step** with experts4bit-qlora 0.49.0 or
+  later (#47). Loggetta 0.3.x raised `AbsmaxCompressedError` at its frozen-expert digest; the workaround was
+  `E4B_ABSMAX_DQ=0`.
 
 **Requirements.** grouped-nf4-gemm 0.42.0 or later (was 0.41.0). PEFT 0.21.2 or later is now a base dependency. The
 experts4bit-qlora floor stays 0.49.0.
@@ -169,7 +172,19 @@ No code, coefficient or default changed.
 - **Legacy observation licensing with nullable plan metadata.** Receipts with a null plan or null constraints keep
   their existing `licensed_for` scope instead of raising. Raw DQ7/DQ9/DQ10 records and explicit DQ10 policy receipts
   stay excluded from observation import (#37).
-<!-- RELEASE: the absmax digest fix goes here. -->
+- **Resident `grouped_nf4` training no longer stops at the frozen-expert digest (#47, #48).**
+  - **What changed.** `_expert_digest` hashes the frozen expert absmax as it is stored. That is the double-quantized
+    payload (`<which>_absmax_q`, `_s`, `_off`, `_code`) when experts4bit-qlora compressed it, and the fp32 buffer
+    otherwise. Nothing is decompressed. With the fp32 absmax the digest is byte-for-byte the earlier one.
+  - **Why.** Since experts4bit-qlora 0.49.0, `enable_fast_train` double-quantizes the absmax by default for resident
+    training, and a guard under the old `<which>_absmax` name raises on any use. With loggetta 0.3.x and
+    experts4bit-qlora 0.49.0 or later, resident `grouped_nf4` training raised `AbsmaxCompressedError` before step 1.
+    The workaround was `E4B_ABSMAX_DQ=0`. Host residency and the reference kernel were not affected.
+  - **Evidence.** Reproduced on the released pair (loggetta 0.3.1 + experts4bit-qlora 0.50.0) on an RTX A2000. The
+    fixed digest trains the same setup to an OK receipt (`evidence/2026-10-09-a2000-absmax-digest-repro`).
+  - **Tests.** `tests/test_absmax_digest.py` builds the model through `prepare_qlora_training`, which calls
+    `enable_fast_train`, on a tiny local MoE on the CPU, with experts4bit-qlora's default. It fails before the fix and
+    passes after, with experts4bit-qlora 0.49.0 and 0.50.0. The released-backend CI job fails if this test skips.
 
 ### Docs
 

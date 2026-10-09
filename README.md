@@ -45,7 +45,8 @@ its memory estimate has not yet passed a capacity reading. See [Dense training](
   where it picked resident `grouped_nf4` before.
 - **Single-stream serve plans** name the speed-ups a default server runs for the model's family, and quote a decode
   speed only from a measured run of the same setup.
-<!-- RELEASE: add the absmax digest fix here once it merges. -->
+- **Fix:** resident `grouped_nf4` training runs again with experts4bit-qlora 0.49.0 or later. Loggetta 0.3.x stopped
+  before the first step (#47); the workaround was `E4B_ABSMAX_DQ=0`.
 
 Full list: [CHANGELOG](CHANGELOG.md).
 
