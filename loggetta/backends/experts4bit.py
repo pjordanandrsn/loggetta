@@ -379,7 +379,7 @@ def explain(sel, feasible, infeasible, budget, status, constraints, workload, to
                        "scratch slots (per-slot state on a hybrid model)")
         if s.get("prefill_graph") == "0" and "prefill_graph" not in constraints.fixed:
             out.append("first-chunk prefill graph off (the server's default is auto): its private pool is not priced "
-                       "(SC2b measured +3.3 GiB at Qwen3-30B), so the plan's memory would not bound the process; fix "
+                       "(SV1 measured +0.56 GiB at Qwen3-30B with NF4 experts), so the plan's memory would not bound the process; fix "
                        "prefill_graph=auto to let the server engage it when that much is free")
         by = {ln.name: ln for ln in sel.lines}
         if s.get("exp_int4"):

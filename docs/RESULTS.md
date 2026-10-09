@@ -71,10 +71,10 @@ predicted no times. The one number it can derive for host residency is a **lower
 
 All values GiB.
 
-- **The allocator column is the estimator's own accuracy:** +0.01 to +0.21 GiB across six runs, three families,
+- **The allocator column is the estimator's own accuracy:** +0.01 to +0.21 GiB across seven runs, three families,
   resident and offload.
 - **The driver column adds the planner's learned overheads,** and it is only as good as the receipts available
-  when the plan was made. R4 and R6 over-estimate it: R4 borrowed host-run slack before the matching-setup fix, and
+  when the plan was made. R4, R5 and R6 over-estimate it: R4 borrowed host-run slack before the matching-setup fix, and
   R6's granite slack (8.3%) is much lower than OLMoE's (22%).
 - **The host column under-estimates when the baseline is borrowed from another model's receipt.** The load
   transient is listed as not modelled.
@@ -176,9 +176,7 @@ All values GiB. Integrity is clean on every arm.
 | RTX 5090, host-offload | 9.16; transfer floor 1.04 s (PCIe ceiling) | 10.08; floor **1.58 s** (measured 20.8 GB/s) | 9.41; step **2.00 s** |
 | RTX A2000, resident | 24.08 (Granite-4's 8.3%, same GPU) | 24.96 (Qwen3's 8.3% × anchor 0.222/0.150 = 12.3%) | not run: refused both times, the card has 12 GB |
 
-The 5090 resident prediction moved from 2.7 GiB high to 0.2 GiB of the measured process peak. (Rerun after section
-6's tie rule, the A2000 "before" reads 25.93: the largest same-setup slack on that card, OLMoE's 22.2%, instead of
-the first one found.) On the A2000 the
+The 5090 resident prediction moved from 2.7 GiB high to 0.2 GiB of the measured process peak. On the A2000 the
 30B slack is now an explicit transfer rather than another model's figure. It is labelled heuristic, because no A2000
 run of Qwen3 exists.
 
@@ -217,11 +215,12 @@ after load and after the runs rather than sampling it, so its reserve is an end-
 | decode graphs | 26.25 | **22.16** (P109's 0.85%) | 22.11–22.45 |
 
 - **The prefill graph is planned off.** experts4bit-qlora 0.47.0 made `E4B_PAGED_PREFILL_GRAPH=auto` the server's
-  default. Its private pool is +3.3 GiB at 30B, the estimate does not price it, and `auto` checks only the
+  default. Its private pool is +0.56 GiB at 30B with NF4 experts (SV1; e4b#1098's +3.3 GiB was the int4 stack), the
+  estimate does not price it, and `auto` checks only the
   device's free memory, not the plan's budget. A plan therefore sets it to `0` and says why; a caller can fix
   `prefill_graph=auto` (e4b#1098 names the pool as not modelled).
 - **Independence.** The allocator estimate is independent of P109. The context line in both columns is FP1's
-  training receipt on the same card (0.61 GiB, a different driver). The "after" reserve is P109's own, so that line
+  training receipt on the same card (0.62 GiB, a different driver). The "after" reserve is P109's own, so that line
   agrees by construction. Before P109, the default over-reserved 4.1 GiB at 30B: a 5090 plan would have refused
   setups that fit.
 
@@ -249,11 +248,11 @@ Model and setup: OLMoE-1B-7B on the RTX A2000, all-VRAM, 4 × 4096. The arena wa
 | allocator (stacks + dense + KV + working set) | 5.40 | 5.57 peak (**−3.1%**) |
 | reserve slack | 20% default (1.08) | **1.46%** |
 | CUDA context | 0.17 (a training receipt) | 0.12 |
-| device total | 6.64 before → **5.64** after this receipt (`bench/replan_serve.py`) | 5.78 driver peak |
+| device total | 6.64 before → **5.64** after this receipt (`bench/replan_serve.py`); 5.82 when replanned today | 5.78 driver peak |
 
 All values GiB. Decode throughput was 4.9 tokens/s, eager, on a seat at load 20–40. It is recorded, not claimed.
 - **One pattern, two points, later explained.** The allocator estimate missed by a similar absolute amount on both
-  models (0.16–0.21 GiB at 30B, 0.17 GiB at 1B). This looked like a fixed term but was not. Section 6b's attribution
+  models (0.15–0.20 GiB at 30B, 0.17 GiB at 1B). This looked like a fixed term but was not. Section 6b's attribution
   found it was prefill staging and, under the solver, the cold-row stack. Both are now priced.
 
 **Plan-only sweep** (`bench/serve_plan_sweep.py`, `evidence/serve-plan-sweep.json`; budget = the card's total,
@@ -328,7 +327,7 @@ lengths. Both causes are now priced in e4b at their ceilings:
 The staging ceiling matters for long prompts, and the long-prompt check bears it out
 (`receipt longprompt-olmoe-2x4096-p4000`: OLMoE, all-VRAM, two 4,000-token prompts):
 - the allocator estimate is **5.420 GiB, with 0.56 GiB of staging**, against a **5.414 GiB** measured peak;
-- without the staging item the estimate would have been 4.858 GiB, 10% under;
+- without the staging item the estimate would have been 4.857 GiB, 10% under;
 - serving slack was 2.1%. The planner's learned residual stays as a safety line, recomputed against today's estimate, so it shrinks
 to the leftover workspace.
 
@@ -361,7 +360,7 @@ VRAM tier at long contexts, so the 8192 × 8 rows shifted, and Qwen3-30B at 8192
   17 GiB on NVMe. The same default is *below* what Qwen3-30B (128 experts, top-8) needs once a layer is cold.
   - e4b's `min_hot_rows` gives the cold tier's own minimum: top_k × max(chunk, seqs), at most n_experts and the
     NVMe rows. A solver setup below it is refused in words.
-  - The planner plans exactly that minimum. Mixtral's A2000 single-user plan now holds 17.3 GiB in DRAM with
+  - The planner plans exactly that minimum. Mixtral's A2000 single-user plan now holds 17.8 GiB in DRAM with
     nothing on NVMe.
 - **Unseen cards borrow serving slack.** The stated 4090/3090 have no receipts and took the 20% default, which put
   Qwen3-30B on tiers on 24 GB. Serving plans now borrow the largest slack measured for the same setup on any GPU,
@@ -369,7 +368,7 @@ VRAM tier at long contexts, so the 8192 × 8 rows shifted, and Qwen3-30B at 8192
   all-VRAM on 24 GB.
   - Training keeps its default: its slack moved 8–39% with model and card.
 - **gpt-oss-20b on 12 GB is a correct refusal.** Its per-expert biases do not ride the arena, so the hybrid tier
-  cannot serve it, and all-VRAM needs 13.9 GiB + headroom.
+  cannot serve it, and all-VRAM needs 14.2 GiB + headroom.
 
 **Update, 2026-10-06: serving three more families showed the sweep was too generous.** I tried to serve
 granite-3.1-3b, LFM2-8B and granite-4.0-h-tiny on the A2000 through `bench/serve_validate.py`. All three were
@@ -427,7 +426,7 @@ All values GiB unless marked.
   decode graphs).
 - **The two pools the estimate leaves unpriced, at NF4:**
   - decode graphs: +60 MiB;
-  - the prefill graph: +0.24 GiB (OLMoE) and +0.57 GiB (Qwen3-30B).
+  - the prefill graph: +0.23 GiB (OLMoE) and +0.56 GiB (Qwen3-30B).
   - SC2b's +3.3 GiB was the int4 stack.
   - e4b's notes now cite these numbers; nothing is priced from two points.
 - **Planning with them** (`bench/import_sv1.py`, `bench/replan_serve.py` on FP1's RTX 5090 profile). The serve slack
@@ -458,7 +457,7 @@ The predictions were written to `evidence/2026-10-05-a2000-int4-serve/prediction
 |---|---|---|---|---|
 | NF4 | 5.959 | 5.571 | — | 6.209 vs 5.775 |
 | `exp_int4` | 5.983 | 5.579 | +24 / +8 MiB (load peak +24 MiB exactly) | 6.193 vs 5.783 |
-| `attn_int4` | 6.139 | 5.751 | +184.1 / +184.1 MiB | 6.311 vs 5.920 |
+| `attn_int4` | 6.139 | 5.751 | +184.0 / +184.1 MiB | 6.311 vs 5.920 |
 | both | 6.162 | 5.758 | +208 / +192 MiB | 6.322 vs 5.916 |
 
 All values GiB unless marked.
@@ -475,7 +474,7 @@ All values GiB unless marked.
   each arm gets its own (0.04–0.09 GiB).
 - **Found on the way: the levers kept their host heap.**
   - glibc kept the freed 8–16 MiB fp32 host tensors of the repack and the attention swap for the life of the server:
-    +3.6 GB and +2.3 GB of anonymous memory after load.
+    +3.7 GB and +2.3 GB of anonymous memory after load.
   - One `malloc_trim(0)` returned 3.9 GB (`before-heap-fix/trim_probe.log`).
   - #1182 now trims per layer and per projection and drops each layer's fp32 stacks before the next read.
   - After load, every arm now sits below the NF4 build (0.57–0.61 GB against 0.70 GB).
@@ -512,7 +511,7 @@ All values GiB. Plans use FP1's RTX 5090 profile (`bench/replan_serve.py`; "befo
   - the estimate 0.8% over the int4 experts' peak;
   - the int4 stores +54.0 MiB at load (priced +54);
   - int4 attention +585.2 MiB (priced +585.0);
-  - the repack's host peak 3.30 GB under its 6.9 GiB price;
+  - the repack's host peak at or under its 6.75 GiB price (3.30 GB over NF4 after load);
   - after load, the int4 builds hold 1.5 GB less host memory than NF4.
 - **The prefill graph at int4 costs +571 MiB**, SV1's NF4 figure. SC2b's +3.3 GiB is not reproduced at this head. With
   that receipt on file, the prefill-graph plan learns its pool and lands within 0.03% of the driver peak.
@@ -704,9 +703,10 @@ Three planner fixes to how a serve plan borrows its allocator reserve. All plann
     NVMe tier.
   - A receipt scoped by `licensed_for` still counts only for its own whole setup: SV6's licence.
 - **No anchor transfer for serving.** Moving another GPU's slack through an anchor model's ratio was built for training
-  (8–39% slack). Serving slack is 0.06–1.5%, and the ratio of two such numbers is noise: a ~14× ratio turned OLMoE's
-  2.8% on an RTX 5090 into 4.0 GiB of reserve on an RTX 4090, and gpt-oss-20b's into 10.4 GiB. Serving now takes this
-  GPU's same-setup slack from another model, as the next rule always did.
+  (8–39% slack). Serving slack is a few percent (up to 4.9% at all-VRAM), and the ratio of two such numbers is noise:
+  on an RTX 4090, where the anchor rule is the one that applies, this section's three fixes together removed 1.0–1.9 GiB
+  from OLMoE's plans and 4.5–5.1 GiB from gpt-oss-20b's (`serve-sweep-ab.txt`).
+  Serving now takes this GPU's same-setup slack from another model, as the next rule always did.
 
 **What moved** (`serve-sweep-ab.txt`, all 10 families × 4 cards × 2 workloads): 14 of 80 plans. No status, placement
 or decode-graph mode changed.
@@ -714,8 +714,8 @@ or decode-graph mode changed.
   - Qwen3-30B: 12.63 → 13.14 GiB, 5,316 of 6,144 expert rows;
   - Qwen3.6: 13.80 → 14.31 GiB;
   - Mixtral: 10.52 → 11.07 GiB.
-- The OLMoE and gpt-oss reserves on that card fell 1–5 GiB.
-- Restored whole-setup matches trimmed 0.05–1.2 GiB elsewhere.
+- The OLMoE and gpt-oss reserves on that card fell 1–5.1 GiB.
+- Restored whole-setup matches trimmed 0.01–1.2 GiB elsewhere.
 
 **Not run.** The Qwen3-30B 24 GB plan (VRAM 13.143 GiB, 22.344 GiB planned) is new; SV6 ran 12.631. Its reserve
 comes from SV4's same-shape arm. That read licenses no change in experts4bit-qlora, but the planner uses its receipts as
@@ -789,7 +789,7 @@ All values GiB unless marked.
   - For R1–R5 and R3b, the experts4bit-qlora and grouped-nf4-gemm commits are reliable: their branches only
     rebased; the code did not change. The planner commit is approximate.
 - experts4bit-qlora's base moved during the session while main was merging, including #1048. R1–R5 ran on the
-  branch over `2631d3d7` (`fa324db3`, or `65ddf4a6` for R2's same code over `5c74564e`); R3b onward over
+  branch over `2631d3d7` (`fa324db3`; R1 on `b567fc9f`, and `65ddf4a6` for R2's same code over `5c74564e`); R3b onward over
   `520b0b5d` (`f0af2b3d`).
 
 ## Appendix: generated receipt tables
