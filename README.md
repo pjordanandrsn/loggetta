@@ -2,7 +2,7 @@
 
 # Loggetta
 
-### Large models. The hardware you have.
+### Large models. Smaller machines.
 
 **Plan the run. Train the model. Keep the evidence.**
 
