@@ -1,6 +1,97 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 — 2026-10-09
+
+**0.4.0.** Dense models can now be planned, and run behind a development flag. MoE training estimates now price the
+`grouped_nf4` kernel's backward pass. Serve plans for one sequence say which speed-ups the server runs. And resident
+`grouped_nf4` training runs again with experts4bit-qlora 0.49.0 or later.
+
+- **Dense models are development-gated.** Loggetta describes and plans dense decoder models. Their plans are
+  estimates checked in sample: out of sample (DQ7, VOID) they missed, and the DQ10 reading is pending. Dense training
+  runs only with `--allow-development-executor` until DQ8's 24 GB reading passes. Dense training is not supported yet.
+- **The DQ10 reserve policy is opt-in.** It is a registered hypothesis for registered dense runs. Shipped defaults do
+  not change.
+- **The MoE training estimate prices the `grouped_nf4` backward pass.** OLMoE estimates on the RTX A2000 were about
+  0.2 GiB under the measured peak; in sample they are now 90–114 MiB over. Near a budget, a plan may now pick the
+  reference kernel or host residency where it picked resident `grouped_nf4` before.
+- **Single-stream serve plans** name the B=1 levers a default server runs for the model's family, and quote a decode
+  figure only from a receipt of the same setup.
+- **Fix: resident `grouped_nf4` training no longer stops before its first step** with experts4bit-qlora 0.49.0 or
+  later (#47). Loggetta 0.3.x raised `AbsmaxCompressedError` at its frozen-expert digest; the workaround was
+  `E4B_ABSMAX_DQ=0`.
+
+**Requirements.** grouped-nf4-gemm 0.42.0 or later (was 0.41.0). PEFT 0.21.2 or later is now a base dependency. The
+experts4bit-qlora floor stays 0.49.0.
+
+### MoE training: the `grouped_nf4` backward pass (#43, #44, #45)
+
+- **What changed.** A `grouped_nf4` training estimate carries a new device line, `grouped_nf4 MoE backward (above the
+  activation item)`: how much `boundaries + padded LoRA delta + fused workspaces` exceeds experts4bit-qlora's activation
+  item (`boundaries + max(logits, 2 x one layer)`), or nothing when it does not.
+  - **Padded LoRA delta:** grouped-nf4-gemm's `_lora_delta_padded` holds `rows x (H + first_out + I)` in the adapter
+    dtype. Its rows are data-dependent, so they are a bound in shape, not a measured constant: `min(E, T x top_k) x T`
+    for the single padded block, capped where the `auto` route would take the loop (2 GiB padded block), on the
+    single-block ladder for fp32 adapters (grouped-nf4-gemm 0.44.0's `NF4_QLORA_SINGLE_LADDER=auto`: at most 1.5625x),
+    and `2 x T x top_k` once a call has 16,384 routed rows and pads by buckets.
+  - **Fused workspaces:** `5 x T x top_k x first_out` bf16.
+  - The expert LoRA gradients that are live there are already priced, in the `adapter gradients` line, and are not
+    counted again.
+  - grouped-nf4-gemm exposes no sizing helper, so its route constants and ladder are mirrored, and a test pins them
+    against the installed package. The kernel's run-time overrides (`NF4_QLORA_*`) are listed as unmodelled.
+  - The `grouped-nf4-gemm` floor is now 0.42.0, the first release whose bucketed padding is the default.
+- **Why.** loggetta#44 replayed the allocator at OLMoE's `grouped_nf4` training peak on the RTX A2000: the peak is in
+  an MoE layer's backward, with 500.9 MiB of padded delta and 167.1 MiB of fused workspaces live, where the estimate
+  took the loss branch. Estimates were 195–219 MiB under the allocated peak.
+- **In-sample only.** Against the committed OLMoE `grouped_nf4` receipts (#29's A2000 and FP1's RTX 5090, #44's
+  replays) the estimate now sits 90–114 MiB over the allocated peak, the cost of a bound. The reference kernel, the
+  Qwen3-30B receipts (the loss branch is larger) and the granite receipts do not move; the granite runs stay 56–69 MiB
+  under, which this term does not explain. `bench/gnf4_terms_in_sample.py` prints the table.
+- **Plans near a budget may change setup.** A `grouped_nf4` training plan is now larger, so where resident
+  `grouped_nf4` used to fit just barely, a plan may now pick the reference kernel or host residency.
+- **Dense plans are unchanged:** byte-identical on a 36-case matrix, before and after.
+- **Tests:** `tests/test_gnf4_training_terms.py`, `tests/test_dense_unchanged_by_moe_terms.py`.
+- **Plans against the driver's peak, after this change.** `bench/plan_vs_driver.py --replan` on the committed training
+  receipts (`evidence/2026-10-09-moe-plan-vs-driver-after-gnf4`, in-sample): with no receipts on file, every OLMoE plan
+  is over its driver peak (driver / plan 0.950–0.987, from 1.001–1.105). One plan is still under: granite-3.1-3b-a800m
+  replanned with its siblings' receipts on file, at 1.014, because its reserve line borrows OLMoE's (#43, item 2).
+
+### MoE plans against measured driver peaks (report only, #29)
+
+`bench/plan_vs_driver.py` reads every committed receipt with a plan total and a driver peak, and can replan the
+training receipts with today's code (`evidence/2026-10-08-moe-plan-vs-driver`).
+
+- **Serving plans hold:** all 22 are over their driver peak, including SV5–SV7's registered RTX 4090 plans.
+- **MoE training plans on the RTX A2000 do not:** today's OLMoE plans sit under the driver peak (driver / plan up to 1.105).
+  The allocator estimate is 0.213 GiB under the allocated peak on both placements, and no MoE training residual is
+  learned.
+
+No code, coefficient or default changed.
+
+### Single-stream serve plans
+
+- **What changed.**
+  - **The levers.** A serve plan for one sequence names the B=1 levers that a default `serve_paged` runs for the
+    model's family, as the installed experts4bit-qlora resolves them: its family-scoped fused stack (fused q/k/v and
+    three glue folds), with the read it rests on or the read the family lacks. An experts4bit-qlora without the
+    family-scoped default reads as "off unless set". Nothing here keeps its own table of families.
+  - **The figure.** The plan's performance section quotes a decode figure only from a serve receipt of exactly the
+    same setup: same model, GPU name and driver, setup, and experts4bit-qlora and grouped-nf4-gemm versions, at one
+    sequence. The figure is labelled measured, with the receipt's ID and the prompt and new-token counts it was
+    measured at (a decode step grows with the KV position). Anything less shows nothing: loggetta still predicts no
+    throughput, and no figure is interpolated or carried between hosts.
+  - **The receipt.** `bench/serve_validate.py --concurrency 1` traces the engine's steps (`E4B_PAGED_STEP_TRACE`) and
+    records `measured.decode_step_ms_b1`: the median whole-step time of the steps that decoded one row and ran no
+    prefill. It also records the decode's device time and the step count, from `loggetta.measure.decode_step_b1`.
+- **Why.** On experts4bit-qlora, one sequence's decode speed now depends on the model family as well as the setup:
+  the B=1 fused stack is on by default only where it was read (lane P115, experts4bit-qlora #1361 and #1379). A plan
+  should say which levers apply, and quote a speed only where one was measured on the same setup.
+- **Tests:** `tests/test_single_stream.py`:
+  - the trace reader;
+  - the levers line with and without the family-scoped default;
+  - the exact-match rule, each mismatch showing nothing;
+  - a planner round trip.
+
+### Dense models (development-gated)
 
 - **Dense execution prototype.** Dense training plans dispatch through transformers, PEFT linear LoRA and the
   existing e4b chunked-loss and dense-offload engines. Checkpoint loading reads one safetensors tensor at a time;
@@ -13,9 +104,6 @@
   CPU tiny-model checks cover exact checkpoint reconstruction, resident/streamed loss and gradient equality,
   actual chunked loss and adapter precision on reload. The tiny CUDA/NF4 proof passed; DQ7's capacity reading is
   VOID and reserve calibration remains unlicensed. The e4b floor remains 0.49.0.
-- **Frozen integrity fails closed.** An empty sampled expert digest now marks a MoE run `ALARM`; checking no frozen
-  bytes cannot pass integrity. Normal non-empty frozen expert digests retain their previous behavior.
-
 - **Dense adapter-training plans.** The dense backend now plans `train` for dense models.
   - **Candidates:** bf16 base resident, NF4 base resident, NF4 base streamed from pinned host memory. Speed order:
     bf16 before NF4, resident before streamed, per experts4bit-qlora's measured DQ lanes.
@@ -51,6 +139,58 @@
   - Config, model-build and chunked-loss errors become refusals naming the exception type; refused descriptions
     can be copied or pickled without recursion.
   - Dense training plans and their development executor are described above; other dense workloads remain planned only.
+- **Dense pricing corrections** (structural; execution, reserve/context hypotheses and observation licensing do not
+  change):
+  - **Full-logit loss** is priced at twelve bytes per logit, not ten: the pinned CPU/CUDA census sees three distinct
+    fp32 logits-sized tensors live together in the log-softmax backward.
+  - **Small frozen weights** that the offload engine keeps on the device below its streaming threshold are counted,
+    with their quantization statistics and the trainable LoRA kept separate (#39).
+  - **NF4 quantization state** is counted in full: the two private codebooks and the offset, with packed codes and
+    nested statistic blocks rounded up for partial blocks (#41).
+- **Streamed admission headroom after DQ7.** The VOID DQ7 reading understates device use on every completed streamed
+  arm, by up to 2.40 GB, and resident Llama 4096 driver use by 0.82 GB. Dense plans warn, and streamed admission keeps
+  at least max(2.4 GB, 20% of the full device estimate) of headroom even when the caller asks for less. Receipts still
+  compare the original estimate, without the headroom.
+- **The DQ10 memory hypothesis (opt-in).** A scoped reserve policy prices a training reserve and driver overhead
+  separately for registered dense runs. Plans, admission and execution carry the frozen hypothesis and the policy's
+  SHA-256; an invalid selection or changed pricing is refused before loading. Shipped defaults, allocator pricing,
+  streamed headroom and the executor opt-in do not change. Raw diagnostic and holdout observations cannot teach the
+  planner an overhead or a capacity calibration.
+- **D7 reserve calibration, registered and read.** The proposed D7 dense allocator-reserve calibration is registered
+  with six sequence holdouts, model/placement cohorts, byte-level held-out gates and strict observation scopes. Its
+  reader has fixed derivation and holdout cohorts, exact integer fractions, both byte-level holdout gates and the
+  original 20% reporting; it recomputes DQ7 through the merged reducer and keeps source checksums. Neither licenses a
+  planner observation or changes a reserve or execution gate.
+- **The docs state the current gates.** The tiny CUDA correctness proof passed; DQ7 stays VOID. The capacity,
+  calibration and 24 GB boundary requirements are explicit, the margin is described as enforced policy, and the older
+  config-only sweep is labelled historical estimator output.
+
+### Fixes
+
+- **Frozen integrity fails closed.** An empty sampled expert digest now marks a MoE run `ALARM`; checking no frozen
+  bytes cannot pass integrity. Normal non-empty frozen expert digests behave as before.
+- **Legacy observation licensing with nullable plan metadata.** Receipts with a null plan or null constraints keep
+  their existing `licensed_for` scope instead of raising. Raw DQ7/DQ9/DQ10 records and explicit DQ10 policy receipts
+  stay excluded from observation import (#37).
+- **Resident `grouped_nf4` training no longer stops at the frozen-expert digest (#47, #48).**
+  - **What changed.** `_expert_digest` hashes the frozen expert absmax as it is stored. That is the double-quantized
+    payload (`<which>_absmax_q`, `_s`, `_off`, `_code`) when experts4bit-qlora compressed it, and the fp32 buffer
+    otherwise. Nothing is decompressed. With the fp32 absmax the digest is byte-for-byte the earlier one.
+  - **Why.** Since experts4bit-qlora 0.49.0, `enable_fast_train` double-quantizes the absmax by default for resident
+    training, and a guard under the old `<which>_absmax` name raises on any use. With loggetta 0.3.x and
+    experts4bit-qlora 0.49.0 or later, resident `grouped_nf4` training raised `AbsmaxCompressedError` before step 1.
+    The workaround was `E4B_ABSMAX_DQ=0`. Host residency and the reference kernel were not affected.
+  - **Evidence.** Reproduced on the released pair (loggetta 0.3.1 + experts4bit-qlora 0.50.0) on an RTX A2000. The
+    fixed digest trains the same setup to an OK receipt (`evidence/2026-10-09-a2000-absmax-digest-repro`).
+  - **Tests.** `tests/test_absmax_digest.py` builds the model through `prepare_qlora_training`, which calls
+    `enable_fast_train`, on a tiny local MoE on the CPU, with experts4bit-qlora's default. It fails before the fix and
+    passes after, with experts4bit-qlora 0.49.0 and 0.50.0. The released-backend CI job fails if this test skips.
+
+### Docs
+
+- **The memory headline says what it covers.** README and PYPI's planner memory check (24.54 GiB estimated, 24.34
+  measured) is one in-sample case, and they say so. They point to the MoE plan-vs-driver audit, now with the replan
+  after the `grouped_nf4` term.
 
 ## 0.3.1 — 2026-10-08
 
