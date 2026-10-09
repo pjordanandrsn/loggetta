@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0 — unreleased
+## 0.4.0 — 2026-10-09
 
 **0.4.0.** Dense models can now be planned, and run behind a development flag. MoE training estimates now price the
 `grouped_nf4` kernel's backward pass. Serve plans for one sequence say which speed-ups the server runs. And resident
