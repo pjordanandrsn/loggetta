@@ -552,9 +552,10 @@ def estimate(topology, setup: dict, workload):
     lines = [(i.name, i.where, i.bytes, i.basis, i.detail) for i in fp.items]
     unmodelled = fp.unmodelled
     if not fp.refusals and setup.get("expert_kernel") == "grouped_nf4":
-        line = _gnf4_backward_line(topology, setup, workload.tokens_per_microbatch, lines)
-        if line is not None:
-            lines.append(line)
+        if not e4b_prices_gnf4_backward():
+            line = _gnf4_backward_line(topology, setup, workload.tokens_per_microbatch, lines)
+            if line is not None:
+                lines.append(line)
         unmodelled = tuple(unmodelled) + GNF4_UNMODELLED
     return lines, unmodelled, fp.refusals
 
@@ -585,6 +586,17 @@ GNF4_UNMODELLED = (
     "NF4_QLORA_PAD_BYTES_LIMIT, NF4_QLORA_PAD_WASTE_LIMIT, NF4_QLORA_PAD_BUCKETS(_MIN_ROWS), "
     "NF4_QLORA_PAD_BUCKETS_LADDER, NF4_QLORA_SINGLE_LADDER, NF4_QLORA_COMPACT_DELTA",
 )
+
+
+def e4b_prices_gnf4_backward() -> bool:
+    """Whether the installed experts4bit-qlora prices the grouped_nf4 MoE backward itself (experts4bit-qlora#1526: a
+    branch of its ``activations`` item). Then this module adds no line of its own; for an older release it still does.
+    Feature-detected, not version-compared."""
+    try:
+        from experts4bit_qlora import recipe
+    except ImportError:
+        return False
+    return hasattr(recipe, "grouped_nf4_padded_rows_bound")
 
 
 def _ladder_up(n: int) -> int:
