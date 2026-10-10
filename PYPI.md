@@ -25,6 +25,8 @@ before downloading model weights. Estimates can miss; they are not an out-of-mem
 
 - **Training plans no longer borrow another model's reserve.** A model with no receipts on this GPU is priced at the
   card's worst measured training slack. In sample, no training plan now sits under its measured peak.
+  A held-out check on the RTX 5090 found one setup over its plan: Qwen3-30B-A3B at 4096 tokens with fp32 adapters,
+  1.023× ([HO1](https://github.com/pjordanandrsn/loggetta/blob/main/evidence/2026-10-10-heldout-cards/README.md)).
 - **Plans record the backend switches their estimate read** (with experts4bit-qlora 0.52.0 or later), and
   `loggetta execute` warns when the running process differs.
 - **Dense plans:** an estimate no longer falls when one of its terms rises.
