@@ -9,14 +9,16 @@ from loggetta.backends.dense_train import frozen_digest  # noqa: E402
 
 
 def _model(dtype, scalar=None):
-    """Two decoder layers (``layers.0``, ``layers.1``) with deterministic, frozen, ranked parameters; optionally a
-    rank-0 parameter ``scale`` on the first."""
-    torch.manual_seed(0)
+    """Two decoder layers (``layers.0``, ``layers.1``) with frozen, ranked parameters from arithmetic sequences (no RNG,
+    so the same on every platform and torch); optionally a rank-0 parameter ``scale`` on the first."""
     root = torch.nn.Module()
     root.layers = torch.nn.ModuleList()
-    for _ in range(2):
+    for i in range(2):
         layer = torch.nn.Module()
-        layer.proj = torch.nn.Linear(4, 3, bias=True).to(dtype)
+        layer.proj = torch.nn.Linear(4, 3, bias=True)
+        layer.proj.weight = torch.nn.Parameter(((torch.arange(12, dtype=torch.float32).reshape(3, 4) - 5.5) * 0.37 + i)
+                                               .to(dtype))
+        layer.proj.bias = torch.nn.Parameter((torch.arange(3, dtype=torch.float32) * 0.25 - i).to(dtype))
         layer.norm = torch.nn.Module()
         layer.norm.weight = torch.nn.Parameter(torch.arange(5, dtype=torch.float32).to(dtype))
         root.layers.append(layer)
@@ -29,12 +31,12 @@ def _model(dtype, scalar=None):
 
 #: computed with the code before the fix (loggetta main at 2026-10-10); ranked bytes must not move
 PINNED = {
-    torch.float32: ("e027bbab16813fcb313f8447ac06828e26adbdc23f3f24add17cd6de8fd04ff0",
-                    "5217c4c964b6fdb8f2aa3ac43bbc29a586284ce6166cb9e79b2f6200d3ad177b"),
-    torch.bfloat16: ("cf902b1f7e1a07bf355e223d46241bcaa51756330c84c762e80a029541dd2a2c",
-                     "a5c6348b559584a3756849adb9a28d1c907581cc3d0d1a0975ce4f2810b93240"),
-    torch.float16: ("e05418af085ee07539fa184bdd8ba372c5a299a65152a1b8c1dc6c8561a93eb4",
-                    "9ac4e6f25d4f6683aea065985d4f47628e06ed4b0a96e145e8eb54209e2e2262"),
+    torch.float32: ("3148cf6a5672d757d383850a34a02ede6d2ac7f9620fa4d17d0a1ebc6f3bc0e3",
+                    "e584ccbdf294c2019e94fc82739a0c227bf84e365b2a5321bf1562df1e3c9f14"),
+    torch.bfloat16: ("859670580805c3dce841c3086412477c8537ebfe6e44418ac29dd85addd2a012",
+                     "d6a2312d42dba7005a80d8a04398cd2476ce446f124be57ed7af7b302b48cf8f"),
+    torch.float16: ("37a3e21602982bb38d5c0c5623e667eb08b433299688199e934946260fd527e1",
+                    "7aa71db3baee3e5870988855e7eb03655190f05c4f92f00ef744788451c65580"),
 }
 
 
