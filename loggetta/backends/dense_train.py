@@ -128,7 +128,8 @@ def frozen_digest(model):
         sha = hashlib.sha256()
         for key, tensor in sorted(tensors.items()):
             sha.update(key.encode())
-            sha.update(tensor.detach().contiguous().view(torch.uint8).cpu().numpy().tobytes())
+            # flattened first: a byte view of a rank-0 tensor refuses; for a ranked contiguous tensor the bytes are the same
+            sha.update(tensor.detach().contiguous().reshape(-1).view(torch.uint8).cpu().numpy().tobytes())
         if not tensors:
             raise ValueError("no frozen dense tensors were checked")
         out[name] = sha.hexdigest()
