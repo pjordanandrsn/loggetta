@@ -445,6 +445,17 @@ def data_memory_lines(workload: Workload, profile: dict | None) -> list:
                        "with a mask, so attention is slower (not modelled)")]
 
 
+def vendor_refusal(gpu, backends=()) -> str:
+    """Why a GPU that is not NVIDIA is refused, in words. Every installed backend's capability rules are written for
+    NVIDIA sm numbers, and an AMD GPU's capability is a gfx number; no AMD card has run the suites."""
+    names = ", ".join(b.NAME for b in backends) or "none"
+    if gpu.vendor == "amd":
+        return (f"AMD GPU detected ({gpu.name}{', ' + gpu.arch if gpu.arch else ''}); not yet supported: no AMD card "
+                f"has run the suites (installed backends: {names})")
+    return (f"{gpu.vendor} GPU detected ({gpu.name}); not yet supported: the installed backends ({names}) are NVIDIA "
+            "only")
+
+
 def plan(topology, hardware, workload: Workload, constraints: Constraints = Constraints(), *, backends=None,
          observations=(), data_profile: dict | None = None) -> ExecutionPlan:
     """The ExecutionPlan for ``workload`` on ``hardware``. ``data_profile`` is the training data's profile
@@ -518,6 +529,8 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
         return refuse(data_refusal[0], suggestions=data_refusal[1])
     if gpu is None:
         return refuse([f"no GPU at index {constraints.device}: every installed backend needs one"])
+    if gpu.vendor != "nvidia":
+        return refuse([vendor_refusal(gpu, backends)])
     if backends and not admitted:
         return refuse([why if len(refusals) == 1 else f"{b.NAME}: {why}" for b, why in refusals])
     usable = [b for b in admitted if workload.kind in b.WORKLOADS]
