@@ -22,7 +22,7 @@ from .planner import plan
 
 __all__ = ["HardwareProfile", "probe", "describe_model", "Constraints", "ExecutionPlan", "Workload", "plan",
            "execute", "load_observations", "PlanNotExecutable"]
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 
 def load_adapter(directory, *, device="cuda"):

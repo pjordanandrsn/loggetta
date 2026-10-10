@@ -38,19 +38,13 @@ It checks the budget before downloading model weights. Estimates can miss; they 
 The released training path is single-GPU MoE training. Dense execution still requires `--allow-development-executor`:
 its memory estimate has not yet passed a capacity reading. See [Dense training](docs/DENSE.md). Serving placement can be planned; server launch uses the runtime separately.
 
-## New in 0.4.0
+## New in 0.5.0
 
-- **Dense models: planned, not yet supported for training.** Dense plans are estimates: they held on the runs
-  they were fitted to but missed a held-out check, and a further reading is pending. Dense execution needs
-  `--allow-development-executor` until a 24 GB capacity reading passes. See [Dense training](docs/DENSE.md).
-- **Registered dense runs can opt into a separate reserve estimate** (`dense_reserve_policy="dq10"`). Defaults do not change.
-- **MoE training estimates price the `grouped_nf4` backward pass.** OLMoE estimates on an RTX A2000 were about 0.2 GiB short;
-  in sample they now cover the measured peak. Near a budget, a plan may pick the reference kernel or host residency
-  where it picked resident `grouped_nf4` before.
-- **Single-stream serve plans** name the speed-ups a default server runs for the model's family, and quote a decode
-  speed only from a measured run of the same setup.
-- **Fix:** resident `grouped_nf4` training runs again with experts4bit-qlora 0.49.0 or later. Loggetta 0.3.x stopped
-  before the first step ([#47](https://github.com/pjordanandrsn/loggetta/issues/47)); the workaround was `E4B_ABSMAX_DQ=0`.
+- **Training plans no longer borrow another model's reserve.** A model with no receipts on this GPU is priced at the
+  card's worst measured training slack. In sample, no training plan now sits under its measured peak.
+- **Plans record the backend switches their estimate read** (with experts4bit-qlora 0.52.0 or later), and
+  `loggetta execute` warns when the running process differs.
+- **Dense plans:** an estimate no longer falls when one of its terms rises.
 
 Full list: [CHANGELOG](CHANGELOG.md).
 
