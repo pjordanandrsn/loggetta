@@ -44,8 +44,11 @@ where the receipt says so).
 ## Peaks
 
 - **Driver peak, the primary measure:** the maximum `memory.used` in the arm's 1 Hz nvidia-smi sidecar
-  (`vram_<arm>.txt`). It is device-wide on a single-tenant rented box. Being sampled, it can miss a transient
-  spike, which biases toward "covered". That bias is stated, not corrected.
+  (`vram_<arm>.txt`). It is device-wide on a single-tenant rented box.
+  - **It is a lower bound.** A 1 Hz sample can miss a transient spike, so the true peak can be higher. That only ever
+    turns a true UNDER into COVERED, the false-accept direction.
+  - **It is read asymmetrically:** an UNDER against it is conclusive, and a COVERED means only "not shown under".
+  - The result states this bias in one plain line.
 - **Allocated peak, secondary:** `peak_vram_gb`, which is `torch.cuda.max_memory_allocated()` in decimal GB. It is
   exact.
 
@@ -62,28 +65,41 @@ no anchor pair); any difference is reported.
 
 ## Rules (bytes)
 
-- **Covered:** plan device total (allocator estimate + reserve + CUDA context) ≥ driver peak. One byte short is
-  UNDER.
-- **Estimate held:** allocator estimate (the plan's device total less its reserve and context lines) ≥ allocated
-  peak.
-- **False refusal:** the plan says the setup does not fit (no feasible candidate with the setup fixed) for a run that
-  completed. It is reported as its own count, not as covered.
+The unit graded is a **distinct setup**: (card, model, tokens = `seq` × `micro_batch`, `expert_kernel`,
+`expert_residency`, adapter dtype), with `attn_4bit` recorded alongside it. Repeated arms of one setup get one plan.
+A setup is UNDER when any of its arms is. The primary set has 16 distinct setups: 14 on the RTX 5090 and 2 on the
+H100. The per-arm table is detail. Every rate in the headline is a rate over setups.
 
-Results are reported per row and as counts per card, model and e4b release of the run. Every driver/plan and
-allocated/estimate ratio is published. The verdict is the primary 5090 set:
-- **HO1_COVERED** if no primary row is UNDER;
-- **HO1_UNDER** otherwise, with the rows named.
+- **Covered (lower-bound read):** plan device total (allocator estimate + reserve + CUDA context) ≥ every arm's
+  sampled driver peak. One byte short is UNDER, and conclusive. Otherwise the setup is "not shown under".
+  - When the fixed setup is refused, the refused candidate's device total is still graded, and the refusal is recorded
+    separately.
+- **Estimate held (exact):** allocator estimate (the plan's device total less its reserve and context lines) ≥ every
+  arm's allocated peak. Both quantities are exact, so this is the exact-quantity check beside the sampled one.
+- **False refusal:** the plan says the fixed setup does not fit, for a run that completed. It is its own count, not
+  covered.
 
-False refusals are a separate finding and do not change the verdict.
+Results are reported per setup and per arm, with counts per card, model and e4b release of the run. Every driver/plan
+and allocated/estimate ratio is published. The verdict is the primary 5090 setups:
+- **HO1_UNDER** if any setup is UNDER against its sampled driver peak, with the setups named;
+- **HO1_NOT_SHOWN_UNDER** otherwise.
+
+The exact estimate check is reported beside the verdict with its own count. False refusals are a separate finding and
+do not change the verdict.
 
 ## Prediction (before any plan)
 
 With no receipts, the reserve is the 20% default and the context 0.5 GiB. If e4b's estimate is close to the allocated
 peak, as on the A2000, then driver/plan ≈ (allocated + ~1.2 GiB) / (1.2 × allocated + 0.5 GiB). That gives about
 0.86 at Qwen3-30B's ~24 GiB and about 0.92 at OLMoE's ~7 GiB. Expected:
-- **No primary row UNDER.** Driver/plan between 0.80 and 0.95.
-- **False refusals on the largest Qwen3-30B rows.** Above about 25 GiB allocated, the default 20% reserve pushes a
-  plan past what a 32 GB card can give, though the run fit.
+- **No primary setup UNDER.** Driver/plan between 0.80 and 0.95.
+- **False refusals on the largest 5090 setups.** With the 20% default reserve and 0.5 GiB context, an estimate above
+  about 24.75 GiB passes what a 32 GB card can give after headroom, though the run fit. By their recorded allocated
+  peaks:
+  - **Expected:** Qwen3-30B-A3B 4096×1 grouped_nf4, fp32 (up to 30.33 GiB) and bf16 (25.12); Mixtral-8x7B 2048×2,
+    grouped_nf4 (29.11) and reference (28.23).
+  - **Borderline:** Qwen3-30B-A3B 2048×2 fp32, grouped_nf4 (up to 27.15 GiB) and reference (25.28).
+  - **Not expected:** every other 5090 setup, and both H100 setups (94 GB card).
 - **Estimate shortfalls, if any, on runs of older e4b releases.** Many rows ran e4b 0.40–0.48 and are planned at
   0.52.0.
 
