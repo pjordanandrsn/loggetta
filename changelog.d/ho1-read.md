@@ -8,3 +8,5 @@ plans use Loggetta 0.5.0 with no receipt on file.
 - Five setups that ran are refused.
 
 Scripts: `bench/ho1_replan.py` and `bench/ho1_report.py`. No code changes.
+
+README and PYPI now say, beside the 0.5.0 in-sample line, that the held-out check found one RTX 5090 setup over its plan.
