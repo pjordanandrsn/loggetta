@@ -7,7 +7,8 @@ import sys
 
 GiB = 1 << 30
 here = sys.argv[1] if len(sys.argv) > 1 else "evidence/2026-10-10-heldout-cards"
-setups = json.load(open(os.path.join(here, "ho1.json")))["setups"]
+name = sys.argv[2] if len(sys.argv) > 2 else "ho1"
+setups = json.load(open(os.path.join(here, f"{name}.json")))["setups"]
 g = lambda b: "—" if b is None else f"{b / GiB:.2f}"  # noqa: E731
 lines = ["| card | model | seq × mb | kernel | adapter | arms | driver peak (sampled) | plan | driver / plan | "
          "allocated peak | estimate | allocated / estimate | plan status | verdict |",
@@ -34,5 +35,5 @@ summary = {
 }
 out = "\n".join(lines) + "\n\nGiB. Driver peak, allocated peak: the maximum over the setup's primary arms.\n\n" + \
     "\n".join(f"- {k}: {v}" for k, v in summary.items()) + "\n"
-open(os.path.join(here, "RESULTS-table.md"), "w").write(out)
+open(os.path.join(here, "RESULTS-table.md" if name == "ho1" else f"RESULTS-table-{name}.md"), "w").write(out)
 print(out)

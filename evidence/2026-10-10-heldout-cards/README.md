@@ -72,3 +72,65 @@ These are observations, not tested causes:
 
 These are as registered: the estimator's development saw these runs, the defaults date from FP1, the runs' code is
 older than the plan's, and Qwen3-30B dominates. The read covers one card, in practice: the RTX 5090.
+
+## Addendum (POST HOC, 2026-10-10): what the over-plan arms ran
+
+Everything in this section came after the read. It does not re-grade HO1: **HO1_UNDER stays the registered verdict.**
+
+**All 9 over-plan arms padded the LoRA delta without buckets.** That is the kernel path behind the UNDER setup
+(Qwen3-30B-A3B 4096 × 1, fused, fp32). Loggetta's grouped_nf4 backward bound assumes buckets for any call of at least
+16,384 routed rows (grouped-nf4-gemm 0.42.0 and later); a call here carries 32,768.
+- **8 arms** are TC1 amendment 48/50 A/B arms with `NF4_QLORA_PAD_BUCKETS=0` (tags `_k0`, `_pk0`). The planner lists
+  that override as unmodelled.
+- **1 arm** (`tc1-5090-100`, `memc4k_p4`) ran grouped-nf4-gemm 0.41.0 and padded without buckets.
+
+**A registration defect: the row filter could not see either case.** It excluded `*_env` overrides only, and these
+receipts record the bucket setting in no `*_env` field. `bench/ho1_rows.py --posthoc` now reads what an arm recorded
+instead:
+- unbucketed padded calls in `lean_ab.lora_path_calls`, where a call carries at least 16,384 routed rows;
+- with no path recorded, a grouped-nf4-gemm release before 0.42.0.
+
+`tests/test_ho1_unmodelled.py` pins the detector against the 27 arms of that setup: it flags the 9, and none of the 18
+bucketed arms. The recorded release is not enough on its own, because several arms labelled 0.41.0 recorded bucketed
+calls.
+
+**A minor imprecision, not behind any result.** "native" adapter arms were planned as bf16. They hold bf16 expert
+adapters and fp32 attention adapters: 13.4M parameters, tens of MB.
+
+### Post-hoc read, same rows less the unmodelled ones
+
+The detector flags 169 of the 219 primary arms. Most are older runs that padded without buckets at 2048 × 2, on
+grouped-nf4-gemm before 0.42.0. That leaves 50 arms in 9 RTX 5090 setups and 1 H100 setup:
+[`RESULTS-table-ho1-posthoc.md`](RESULTS-table-ho1-posthoc.md), from `ho1-posthoc.json`. The re-run used the same plans
+and grading code:
+
+```
+python bench/ho1_rows.py --e4b E4B --commit d6d27ef5… --json rows-posthoc.json --posthoc
+python bench/ho1_replan.py … --rows rows-posthoc.json --primary-field primary_posthoc --name ho1-posthoc
+```
+
+| 9 RTX 5090 setups | count |
+|---|---|
+| under (sampled driver peak) | 0 |
+| estimate short (exact) | 4, all fused Qwen3-30B |
+| false refusals | 5 |
+
+- **The UNDER setup's 18 bucketed arms** read 29.56 GiB against a 30.61 GiB plan (0.966); allocated / estimate is
+  1.048.
+- **Not held out.** This re-run uses rows the planner and its authors have now seen, so it is post hoc. The next
+  held-out check needs receipts the planner has not seen.
+
+### What remains: the estimate grows short with sequence length at fixed tokens
+
+On the same release (experts4bit-qlora 0.48.0) and the same bucketed path, the allocated peak rises from 2048 × 2 to
+4096 × 1. The estimate does not, because it depends on tokens per micro-batch only:
+
+| adapters | 2048 × 2 | 4096 × 1 | difference | estimate (both shapes) |
+|---|---|---|---|---|
+| bf16 | 22.98 GiB | 25.12 GiB | +2.14 GiB | 22.16 GiB |
+| fp32 | 25.32 GiB | 26.29 GiB | +0.97 GiB | 25.09 GiB |
+
+The cause is untested. One candidate is attention that leaves the flash backend on packed 4,096-token rows. A
+materialised mask rules flash out, and a math-backend fp32 (b, heads, s, s) tensor would differ by about 1.0 GiB between
+these shapes for Qwen3-30B. That candidate does not explain why the bf16 gap is larger. This is tracked in
+experts4bit-qlora#1526.
