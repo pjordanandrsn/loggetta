@@ -4,14 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "loggetta"
-version = "0.4.0"
+version = "0.5.0"
 description = "Plan and run Mixture-of-Experts fine-tuning on one GPU: check the machine, fit the model, and keep a report of each run."
 readme = "PYPI.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Jordan Anderson" }]
-keywords = ["machine-learning", "llm", "gpu", "planning", "qlora", "moe"]
+keywords = ["machine-learning", "llm", "gpu", "planning", "qlora", "moe", "mixture-of-experts", "fine-tuning", "quantization", "nf4", "consumer-gpu", "memory-planning"]
 classifiers = [
   "Development Status :: 2 - Pre-Alpha",
   "Intended Audience :: Developers",
@@ -40,8 +40,15 @@ test = ["pytest>=7"]
 loggetta = "loggetta.cli:main"
 
 [project.urls]
+Homepage = "https://cerinamroth.com/ml/"
+Documentation = "https://github.com/pjordanandrsn/loggetta#readme"
 Source = "https://github.com/pjordanandrsn/loggetta"
 Issues = "https://github.com/pjordanandrsn/loggetta/issues"
+Changelog = "https://github.com/pjordanandrsn/loggetta/blob/main/CHANGELOG.md"
+"Release Notes" = "https://github.com/pjordanandrsn/loggetta/releases/latest"
+"Research (Hugging Face)" = "https://huggingface.co/spaces/pjordanandrsn/research"
+"Runtime: experts4bit-qlora" = "https://pypi.org/project/experts4bit-qlora/"
+"Kernels: grouped-nf4-gemm" = "https://pypi.org/project/grouped-nf4-gemm/"
 
 [tool.setuptools.packages.find]
 include = ["loggetta*"]

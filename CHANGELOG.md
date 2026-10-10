@@ -1,5 +1,138 @@
 # Changelog
 
+## 0.5.0 — 2026-10-10
+
+**0.5.0.** A training plan for a model with no receipts of its own no longer borrows a sibling model's reserve. In
+sample, no committed training plan now sits under its measured peak. Plans also record the backend switches their
+estimate read, and `execute` warns when the running process differs.
+
+- **Training plans no longer borrow another model's reserve slack.** A model nothing measured on this GPU is priced at
+  the card's worst measured training slack, never below 20 %. In sample, granite-3.1-3b-a800m goes from 1.014 of its
+  driver peak (under) to 0.898. Near a budget, such a plan may now pick a smaller setup.
+- **Plans record `estimate_env`** with experts4bit-qlora 0.52.0 or later, and `execute` warns when the running
+  process's switches differ. With an older backend nothing is recorded and the check is skipped.
+- **Dense plans:** the activation item takes the larger of its two branches, so an estimate no longer falls when one of
+  its terms rises. Four Qwen3-14B plans at 2,048 tokens rise 24.0 MiB; none falls.
+- **Project files and docs:** `CITATION.cff`, `SECURITY.md`, `CONTRIBUTING.md`, issue templates, the PyPI project
+  links, a limits box, and the claims re-checked against the committed evidence.
+
+**Requirements.** Unchanged: experts4bit-qlora 0.49.0, grouped-nf4-gemm 0.42.0 and PEFT 0.21.2 or later.
+experts4bit-qlora 0.52.0 adds the `estimate_env` record.
+
+### Training plans no longer borrow another model's reserve slack (#43)
+
+- **What changed.** A training plan's allocator reserve comes from receipts for this model on this GPU (or this model
+  elsewhere through an anchor, as before). A model with none gets a conservative bound: the largest training slack
+  measured on this GPU, and never below the 20% default. It is labelled `policy`. A sibling model's number for the same
+  setup is no longer used. Serving keeps its cross-model tiers: its slack is 0.06–1.5%, and every serving plan sat
+  over its driver peak (#29).
+- **Why.** granite-3.1-3b-a800m, with its siblings' receipts on file, was planned with OLMoE's measured 0.222 (its own:
+  0.228) and sat under its driver peak at 1.014.
+- **What it costs.** In sample (`evidence/2026-10-09-moe-plan-vs-driver-no-borrow`), no plan is under its driver peak.
+  granite-3.1 goes from 1.014 to 0.898 and granite-4.0-h-tiny from 0.896 to 0.796. A model nothing measured is priced
+  at the card's worst training slack.
+- **The rest of granite's gap is attributed** (`evidence/2026-10-09-a2000-granite-train-residual`). Its training peak is
+  the loss, where three fp32 logits-sized tensors are live: 12 B per logit, against the 10 B that experts4bit-qlora's
+  MoE estimate prices. That is the miss loggetta's dense estimate fixed in #27. The adapter gradients the estimate
+  prices are not live at a loss peak and offset most of it: +23.5 MiB on today's stack.
+- **Dense plans are unchanged:** byte-identical on 216 cases, with and without all 62 committed receipts on file.
+- **Tests.** `test_training_never_borrows_another_models_slack` (fails before, passes after). Two reserve tests'
+  receipts now name the model they stand for.
+
+### Plans record the backend switches their estimate read; execute warns when the run differs
+
+- **What changed.** A feasible plan's provenance records `estimate_env`: the environment switches the selected
+  backend's estimate read, with their values in the planning process. For experts4bit-qlora that is what its own
+  accessor (`recipe.estimate_env`) reports. `execute` compares them with the running process's before anything loads.
+  On a difference it logs a warning naming each switch, planned and running, and it records the comparison in the
+  receipt's `provenance.estimate_env`.
+- **Why.** experts4bit-qlora's training estimate reads `E4B_CHUNKED_LM_LOSS` (experts4bit-qlora#1491), which decides
+  whether the loss is priced chunked or whole. `loggetta train` plans and runs in one process. A plan written by
+  `loggetta plan --out` and run by `loggetta execute` in another process could price a loss the run does not take, and
+  nothing would say so.
+- **Unchanged where nothing is recorded.** A backend release without the accessor records nothing and the check is
+  skipped. Older plans run as before. loggetta still reads no environment variable itself.
+- **Tests.** `tests/test_estimate_env.py`.
+
+### Dense plans: the activation item is the larger of its two branches as returned
+
+- **What changed.** The dense activation item chose its branch with `T × layer_work > loss_bytes`, then returned the
+  layer branch scaled by `ACTIVATION_COEFFICIENT` (1.178). The comparison left the coefficient out, so a larger loss
+  workspace could switch it to the smaller branch: an estimate that fell as one of its terms rose. It now computes
+  both branches as returned and takes the larger.
+- **The fallback.** For an experts4bit-qlora without `chunked_loss_bytes`, the fallback's bytes per chunk logit are now
+  `CHUNK_LOSS_BYTES_PER_LOGIT` (12, measured in experts4bit-qlora #1504), up from a literal 10.
+- **Effect, in sample on the 36-case dense matrix.**
+  - With today's experts4bit-qlora, four Qwen3-14B plans at 2,048 tokens rise 24.0 MiB: the cases the old comparison
+    under-priced. No plan falls.
+  - With experts4bit-qlora #1505 (12 B per chunk logit) as well, every changed plan rises (+178.1 MiB). Qwen3-32B at
+    2,048 tokens, which #1505 alone would have lowered by 185.1 MiB, is unchanged.
+- **Tests.**
+  - `test_a_larger_loss_term_never_lowers_the_activation_estimate`, at Qwen3-32B and 2,048 tokens: it fails before the
+    fix and passes after.
+  - The DQ9 prior-estimates snapshot is unchanged. Its two affected rows get an explicit activation correction in
+    `tests/fixtures/dq9/activation-max-correction.json`, and the test checks that they now take the layer branch.
+
+### Tests: every run an evidence log names has a committed receipt, or a note says why not
+
+`tests/test_evidence_receipts.py` reads every committed log under `evidence/` for the run IDs it names, as loggetta's
+`receipt: <path>.json` line or `bench/train_residual.py`'s `run <id> status` line. It requires a committed
+`<run_id>.json` under `evidence/`, or a `no receipt: <run_id>` line in the directory's Markdown. `receipts/` is
+gitignored, so a receipt has to be force-added. The step was missed twice (#49, #48), and both times a reader found it.
+On main before #55 the test fails with exactly those runs. The granite directory now notes its lost run G. No code
+changes.
+
+### Docs: the memory headline cites the audit without reserve borrowing
+
+README and PYPI's planner memory check pointed at the audit re-run after the `grouped_nf4` term, where one RTX A2000
+training plan sat under its measured peak (1.014×) because it borrowed another model's reserve. Training plans no
+longer borrow (#49). The headline now points at that audit (`evidence/2026-10-09-moe-plan-vs-driver-no-borrow`),
+where no A2000 training plan is under its measured peak, in sample. No code changes.
+
+### Docs: claims brought back in line with the committed evidence
+
+A claims audit checked about 330 statements in the README, PYPI.md and docs/ against the receipts. This fixes the ones
+that drifted:
+- RESULTS number drifts and roundings, including the 6.64 → 5.64 replan figure, which comes from the original receipt.
+- The prefill-graph pool at 30B is +0.56 GiB with NF4 experts. The +3.3 GiB cited before was the int4 stack. The
+  planner's explain string is fixed too.
+- ARCHITECTURE:
+  - `train.py` reaches the grouped kernel through its arena path.
+  - gnf4 0.39.0 first shipped the route interface.
+  - There are two backends.
+  - The interface list is the main one, not all of it.
+  - Training never borrows another model's reserve.
+  - Serving reads a second setup field (`placement`).
+- SESSION-REPORT is left as dated and gains a correction note.
+- README/PYPI say "estimates" for the OLMoE 0.2 GiB figure, and scope the no-plan-under-peak claim to today's planner.
+
+### Docs: granite-3.1's 32 MiB peak drift between two stacks is recorded, not attributed
+
+`evidence/2026-10-09-a2000-granite-train-residual/STACK-DRIFT.md`. The same setup on the same RTX A2000 peaked
+3,163.9 MiB on the 2026-10-04 stack and 3,131.5 MiB today. 27.6 of the 32.4 MiB is already present after load, the
+direction is safe, and the estimate covers both runs. Four components moved at once (experts4bit-qlora 0.44 → 0.51,
+grouped-nf4-gemm 0.37 → 0.44, torch 2.8 → 2.11, transformers 5.18 → 5.19), so it is not attributed. A drift the other
+way, or past the estimate, would reopen it. No code changes.
+
+### Docs: project files and package links
+
+Adds `CITATION.cff` (GitHub's "Cite this repository"), `SECURITY.md`, `CONTRIBUTING.md` and issue templates, and fills
+the PyPI project links (homepage, changelog, release notes, the research Space on Hugging Face, and the runtime and
+kernel packages) and keywords. "New in 0.4.0" now says what the dense readings found in plain words instead of
+internal lane codes. The PyPI badge matches the runtime's and the kernels', and the README links the Hugging Face
+Space. No code changes.
+
+### Docs: one tagline across the projects
+
+The README's tagline now reads "Large models. Smaller machines.", the same line as the research Space, the ML site and
+the profile banner. No code changes.
+
+### Docs: a short limits box near the top
+
+README and PYPI.md gain a three-line limits box under the opening paragraph: plans are estimates, the released training
+path is single-GPU MoE on Linux with a supported NVIDIA CUDA GPU, and dense models are planned but not yet supported for
+training. It repeats what the pages already say further down. No code changes.
+
 ## 0.4.0 — 2026-10-09
 
 **0.4.0.** Dense models can now be planned, and run behind a development flag. MoE training estimates now price the

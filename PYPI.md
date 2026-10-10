@@ -8,6 +8,10 @@ optimizations actually ran. One install includes the runtime
 ([experts4bit-qlora](https://pypi.org/project/experts4bit-qlora/)) and the GPU kernels
 ([grouped-nf4-gemm](https://pypi.org/project/grouped-nf4-gemm/)).
 
+> **Limits.** Plans are estimates, not an out-of-memory guarantee. The released training path is single-GPU MoE
+> training on Linux with a supported NVIDIA CUDA GPU. Dense models are planned but not yet supported for training.
+> [Dense training](https://github.com/pjordanandrsn/loggetta/blob/main/docs/DENSE.md)
+
 ```bash
 pip install loggetta
 loggetta inspect
@@ -17,19 +21,13 @@ loggetta plan Qwen/Qwen3-30B-A3B --seq 2048
 The plan shows where weights will live, estimated memory use, and why alternatives were rejected. It checks the budget
 before downloading model weights. Estimates can miss; they are not an out-of-memory guarantee.
 
-## New in 0.4.0
+## New in 0.5.0
 
-- **Dense models: planned, not supported for training.** Dense plans are estimates checked in sample; out of sample
-  (DQ7) they missed, and the DQ10 reading is pending. Dense execution needs `--allow-development-executor` until
-  DQ8's 24 GB reading passes. See [Dense training](https://github.com/pjordanandrsn/loggetta/blob/main/docs/DENSE.md).
-- **The DQ10 reserve policy is opt-in,** for registered dense runs. Defaults do not change.
-- **MoE training estimates price the `grouped_nf4` backward pass.** OLMoE estimates on an RTX A2000 were about 0.2 GiB short;
-  in sample they now cover the measured peak. Near a budget, a plan may pick the reference kernel or host residency
-  where it picked resident `grouped_nf4` before.
-- **Single-stream serve plans** name the speed-ups a default server runs for the model's family, and quote a decode
-  speed only from a measured run of the same setup.
-- **Fix:** resident `grouped_nf4` training runs again with experts4bit-qlora 0.49.0 or later. Loggetta 0.3.x stopped
-  before the first step (#47); the workaround was `E4B_ABSMAX_DQ=0`.
+- **Training plans no longer borrow another model's reserve.** A model with no receipts on this GPU is priced at the
+  card's worst measured training slack. In sample, no training plan now sits under its measured peak.
+- **Plans record the backend switches their estimate read** (with experts4bit-qlora 0.52.0 or later), and
+  `loggetta execute` warns when the running process differs.
+- **Dense plans:** an estimate no longer falls when one of its terms rises.
 
 Full list: [CHANGELOG](https://github.com/pjordanandrsn/loggetta/blob/main/CHANGELOG.md).
 
@@ -84,8 +82,8 @@ authority.
 Single-GPU MoE planning and QLoRA training; serving placement is planned, not launched. Not yet: multi-GPU,
 throughput prediction. GPU runs need Linux, an NVIDIA CUDA GPU and a compatible PyTorch. Pre-1.0.
 
-Dense models are not supported for training yet: their plans are estimates checked in sample (DQ7 missed out of
-sample, DQ10 pending), and their training runs only behind `--allow-development-executor` until DQ8's 24 GB reading.
+Dense models are not supported for training yet: their plans are estimates that missed a held-out check (a further
+reading is pending), and their training runs only behind `--allow-development-executor` until a 24 GB capacity reading.
 
 [GitHub](https://github.com/pjordanandrsn/loggetta) ·
 [Results](https://github.com/pjordanandrsn/loggetta/blob/main/docs/RESULTS.md) ·
