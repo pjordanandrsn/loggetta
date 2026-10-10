@@ -51,6 +51,10 @@ class GPU:
     pcie_width_max: Fact
     pcie_gen_current: Fact
     pcie_width_current: Fact
+    #: the GPU architecture where the vendor names one that is not a compute capability (AMD: ``gfx942``). An AMD GPU's
+    #: ``compute_capability`` stays unknown on purpose: ROCm's capability tuple is a gfx number (gfx942 reports
+    #: ``(9, 4)``), and every gate that reads it is written for sm numbers.
+    arch: str | None = None
 
 
 @dataclass(frozen=True)
@@ -142,8 +146,8 @@ def parse_nvidia_smi(csv_text: str) -> list:
 def _probe_gpus(notes: list) -> tuple:
     smi = shutil.which("nvidia-smi")
     if smi is None:
-        notes.append("no nvidia-smi on PATH: no NVIDIA GPU discovered (other vendors are not probed yet)")
-        return ()
+        notes.append("no nvidia-smi on PATH: no NVIDIA GPU discovered")
+        return _probe_amd_gpus(notes)
     try:
         out = subprocess.run([smi, f"--query-gpu={','.join(_SMI_FIELDS)}", "--format=csv,noheader,nounits"],
                              capture_output=True, text=True, timeout=20, check=True).stdout
@@ -155,6 +159,104 @@ def _probe_gpus(notes: list) -> tuple:
     if vis is not None:
         notes.append(f"CUDA_VISIBLE_DEVICES={vis!r}: indices here are nvidia-smi's, not the process's")
     return tuple(gpus)
+
+
+def _amd_gpu(index, name, arch, total, used, uuid, driver, source) -> GPU:
+    unknown = _fact(None, "unknown")
+    return GPU(index=int(index), vendor="amd", name=name or "AMD GPU", uuid=uuid or None,
+               compute_capability=_fact(None, "unknown", "AMD: ROCm's capability tuple is a gfx number, not an sm "
+                                                         "number, so it is not recorded as one"),
+               memory_total=_fact(total, "reported", source),
+               memory_free=_fact(total - used if total is not None and used is not None else None, "reported",
+                                 f"{source}, at probe time"),
+               driver=_fact(driver or None, "reported"), pcie_gen_max=unknown, pcie_width_max=unknown,
+               pcie_gen_current=unknown, pcie_width_current=unknown, arch=arch or None)
+
+
+def parse_amdsmi(devices: list) -> list:
+    """:class:`GPU` rows from amdsmi's per-device answers: ``[{"asic": amdsmi_get_gpu_asic_info(h), "vram":
+    amdsmi_get_gpu_vram_usage(h) (MiB), "uuid": ..., "driver": amdsmi_get_gpu_driver_info(h)}]``, any of them may be
+    missing or empty."""
+    gpus = []
+    for i, d in enumerate(devices):
+        asic, vram, drv = d.get("asic") or {}, d.get("vram") or {}, d.get("driver") or {}
+        mib = lambda k: int(vram[k]) * (1 << 20) if isinstance(vram.get(k), (int, float)) else None  # noqa: E731
+        arch = asic.get("target_graphics_version")
+        gpus.append(_amd_gpu(i, asic.get("market_name"), str(arch) if arch else None, mib("vram_total"),
+                             mib("vram_used"), d.get("uuid"), drv.get("driver_version"), "amdsmi"))
+    return gpus
+
+
+def parse_rocm_smi(json_text: str) -> list:
+    """:class:`GPU` rows from ``rocm-smi --showproductname --showmeminfo vram --showuniqueid --showdriverversion
+    --json``. Its keys differ between ROCm releases, so each value is looked up by a case-insensitive fragment."""
+    import json
+
+    try:
+        data = json.loads(json_text)
+    except ValueError:
+        return []
+    gpus = []
+    for key in sorted((k for k in data if str(k).lower().startswith("card")),
+                      key=lambda k: int("".join(c for c in k if c.isdigit()) or 0)):
+        row = {str(k).lower(): v for k, v in data[key].items()}
+
+        def get(*frags):
+            return next((v for k, v in row.items() if all(f in k for f in frags)), None)
+
+        num = lambda v: int(v) if str(v).strip().isdigit() else None  # noqa: E731
+        index = int("".join(c for c in key if c.isdigit()) or 0)
+        gpus.append(_amd_gpu(index, get("card series") or get("market name") or get("card sku"), get("gfx version"),
+                             num(get("vram total memory")), num(get("vram total used")), get("unique id"),
+                             data.get("system", {}).get("Driver version"), "rocm-smi"))
+    return gpus
+
+
+def _probe_amd_gpus(notes: list) -> tuple:
+    """AMD GPUs through amdsmi's Python API, else ``rocm-smi --json``. They are recorded so a plan can refuse them in
+    words, not planned on: no AMD card has run the suites."""
+    try:
+        import amdsmi
+    except Exception:
+        amdsmi = None
+    if amdsmi is not None:
+        try:
+            amdsmi.amdsmi_init()
+            try:
+                devices = []
+                for h in amdsmi.amdsmi_get_processor_handles():
+                    d = {}
+                    for k, call in (("asic", "amdsmi_get_gpu_asic_info"), ("vram", "amdsmi_get_gpu_vram_usage"),
+                                    ("uuid", "amdsmi_get_gpu_device_uuid"), ("driver", "amdsmi_get_gpu_driver_info")):
+                        try:
+                            d[k] = getattr(amdsmi, call)(h)
+                        except Exception:
+                            d[k] = None
+                    devices.append(d)
+            finally:
+                amdsmi.amdsmi_shut_down()
+            if devices:
+                notes.append("AMD GPU(s) discovered through amdsmi")
+                return tuple(parse_amdsmi(devices))
+        except Exception as e:
+            notes.append(f"amdsmi failed: {e}")
+    smi = shutil.which("rocm-smi")
+    if smi is not None:
+        try:
+            out = subprocess.run([smi, "--showproductname", "--showmeminfo", "vram", "--showuniqueid",
+                                  "--showdriverversion", "--json"], capture_output=True, text=True, timeout=20,
+                                 check=True).stdout
+            gpus = parse_rocm_smi(out)
+            if gpus:
+                notes.append("AMD GPU(s) discovered through rocm-smi")
+                return tuple(gpus)
+        except (subprocess.SubprocessError, OSError) as e:
+            notes.append(f"rocm-smi failed: {e}")
+    if os.path.exists("/dev/kfd"):
+        notes.append("/dev/kfd exists (an AMD ROCm device) but neither amdsmi nor rocm-smi described it")
+        return (_amd_gpu(0, "AMD GPU (ROCm /dev/kfd)", None, None, None, None, None, "/dev/kfd"),)
+    notes.append("no AMD GPU discovered (amdsmi, rocm-smi, /dev/kfd)")
+    return ()
 
 
 # --------------------------------------------------------------------------------------------------------------- host
@@ -266,7 +368,8 @@ def describe(hw: HardwareProfile) -> str:
     for g in hw.gpus:
         cc = g.compute_capability.value
         lines.append(f"  GPU {g.index}: {g.name}  (sm_{cc[0]}{cc[1]}, driver {g.driver.value})" if cc else
-                     f"  GPU {g.index}: {g.name}")
+                     f"  GPU {g.index}: {g.name}  (AMD {g.arch or 'arch unknown'}: not yet supported)"
+                     if g.vendor == "amd" else f"  GPU {g.index}: {g.name}")
         lines.append(f"    memory: {gb(g.memory_total)} total, {gb(g.memory_free)} free now [{g.memory_free.source}]")
         if g.pcie_gen_max:
             lines.append(f"    PCIe: gen{g.pcie_gen_current.value} x{g.pcie_width_current.value} now, "

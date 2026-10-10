@@ -751,3 +751,21 @@ def test_training_never_borrows_another_models_slack(topo):
     # the model's own receipt still wins, measured
     line, frac = reserve([rec("own", topo.model, "device", 100, 112), rec("sibling-host", "other/model", "host", 100, 139)])
     assert line.basis == "measured" and "own" in line.detail and abs(frac - 0.12) < 1e-3
+
+
+def test_an_amd_gpu_is_refused_in_words_not_as_no_gpu(topo):
+    """An AMD GPU is recorded (vendor and gfx arch, no sm capability) and refused by name: no AMD card has run the
+    suites, and every backend's capability rules are written for sm numbers."""
+    from dataclasses import replace
+
+    h = hw()
+    amd = replace(h.gpus[0], vendor="amd", name="AMD Instinct MI300X", arch="gfx942",
+                  compute_capability=Fact(None, "unknown"))
+    p = plan(topo, HardwareProfile(gpus=(amd,), host=h.host, platform=h.platform), Workload())
+    assert p.status == "refused"
+    why = p.refusal["reasons"][0]
+    assert why.startswith("AMD GPU detected (AMD Instinct MI300X, gfx942); not yet supported: no AMD card has run "
+                          "the suites")
+    assert "no GPU" not in why
+    control = plan(topo, h, Workload())                       # the same card as NVIDIA: no vendor refusal
+    assert not any("AMD" in r or "not yet supported" in r for r in (control.refusal or {}).get("reasons", []))
