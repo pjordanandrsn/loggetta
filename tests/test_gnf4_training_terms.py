@@ -127,7 +127,15 @@ def _estimate(topo, **setup):
     return {ln[0]: ln for ln in lines}, unmodelled
 
 
-def test_the_grouped_kernel_prices_its_backward_branch(topo):
+@pytest.fixture
+def own_line():
+    """The line's own tests read it as the excess over an experts4bit-qlora ``activations`` item WITHOUT the grouped_nf4
+    branch. Against a release that prices the branch (#1526) that excess is not positive, which the last test checks."""
+    if e4b.e4b_prices_gnf4_backward():
+        pytest.skip("the installed experts4bit-qlora prices the grouped_nf4 backward itself (#1526)")
+
+
+def test_the_grouped_kernel_prices_its_backward_branch(topo, own_line):
     lines, unmodelled = _estimate(topo)
     T, H, L = 1024, 2048, 4
     want = (L * T * H * 2 + 64 * 1024 * (2048 + 2048 + 1024) * 2 + 5 * T * 8 * 2048 * 2) - lines["activations"][2]
@@ -141,11 +149,11 @@ def test_the_reference_kernel_is_unchanged(topo):
     assert LINE not in lines and not any("NF4_QLORA" in u for u in unmodelled)
 
 
-def test_host_residency_prices_the_same_branch(topo):
+def test_host_residency_prices_the_same_branch(topo, own_line):
     assert _estimate(topo, expert_residency="host")[0][LINE][2] == _estimate(topo)[0][LINE][2]
 
 
-def test_fp32_adapters_price_the_padded_delta_at_four_bytes(topo):
+def test_fp32_adapters_price_the_padded_delta_at_four_bytes(topo, own_line):
     bf16, fp32 = _estimate(topo)[0][LINE][2], _estimate(topo, adapter_dtype="fp32")[0][LINE][2]
     assert fp32 - bf16 == 64 * 1024 * (2048 + 2048 + 1024) * 2
 
@@ -157,7 +165,7 @@ def test_no_line_when_the_loss_is_the_larger_term(topo):
     assert LINE not in _estimate(big_vocab)[0]
 
 
-def test_a_plan_carries_the_line(topo):
+def test_a_plan_carries_the_line(topo, own_line):
     from loggetta import Constraints, Workload, plan
     from loggetta.hardware import GPU, Fact, HardwareProfile, Host
 
@@ -172,3 +180,20 @@ def test_a_plan_carries_the_line(topo):
     if p.selected is None or p.selected.setup.get("expert_kernel") != "grouped_nf4":
         pytest.skip("grouped-nf4-gemm is not usable here, so no grouped_nf4 plan")
     assert any(ln.name == LINE for ln in p.selected.lines)
+
+
+def test_an_e4b_that_prices_the_branch_gets_no_second_line(topo, monkeypatch):
+    """experts4bit-qlora#1526: when the installed estimate prices the grouped_nf4 backward itself, no line is added here."""
+    monkeypatch.setattr(e4b, "e4b_prices_gnf4_backward", lambda: True)
+    assert LINE not in _estimate(topo)[0]
+
+
+def test_against_an_e4b_that_prices_the_branch_this_line_would_add_nothing(topo):
+    """And it would be redundant: this module's branch sits inside the installed estimate's ``activations`` item, so even
+    computed, the line adds nothing (its excess over that item is not positive)."""
+    if not e4b.e4b_prices_gnf4_backward():
+        pytest.skip("the installed experts4bit-qlora does not price the branch (before #1526)")
+    lines, _ = _estimate(topo)
+    setup = dict(r=8, adapter_dtype="bf16", train_experts=True, expert_kernel="grouped_nf4")
+    as_list = [(k, *v[1:]) for k, v in lines.items()]
+    assert e4b._gnf4_backward_line(topo, setup, 1024, as_list) is None
