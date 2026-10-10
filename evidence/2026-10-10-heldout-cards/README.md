@@ -125,8 +125,12 @@ python bench/ho1_replan.py … --rows rows-posthoc.json --primary-field primary_
 **HO1's workload is the configured shape, not the tokens a run took.** The registration planned `seq × micro_batch`
 tokens. The 4096 × 1 arms are packed full rows: 4,096 tokens in every micro-batch, 16,384 per step. The 2048 × 2 arms in
 this post-hoc set (`tc1-5090-103`, `-106`) pad each micro-batch only to its longest example. That is at most 565
-tokens, 1,014–1,432 per step. Their plans priced 4,096 tokens they never held. That direction over-prices, and it is
-part of why their driver / plan ratios are low. **So the 2048 × 2 and 4096 × 1 rows are not at the same token count, and
+tokens, 1,014–1,432 per step. Their plans priced 4,096 tokens they never held.
+
+**That is a finding about HO1 itself.** The planner prices `seq × micro_batch`, and padded-to-longest recipes run far
+fewer tokens. Over-pricing is the safe direction, but it **inflates HO1's coverage on those rows**: a padded-to-longest
+row that is "not shown under" was planned for more tokens than it held. Of the registered primary arms, the
+field-recipe 2048 × 2 rows are of that kind. **So the 2048 × 2 and 4096 × 1 rows are not at the same token count, and
 comparing them says nothing about sequence length.**
 
 At a real 4,096 tokens (packed, bucketed, experts4bit-qlora 0.48.0), the allocator estimate is short:
