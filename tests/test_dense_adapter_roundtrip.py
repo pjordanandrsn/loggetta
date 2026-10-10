@@ -1,5 +1,6 @@
 """Actual dense inference-artifact boundary; CPU bf16 bases, no NF4/capacity claim."""
 import json
+import inspect
 from types import SimpleNamespace
 
 import pytest
@@ -8,6 +9,7 @@ import transformers as tr
 from peft.utils import get_peft_model_state_dict
 from safetensors.torch import load_file, save_file
 
+from experts4bit_qlora.engines.dense_offload import _DenseOffload
 from loggetta import load_adapter
 from loggetta.backends import dense_train
 from loggetta.backends.dense_adapters import read_manifest, save_adapter
@@ -17,6 +19,14 @@ from loggetta.data import file_sha256
 from test_dense_execution import make_plan, stream_tiny_weights
 from test_dense_plans import SMALL
 from test_training_data import Tokenizer
+
+
+# Remove the marker once Loggetta's e4b floor reaches the release containing #1539.
+CPU_GUARD_PRESENT = ('if self.device.type != "cuda":\n            self.stage()\n            return'
+                     in inspect.getsource(_DenseOffload.stage_for_inference))
+STREAM_PLACEMENT = pytest.param("stream", marks=pytest.mark.xfail(
+    not CPU_GUARD_PRESENT, strict=True, raises=(RuntimeError, ValueError),
+    reason="experts4bit-qlora#1539, fixed after 0.52.0"))
 
 
 @pytest.fixture(autouse=True)
@@ -52,7 +62,7 @@ def _trained_artifact(tmp_path, monkeypatch, family, placement, adapter_dtype):
 
 
 @pytest.mark.parametrize("family", ("llama", "qwen3"))
-@pytest.mark.parametrize("placement", ("device", "stream"))
+@pytest.mark.parametrize("placement", ("device", STREAM_PLACEMENT))
 @pytest.mark.parametrize("adapter_dtype", ("fp32", "bf16"))
 def test_dense_adapter_storage_and_logits_are_bitwise_after_public_reload(
         tmp_path, monkeypatch, family, placement, adapter_dtype):
