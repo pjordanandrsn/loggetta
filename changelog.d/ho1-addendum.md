@@ -6,6 +6,6 @@
 - **The detector:** `bench/ho1_rows.py --posthoc` now flags such arms from what they recorded, pinned by
   `tests/test_ho1_unmodelled.py`.
 - **The post-hoc read:** no setup is under.
-- **Still open:** the estimate falls short as sequence length grows at fixed tokens (+0.97 GiB fp32, +2.14 GiB bf16),
+- **Still open:** at a real 4,096 tokens per micro-batch, the allocator estimate is short (1.048 fp32, 1.133 bf16),
   tracked in experts4bit-qlora#1526.
 - **The 0.5.0 line:** README and PYPI now say every over-plan run used an unmodelled setting.

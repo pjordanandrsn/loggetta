@@ -120,17 +120,27 @@ python bench/ho1_replan.py … --rows rows-posthoc.json --primary-field primary_
 - **Not held out.** This re-run uses rows the planner and its authors have now seen, so it is post hoc. The next
   held-out check needs receipts the planner has not seen.
 
-### What remains: the estimate grows short with sequence length at fixed tokens
+### What remains: the estimate is short at a real 4,096 tokens per micro-batch
 
-On the same release (experts4bit-qlora 0.48.0) and the same bucketed path, the allocated peak rises from 2048 × 2 to
-4096 × 1. The estimate does not, because it depends on tokens per micro-batch only:
+**HO1's workload is the configured shape, not the tokens a run took.** The registration planned `seq × micro_batch`
+tokens. The 4096 × 1 arms are packed full rows: 4,096 tokens in every micro-batch, 16,384 per step. The 2048 × 2 arms in
+this post-hoc set (`tc1-5090-103`, `-106`) pad each micro-batch only to its longest example. That is at most 565
+tokens, 1,014–1,432 per step. Their plans priced 4,096 tokens they never held. That direction over-prices, and it is
+part of why their driver / plan ratios are low. **So the 2048 × 2 and 4096 × 1 rows are not at the same token count, and
+comparing them says nothing about sequence length.**
 
-| adapters | 2048 × 2 | 4096 × 1 | difference | estimate (both shapes) |
-|---|---|---|---|---|
-| bf16 | 22.98 GiB | 25.12 GiB | +2.14 GiB | 22.16 GiB |
-| fp32 | 25.32 GiB | 26.29 GiB | +0.97 GiB | 25.09 GiB |
+At a real 4,096 tokens (packed, bucketed, experts4bit-qlora 0.48.0), the allocator estimate is short:
 
-The cause is untested. One candidate is attention that leaves the flash backend on packed 4,096-token rows. A
-materialised mask rules flash out, and a math-backend fp32 (b, heads, s, s) tensor would differ by about 1.0 GiB between
-these shapes for Qwen3-30B. That candidate does not explain why the bf16 gap is larger. This is tracked in
-experts4bit-qlora#1526.
+| adapters | allocated peak | estimate | allocated / estimate |
+|---|---|---|---|
+| fp32 | 26.21–26.29 GiB | 25.09 GiB | 1.048 |
+| bf16 (`native`) | 25.12 GiB | 22.16 GiB | 1.133 |
+
+- **The adapter dtype.** The measured bf16 / fp32 gap is 1.17 GiB. The estimate's gap is 2.93 GiB, so the estimate
+  credits bf16 adapters with about twice the saving the runs showed. That is the clearest pointer in these rows; its
+  cause is not established.
+- **Attention.** It ran on the flash backend at 4096 × 1: `tc1-5090-110`'s profile records `pytorch_flash` forward and
+  backward kernels and `aten::_scaled_dot_product_flash_attention`. A materialised (b, heads, s, s) score tensor is
+  not the gap there.
+
+This is tracked in experts4bit-qlora#1526.
