@@ -84,6 +84,9 @@ def main():
     ap.add_argument("--rows", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--a2000-evidence", help="this repository's evidence/ (the A2000-on-file variant)")
+    ap.add_argument("--primary-field", default="primary",
+                    help="the row field that marks a primary arm (``primary_posthoc`` for the addendum's post-hoc read)")
+    ap.add_argument("--name", default="ho1", help="output file stem")
     a = ap.parse_args()
     reg = json.load(open(a.rows))
     archive = os.path.join(a.out, ".e4b-archive")
@@ -125,7 +128,7 @@ def main():
 
     groups = collections.defaultdict(list)
     for r in reg["rows"]:
-        groups[(*setup_key(r), r["primary"])].append(r)  # primary arms are graded apart from excluded ones
+        groups[(*setup_key(r), bool(r.get(a.primary_field)))].append(r)  # primary arms are graded apart from excluded ones
     topologies, out = {}, []
     for k, rs in sorted(groups.items(), key=lambda kv: [str(x) for x in kv[0]]):
         model = k[1]
@@ -148,12 +151,16 @@ def main():
             "under": bool(pt and drv and max(drv) > pt),
             "estimate_short": bool(est and max(alloc) > est),
             "false_refusal": bool(none.get("refused") or none.get("plan_total_bytes") is None),
-            "arm_rows": [{"arm_receipt": r["arm_receipt"], "primary": r["primary"],
+            "arm_rows": [{"arm_receipt": r["arm_receipt"], "primary": bool(r.get(a.primary_field)),
                           "driver_peak_bytes": r["driver_peak_bytes"], "allocated_peak_bytes": r["allocated_peak_bytes"],
                           "driver_over_plan": (r["driver_peak_bytes"] / pt) if (pt and r["driver_peak_bytes"]) else None,
                           "allocated_over_estimate": (r["allocated_peak_bytes"] / est) if est else None} for r in rs],
         })
-    json.dump({"registration": "bench/HO1-PREREG.md", "setups": out}, open(os.path.join(a.out, "ho1.json"), "w"),
+    head = {"registration": "bench/HO1-PREREG.md"}
+    if a.primary_field != "primary":                 # the registered read's file keeps its registered shape
+        head["primary_field"] = a.primary_field
+    json.dump({**head, "setups": out},
+              open(os.path.join(a.out, f"{a.name}.json"), "w"),
               indent=1, sort_keys=True)
     print(f"{len(out)} setups written")
 
