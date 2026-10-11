@@ -38,16 +38,16 @@ It checks the budget before downloading model weights. Estimates can miss; they 
 The released training path is single-GPU MoE training. Dense execution still requires `--allow-development-executor`:
 its memory estimate has not yet passed a capacity reading. See [Dense training](docs/DENSE.md). Serving placement can be planned; server launch uses the runtime separately.
 
-## New in 0.5.0
+## New in 0.6.0
 
-- **Training plans no longer borrow another model's reserve.** A model with no receipts on this GPU is priced at the
-  card's worst measured training slack. In sample, no training plan now sits under its measured peak.
-  A held-out check on the RTX 5090 found one setup over its plan; every over-plan run used a setting the planner does
-  not model (pad buckets off, or grouped-nf4-gemm before 0.42.0)
+- **An AMD GPU is found and refused by name.** `plan` says "AMD GPU detected (…); not yet supported" instead of "no
+  GPU", and `inspect` shows the gfx arch.
+- **The grouped_nf4 MoE backward is priced once.** With experts4bit-qlora 0.53.0 or later, the runtime's estimate
+  prices it, and Loggetta adds no line of its own.
+- **Dense training's frozen-parameter digest takes a rank-0 parameter;** every existing digest is unchanged.
+- **A held-out check on the RTX 5090** found one setup over its plan; every over-plan run used a setting the planner
+  does not model (pad buckets off, or grouped-nf4-gemm before 0.42.0)
   ([HO1, with addendum](https://github.com/pjordanandrsn/loggetta/blob/main/evidence/2026-10-10-heldout-cards/README.md)).
-- **Plans record the backend switches their estimate read** (with experts4bit-qlora 0.52.0 or later), and
-  `loggetta execute` warns when the running process differs.
-- **Dense plans:** an estimate no longer falls when one of its terms rises.
 
 Full list: [CHANGELOG](CHANGELOG.md).
 

@@ -1,5 +1,103 @@
 # Changelog
 
+## 0.6.0 — 2026-10-11
+
+**0.6.0.** On an AMD machine, discovery now finds the GPU and `plan` refuses it by name, instead of reporting no
+GPU. With experts4bit-qlora 0.53.0 or later, the grouped_nf4 MoE backward is priced once, by the runtime's own
+estimate. Dense training's frozen-parameter digest takes a rank-0 parameter. The rest is tests (dense adapter
+arithmetic, round-trips and cached generation) and the HO1 held-out evidence. Floors unchanged.
+
+### An AMD GPU is discovered and refused in words, instead of reported as no GPU
+
+GPU discovery read `nvidia-smi` only, so on an AMD machine every plan was refused with "no GPU at index 0". With no
+NVIDIA GPU found, the probe now asks amdsmi's Python API, then `rocm-smi --json`, then whether `/dev/kfd` exists, and
+records each AMD GPU with `vendor="amd"`, its gfx arch in the new `GPU.arch` field, and memory where reported. The
+compute capability stays unknown: ROCm's capability tuple is a gfx number (gfx942 reports `(9, 4)`), and every
+backend's rules are written for sm numbers. `plan` then refuses by name: "AMD GPU detected (AMD Instinct MI300X,
+gfx942); not yet supported: no AMD card has run the suites". `inspect` shows the arch and says it is not yet
+supported. Profiles saved before `GPU.arch` existed still load.
+
+### The grouped_nf4 backward line defers to experts4bit-qlora when it prices the branch itself
+
+experts4bit-qlora#1532 (for #1526) prices the grouped_nf4 MoE backward inside its own `activations` item. Loggetta now
+checks whether the installed experts4bit-qlora has that branch (`e4b_prices_gnf4_backward`), and if so adds no line of
+its own. For an older release it keeps its line, as before. Totals are never counted twice either way: against the new
+estimate, the old line's excess over `activations` is not positive, and `tests/test_gnf4_training_terms.py` checks that.
+
+### Dense training's frozen-parameter digest takes a rank-0 parameter
+
+`dense_train.frozen_digest` hashed each frozen first- and last-layer parameter through a byte view. A byte view of a
+rank-0 tensor wider than a byte refuses (`self.dim() cannot be 0 to view Float as Byte`), so a model with a scalar
+frozen parameter could not be checked. It now flattens a contiguous copy before the view. For a ranked tensor the bytes
+are the same, so every existing digest is unchanged: `tests/test_frozen_digest_rank0.py` pins today's ranked digests (RNG-free fixtures) in
+fp32, bf16 and fp16, and checks a rank-0 parameter in each against an independently computed digest.
+
+### Dense adapter arithmetic contracts
+
+Add CPU integration checks between the actual PEFT linear adapter and e4b's native LoRA wrapper: bitwise fp32 outputs, gradients and accumulated AdamW state across projection shapes, ranks, scaling and checkpoint modes. Pin the distinct delta-add rounding of plain PEFT under a bf16 base with fp32 adapters, and the PEFT bitsandbytes wrapper's pre-add rounding with autocast off. No production arithmetic or default changes.
+
+### Dense accumulated training parity
+
+Add CPU fp32 checks that resident and streamed dense training preserve bitwise-equal losses, adapter updates and complete AdamW state after each accumulated update, including uneven supervised-token masks and skipped empty steps. A corrupted streamed host-home mutant fails the same equality check. These tests establish recipe semantics on tiny local Llama and Qwen3 fixtures, with no capacity or timing claim.
+
+### Check dense adapter artifacts across streamed placement and storage dtypes
+
+Exercise real Llama and Qwen3 adapter training, export and public inference reload
+with resident or streamed bases and fp32 or bf16 adapters. Require bitwise tensors
+and logits, and reject a missing adapter tensor even when its file checksum passes.
+
+### Check cached generation after dense adapter reload
+
+Require bitwise resident/streamed logits, KV cache tensors and greedy generated
+tokens after saved Llama and Qwen3 adapter reload. A corrupted cached-prefix control
+must fail the same comparison. Older e4b CPU inference retains the explicit #1539
+expected-failure marker; fixed runtimes exercise the streamed generation path.
+
+### Tests: the fused q/k/v training projection's term reaches the plan, and its knob turns it off
+
+experts4bit-qlora#1560 turns the fused q/k/v training projection on by default. Its estimate prices the fused
+projections' fp32 absmax: 3 B per 64 q/k/v values, 23.6 MB on Qwen3-30B-A3B. Loggetta defers to that estimate.
+`tests/test_fused_qkv_term.py` pins four things: the line is in the plan under the default, `E4B_TRAIN_FUSE_QKV=0`
+drops it, it appears only where the run fuses (NF4 attention, trained attention, the grouped kernel), and the plan's
+`estimate_env` records the knob. The tests skip against an experts4bit-qlora that predates the term. No code changes.
+
+### Registered: HO1, training plans on cards Loggetta was never calibrated on
+
+`bench/HO1-PREREG.md` registers the rules, the row set and a prediction for re-planning committed experts4bit-qlora
+training runs on the RTX 5090 (and 4 H100 rows, reported only) with no receipt on file. `bench/ho1_rows.py` fixes the
+rows from a pinned experts4bit-qlora commit, and `evidence/2026-10-10-heldout-cards/rows.json` holds them, without plans.
+No plan exists yet. No code changes.
+
+### HO1 read: on the RTX 5090, one of 14 setups is under its plan
+
+`evidence/2026-10-10-heldout-cards` re-plans committed experts4bit-qlora training runs, as registered in #59. The
+plans use Loggetta 0.5.0 with no receipt on file.
+- One RTX 5090 setup is under its plan: Qwen3-30B-A3B at 4096 × 1, fused kernel, fp32 adapters, with driver/plan
+  1.023.
+- The exact estimate is short on 5 setups, all fused Qwen3-30B.
+- Five setups that ran are refused.
+
+Scripts: `bench/ho1_replan.py` and `bench/ho1_report.py`. No code changes.
+
+README and PYPI now say, beside the 0.5.0 in-sample line, that the held-out check found one RTX 5090 setup over its plan.
+
+### HO1 addendum (post hoc): the over-plan arms ran without pad buckets
+
+`evidence/2026-10-10-heldout-cards` gains a post-hoc addendum. HO1_UNDER stays the registered verdict.
+- **The over-plan arms:** all 9 padded the LoRA delta without buckets, by an `NF4_QLORA_PAD_BUCKETS=0` override or on
+  grouped-nf4-gemm 0.41.0. The planner does not model that path.
+- **The detector:** `bench/ho1_rows.py --posthoc` now flags such arms from what they recorded, pinned by
+  `tests/test_ho1_unmodelled.py`.
+- **The post-hoc read:** no setup is under.
+- **Still open:** at a real 4,096 tokens per micro-batch, the allocator estimate is short (1.048 fp32, 1.133 bf16),
+  tracked in experts4bit-qlora#1526.
+- **The 0.5.0 line:** README and PYPI now say every over-plan run used an unmodelled setting.
+
+### CI: a private-marker guard, as in the runtime and kernel repositories
+
+A workflow refuses private-lane material in tracked files: the same patterns and canary self-test as grouped-nf4-gemm's
+guard. The current tree is clean against all of them. No code changes.
+
 ## 0.5.0 — 2026-10-10
 
 **0.5.0.** A training plan for a model with no receipts of its own no longer borrows a sibling model's reserve. In
