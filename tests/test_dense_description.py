@@ -97,20 +97,75 @@ def test_a_dense_model_reaches_the_planner_through_the_dense_backend():
     assert not isinstance(moe, DenseTopology)                              # a MoE model stays experts4bit's
 
 
+def _config_build_errors():
+    """What a default config can raise while transformers builds it: its own validators (huggingface_hub's strict dataclasses
+    raise ``StrictDataclassError``, which is not a ``ValueError``), and plain argument errors."""
+    errors = [ValueError, TypeError]
+    try:
+        from huggingface_hub.errors import StrictDataclassError
+    except ImportError:
+        pass
+    else:
+        errors.append(StrictDataclassError)
+    return tuple(errors)
+
+
+def default_config_or_skip(model_type, auto_config=None):
+    """transformers' default config for ``model_type``, or a skip that names why there is none to test: the type is not in
+    this transformers, or this transformers' default config fails its own validation (transformers 5.20.1's default
+    ``gemma4_assistant`` does). Only building the config is guarded; what loggetta then does with it is the test's to assert."""
+    auto_config = auto_config or tr.AutoConfig
+    if model_type not in tr.CONFIG_MAPPING:
+        pytest.skip(f"transformers {tr.__version__} does not include {model_type}")
+    try:
+        return auto_config.for_model(model_type)
+    except _config_build_errors() as e:
+        pytest.skip(f"transformers {tr.__version__}'s default {model_type} config fails its own validation: "
+                    f"{type(e).__name__}: {e}")
+
+
 @pytest.mark.parametrize("model_type", [
     "gemma4_unified", "gemma4_unified_text", "gemma4_assistant", "gemma4_unified_assistant", "dbrx", "reformer",
 ])
 def test_unsupported_default_configs_refuse_without_raising(model_type):
     from loggetta.model import Refused, describe_model
 
-    if model_type not in tr.CONFIG_MAPPING:
-        pytest.skip(f"transformers {tr.__version__} does not include {model_type}")
-    config = tr.AutoConfig.for_model(model_type)
+    config = default_config_or_skip(model_type)
     topology = describe_model(config)
     if isinstance(topology, Refused):
         assert topology.reasons["dense"], model_type
     else:
         assert topology.refusal, model_type
+
+
+@pytest.mark.parametrize("error", _config_build_errors())
+def test_a_default_config_that_fails_to_build_is_skipped_with_its_reason(error):
+    class Stub:
+        @staticmethod
+        def for_model(model_type):
+            raise error(f"{model_type}: hidden_size_per_layer_input must be 0, got 256")
+
+    with pytest.raises(pytest.skip.Exception) as skipped:
+        default_config_or_skip("llama", auto_config=Stub)
+    reason = str(skipped.value)
+    assert f"default llama config fails its own validation: {error.__name__}" in reason
+    assert "hidden_size_per_layer_input must be 0, got 256" in reason
+
+
+def test_only_building_the_config_is_guarded_not_what_loggetta_does_with_it():
+    from loggetta.model import describe_model
+
+    config = default_config_or_skip("llama")                           # builds: no skip
+    assert isinstance(config, tr.LlamaConfig)
+
+    class Broken:
+        @staticmethod
+        def for_model(model_type):
+            raise RuntimeError("not a config-validation error")
+
+    with pytest.raises(RuntimeError):                                  # anything else still fails the test
+        default_config_or_skip("llama", auto_config=Broken)
+    assert describe_model(config) is not None
 
 
 @pytest.mark.parametrize("stage", ["config", "build", "chunked_loss"])
