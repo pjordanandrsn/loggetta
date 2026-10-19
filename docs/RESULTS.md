@@ -653,8 +653,8 @@ Lane SV6 is experts4bit-qlora#1267 ($5 cap within the owner's $50). It was the f
 - **The box:** `sv6-4090-3`, one RTX 4090, **$0.32**, teardown proven.
   - Two earlier attempts reached no arm ($0.052). The cheapest verified 4090 runs driver 535, where the image's CUDA
     12.8 cannot initialise.
-  - The amendment's driver floor turns that into a host refusal the launcher can exclude. adertha-agents#184 tracks
-    an offer-side filter.
+  - The amendment's driver floor turns that into a host refusal the launcher can exclude. An offer-side filter is a
+    separate follow-up.
 - **The plan under test:** this planner at `dd4783f`. With #1247's bulk flush priced and the 23.52 GiB capacity cap,
   it refused all-VRAM and planned the solver's tiers: VRAM 12.631 / DRAM 15.187 GiB, eager decode, 22.343 GiB.
 
