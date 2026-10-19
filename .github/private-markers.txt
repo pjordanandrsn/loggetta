@@ -76,3 +76,10 @@ pjordanandrsn/org-corpus
 \.adertha/
 # adertha:// URIs name artifacts in the private store; one reached e4b's tracked tree (2026-10-10).
 adertha://
+
+# --- ADDED-ONLY: checked on the lines a change ADDS, never on the merged tree --------------
+# A "<repo>#N" reference into the private control-plane repo is refused only where a change adds it: history keeps
+# its mentions (registrations and sealed records are not rewritten). The workflow diffs a change against its merge
+# base; the pre-push hook (where there is one) diffs a push against the remote tip. Same rule as experts4bit-qlora.
+# Format: "#added-only: REGEX" (extended, case-insensitive); each needs a canary line.
+#added-only: adertha(-agents)?#[0-9]
