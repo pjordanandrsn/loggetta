@@ -10,7 +10,13 @@ on: [push, pull_request]
 # ALLOWLIST: put `guard-allow` on the same line to exempt a deliberate mention. Prefer rewording. There are no
 # hardcoded file exemptions.
 jobs:
-  guard:
+  # The job's check name is what branch protection requires, so it names the guard, not "guard" (2026-10-20).
+  # The REQUIRED check comes from pull_request runs only. A push run's added-only scan diffs from
+  # github.event.before (the newest push alone), so on a PR head it can read green where the PR run (diffing from
+  # the merge base) reads red; and branch protection takes the later of two same-name runs. Push runs still scan
+  # every branch (leak detection on a public repo) under their own, unrequired name.
+  private-marker-guard:
+    name: ${{ github.event_name == 'pull_request' && 'private-marker-guard' || 'private-marker-guard (push scan)' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
