@@ -24,6 +24,12 @@ Models need a safetensors checkpoint with unambiguous tensor names. Legacy pickl
 code are refused. A multimodal checkpoint's text tower is loaded using unique exact suffix matches; this is text
 training, not multimodal training. Tied embeddings share one loaded parameter.
 
+Pricing assumes every decoder layer carries the same linears. When a config declares attributes per layer
+(transformers' `per_layer_config`, as gemma4 does for `head_dim`), each layer is described at its own widths, and
+any difference between layers is a refusal that names it: the per-layer head_dim, layers without `k_proj`/`v_proj`
+(cross-layer KV reuse), and linears whose shapes change between layers. Such models are not plannable yet. Other
+models whose layers differ are refused with a general message ("decoder layers carry different linears").
+
 ## Plan, train and reload
 
 Use the same data validation, assistant loss, packing and schedule controls as [MoE training](TRAINING.md):

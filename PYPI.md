@@ -10,6 +10,9 @@ optimizations actually ran. One install includes the runtime
 
 > **Limits.** Plans are estimates, not an out-of-memory guarantee. The released training path is single-GPU MoE
 > training on Linux with a supported NVIDIA CUDA GPU. Dense models are planned but not yet supported for training.
+> Dense plans assume identical decoder layers, and a model whose layers differ is refused. For a config that declares
+> attributes per layer, such as gemma4 (per-layer head_dim, layers that reuse another layer's KV), the refusal names
+> each difference.
 > Dense training: <https://github.com/pjordanandrsn/loggetta/blob/main/docs/DENSE.md>
 
 ```bash
