@@ -87,6 +87,10 @@ def refusal(topology) -> str | None:
         return "not a model experts4bit-qlora described"
     if topology.loader_refusal:
         return f"the model-family layer cannot load this model: {topology.loader_refusal}"
+    if not topology.expert_stacks:
+        # a model with no MoE layers is not this backend's: refused here, so the dense backend can own it (or both
+        # refusals reach the plan) instead of a MoE plan that fails at pricing for want of an expert stack
+        return f"no MoE layers (0/{topology.n_layers}): not a Mixture-of-Experts model"
     return None
 
 

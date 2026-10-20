@@ -99,6 +99,33 @@ def test_a_dense_model_reaches_the_planner_through_the_dense_backend():
     assert not isinstance(moe, DenseTopology)                              # a MoE model stays experts4bit's
 
 
+def test_a_model_with_no_moe_layers_is_not_admitted_by_the_moe_backend():
+    from types import SimpleNamespace
+
+    from loggetta.backends import experts4bit
+
+    t = SimpleNamespace(expert_stacks=(), n_layers=35, loader_refusal=None)
+    assert experts4bit.refusal(t) == "no MoE layers (0/35): not a Mixture-of-Experts model"
+
+
+def test_a_dense_model_both_backends_refuse_shows_both_reasons_not_a_moe_pricing_refusal():
+    # gemma4: experts4bit-qlora describes the family (0 MoE layers), and the dense backend cannot describe it yet. The
+    # plan must be refused at admission with each backend's own reason, never priced as a MoE plan without experts.
+    pytest.importorskip("experts4bit_qlora.recipe")
+    from loggetta import Workload, describe_model, plan
+    from loggetta.model import Refused
+    from test_execution import hw
+
+    t = describe_model(default_config_or_skip("gemma4_text"))
+    if isinstance(t, DenseTopology):
+        pytest.skip("the dense backend describes gemma4 now: nothing left to refuse")
+    assert isinstance(t, Refused) and t.reasons["experts4bit"].startswith("no MoE layers (0/")
+    p = plan(t, hw(), Workload(seq_len=64))
+    assert p.status == "refused"
+    reasons = p.refusal["reasons"]
+    assert any(r.startswith("experts4bit: no MoE layers") for r in reasons)
+    assert any(r.startswith("dense: ") for r in reasons)
+    assert not any("expert stack" in r for r in reasons)
 GEMMA4_E2B = Path(__file__).parent / "fixtures" / "gemma4" / "gemma-4-E2B-it-3e22461f"   # the real config, pinned
 
 
