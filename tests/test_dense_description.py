@@ -146,6 +146,8 @@ def test_gemma4_per_layer_head_dim_is_read_per_layer_and_the_differences_are_nam
     full = {lin.name: (lin.in_features, lin.out_features, lin.role) for lin in t.layer_linears}
     assert full["self_attn.q_proj"] == (1536, 2048, "attn_in")        # layer 0 classified at its own head_dim
     assert full["self_attn.k_proj"] == (1536, 256, "attn_in")
+    # layer 4 is 512 wide (q_proj 1536->4096): classified at its own head_dim, so no attention linear is left unclassified
+    assert not [u for u in t.unclassified if "self_attn" in u], t.unclassified
 
 
 def test_layer_spans_are_compact():
