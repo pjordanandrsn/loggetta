@@ -5,8 +5,8 @@
 Loggetta checks your hardware, chooses a supported configuration for a Mixture-of-Experts (MoE) model, and runs QLoRA
 fine-tuning. It saves the plan and a JSON run report with memory use, timing, and checks that the selected
 optimizations actually ran. One install includes the runtime
-([experts4bit-qlora](https://pypi.org/project/experts4bit-qlora/)) and the GPU kernels
-([grouped-nf4-gemm](https://pypi.org/project/grouped-nf4-gemm/)).
+(experts4bit-qlora: <https://pypi.org/project/experts4bit-qlora/>) and the GPU kernels
+(grouped-nf4-gemm: <https://pypi.org/project/grouped-nf4-gemm/>).
 
 > **Limits.** Plans are estimates, not an out-of-memory guarantee. The released training path is single-GPU MoE
 > training on Linux with a supported NVIDIA CUDA GPU. Dense models are planned but not yet supported for training.
@@ -30,9 +30,9 @@ before downloading model weights. Estimates can miss; they are not an out-of-mem
 - **Dense training's frozen-parameter digest takes a rank-0 parameter;** every existing digest is unchanged.
 - **A held-out check on the RTX 5090** found one setup over its plan; every over-plan run used a setting the planner
   does not model (pad buckets off, or grouped-nf4-gemm before 0.42.0)
-  ([HO1, with addendum](https://github.com/pjordanandrsn/loggetta/blob/main/evidence/2026-10-10-heldout-cards/README.md)).
+  (HO1, with addendum: <https://github.com/pjordanandrsn/loggetta/blob/main/evidence/2026-10-10-heldout-cards/README.md>).
 
-Full list: [CHANGELOG](https://github.com/pjordanandrsn/loggetta/blob/main/CHANGELOG.md).
+Full list, the CHANGELOG: <https://github.com/pjordanandrsn/loggetta/blob/main/CHANGELOG.md>.
 
 ## Train on your data
 
@@ -46,7 +46,7 @@ loggetta train Qwen/Qwen3-30B-A3B \
 Local JSONL, JSON, CSV, Parquet and TXT files, Hub datasets, Alpaca instructions and text-only chats are supported.
 Data is validated and tokenized before weights load. Chat data trains only the assistant turns by default. Reload the
 adapter with `loggetta.load_adapter("adapters/my-adapter")`. See the
-[training guide](https://github.com/pjordanandrsn/loggetta/blob/main/docs/TRAINING.md).
+training guide: <https://github.com/pjordanandrsn/loggetta/blob/main/docs/TRAINING.md>.
 
 To run a saved decision later: `loggetta plan MODEL --out plan.json`, then `loggetta execute plan.json --out runs/`.
 Pass earlier run reports back with `--observations runs/` and later plans use those measurements.
