@@ -10,7 +10,7 @@ optimizations actually ran. One install includes the runtime
 
 > **Limits.** Plans are estimates, not an out-of-memory guarantee. The released training path is single-GPU MoE
 > training on Linux with a supported NVIDIA CUDA GPU. Dense models are planned but not yet supported for training.
-> [Dense training](https://github.com/pjordanandrsn/loggetta/blob/main/docs/DENSE.md)
+> Dense training: <https://github.com/pjordanandrsn/loggetta/blob/main/docs/DENSE.md>
 
 ```bash
 pip install loggetta
@@ -57,9 +57,9 @@ The included runtime and kernels do the compute; these are matched training runs
 
 | Workload | Result |
 | :--- | :--- |
-| **Qwen3-30B-A3B QLoRA · RTX 5090** | Unsloth spends **1.92×** e4b's GPU time per step, and **2.80×** its wall-clock time on an AMD EPYC 7713 host. Comparable held-out loss; Unsloth peaked lower (24.27 vs 26.16 GB). [Result](https://github.com/pjordanandrsn/experts4bit-qlora/blob/main/bench/h2h-2026-10-02/tc1/RESULTS-tc1-pos69.md) |
+| **Qwen3-30B-A3B QLoRA · RTX 5090** | Unsloth spends **1.92×** e4b's GPU time per step, and **2.80×** its wall-clock time on an AMD EPYC 7713 host. Comparable held-out loss; Unsloth peaked lower (24.27 vs 26.16 GB). Result: <https://github.com/pjordanandrsn/experts4bit-qlora/blob/main/bench/h2h-2026-10-02/tc1/RESULTS-tc1-pos69.md> |
 | **Why two numbers** | GPU time doesn't depend on the host. Unsloth runs about 14× e4b's CPU operations per step, so its wall-clock time grows on a slower host. Earlier wall-clock readings, before e4b's current defaults: 2.352× and 2.468×. |
-| **Planner memory check · Qwen3-30B-A3B · RTX 5090** | **24.54 GiB** estimated process peak, **24.34 GiB** measured, after calibration from earlier runs. One in-sample case, not a guarantee. In the MoE audit re-run with training plans no longer borrowing another model's reserve (`evidence/2026-10-09-moe-plan-vs-driver-no-borrow`), today's planner puts no RTX A2000 training plan under its measured peak, in sample (the replan section; older recorded plans were). [Plan vs run](https://github.com/pjordanandrsn/loggetta/blob/main/docs/RESULTS.md) · [MoE audit](https://github.com/pjordanandrsn/loggetta/blob/main/evidence/2026-10-09-moe-plan-vs-driver-no-borrow/README.md) |
+| **Planner memory check · Qwen3-30B-A3B · RTX 5090** | **24.54 GiB** estimated process peak, **24.34 GiB** measured, after calibration from earlier runs. One in-sample case, not a guarantee. In the MoE audit re-run with training plans no longer borrowing another model's reserve (`evidence/2026-10-09-moe-plan-vs-driver-no-borrow`), today's planner puts no RTX A2000 training plan under its measured peak, in sample (the replan section; older recorded plans were). Plan vs run: <https://github.com/pjordanandrsn/loggetta/blob/main/docs/RESULTS.md> · MoE audit: <https://github.com/pjordanandrsn/loggetta/blob/main/evidence/2026-10-09-moe-plan-vs-driver-no-borrow/README.md> |
 
 The comparison used torch 2.12.1+cu130 and transformers 5.5.0 for both frameworks, with matched adapters, initialization and
 tokens. Loggetta does not predict throughput.
@@ -76,9 +76,8 @@ tokens. Loggetta does not predict throughput.
 | Gemma-4-26B-A4B-it, Nemotron-3.5-Lightning-30B-A3B | supported by the runtime; not yet in Loggetta's sweep |
 
 Every row is supported by the included runtime's QLoRA path. Hybrid models (Qwen3.6, Granite-4.0-H, LFM2, Nemotron-H)
-need `--packing concat` with chat or Alpaca data. The runtime's
-[capability register](https://github.com/pjordanandrsn/experts4bit-qlora/blob/main/docs/capabilities.json) is the
-authority.
+need `--packing concat` with chat or Alpaca data. The runtime's capability register is the authority:
+<https://github.com/pjordanandrsn/experts4bit-qlora/blob/main/docs/capabilities.json>
 
 ## Scope
 
@@ -88,7 +87,7 @@ throughput prediction. GPU runs need Linux, an NVIDIA CUDA GPU and a compatible 
 Dense models are not supported for training yet: their plans are estimates that missed a held-out check (a further
 reading is pending), and their training runs only behind `--allow-development-executor` until a 24 GB capacity reading.
 
-[GitHub](https://github.com/pjordanandrsn/loggetta) ·
-[Results](https://github.com/pjordanandrsn/loggetta/blob/main/docs/RESULTS.md) ·
-[Architecture](https://github.com/pjordanandrsn/loggetta/blob/main/docs/ARCHITECTURE.md) ·
-[Research and releases](https://cerinamroth.com/ml/)
+GitHub: <https://github.com/pjordanandrsn/loggetta> ·
+Results: <https://github.com/pjordanandrsn/loggetta/blob/main/docs/RESULTS.md> ·
+Architecture: <https://github.com/pjordanandrsn/loggetta/blob/main/docs/ARCHITECTURE.md> ·
+Research and releases: <https://cerinamroth.com/ml/>
