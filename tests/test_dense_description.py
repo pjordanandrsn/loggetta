@@ -1,5 +1,7 @@
 """The dense backend describes decoder-only models from config and a meta-device tree: LoRA targets by structural role,
 not by a per-family list of names. Tiny configs of seven families, nothing downloaded, no weights read."""
+from pathlib import Path
+
 import pytest
 
 tr = pytest.importorskip("transformers")
@@ -95,6 +97,35 @@ def test_a_dense_model_reaches_the_planner_through_the_dense_backend():
     assert p.status == "feasible" and p.model["model_type"] == "llama" and p.selected.backend == "dense"
     moe = describe_model(tr.Qwen3MoeConfig(**SMALL, num_experts=4, moe_intermediate_size=32, head_dim=16))
     assert not isinstance(moe, DenseTopology)                              # a MoE model stays experts4bit's
+
+
+GEMMA4_E2B = Path(__file__).parent / "fixtures" / "gemma4" / "gemma-4-E2B-it-3e22461f"   # the real config, pinned
+
+
+def test_gemma4_per_layer_head_dim_is_read_per_layer_and_the_differences_are_named():
+    # google/gemma-4-E2B-it's own config.json (revision 3e22461f): head_dim is per layer, so the global attribute raises
+    # in transformers; it is read layer by layer, and what pricing cannot represent is refused by name, not guessed
+    if "gemma4" not in tr.CONFIG_MAPPING:
+        pytest.skip(f"transformers {tr.__version__} does not include gemma4")
+    t = dense.describe(tr.AutoConfig.from_pretrained(GEMMA4_E2B))
+    assert isinstance(t, DenseTopology) and t.text_tower_of == "gemma4" and t.model_type == "gemma4_text"
+    assert t.n_layers == 35 and t.head_dim == 256 and t.heads == 8 and t.kv_heads == 1 and not t.uniform
+    assert t.refusal == (
+        "decoder layers differ, and pricing assumes identical layers: "
+        "per-layer head_dim (256 in 28 layers; 512 in layers 4, 9, 14, 19, 24, 29, 34); "
+        "layers 15-34 have no self_attn.k_proj, self_attn.v_proj (cross-layer KV reuse: refused rather than guessed); "
+        "linear shapes differ between layers 0-14 and 15-34 (mlp.gate_proj 1536->6144 / 1536->12288, "
+        "mlp.up_proj 1536->6144 / 1536->12288, mlp.down_proj 6144->1536 / 12288->1536)")
+    full = {lin.name: (lin.in_features, lin.out_features, lin.role) for lin in t.layer_linears}
+    assert full["self_attn.q_proj"] == (1536, 2048, "attn_in")        # layer 0 classified at its own head_dim
+    assert full["self_attn.k_proj"] == (1536, 256, "attn_in")
+
+
+def test_layer_spans_are_compact():
+    from loggetta.backends.dense import _spans
+
+    assert _spans([4, 0, 1, 2, 3, 9, 7, 8]) == "0-4, 7-9"
+    assert _spans([5]) == "5" and _spans([]) == ""
 
 
 def _config_build_errors():

@@ -156,6 +156,64 @@ def _int(cfg, *keys, default=0):
     return default
 
 
+def _per_layer_head_dims(cfg, n_layers: int):
+    """Each decoder layer's ``head_dim`` when the config declares it per layer (transformers' ``per_layer_config``,
+    gemma4), else None. Reading such a config's global ``head_dim`` raises, so it is never read there."""
+    if "head_dim" not in (getattr(cfg, "per_layer_attributes", None) or ()):
+        return None
+    view = cfg.per_layer_config
+    return tuple(int(view[i].head_dim) for i in range(n_layers))
+
+
+def _spans(ids) -> str:
+    """Layer indices as compact ranges: 0-3, 5, 7-9."""
+    ids, out = sorted(ids), []
+    for i in ids:
+        if out and i == out[-1][1] + 1:
+            out[-1][1] = i
+        else:
+            out.append([i, i])
+    return ", ".join(f"{a}" if a == b else f"{a}-{b}" for a, b in out)
+
+
+def _layer_differences(per_layer, head_dims) -> list:
+    """What makes the decoder layers differ, named exactly, for a refusal: the estimate prices one layer times the
+    layer count, so it cannot price any of these and does not guess. Empty when the layers agree on these points."""
+    out = []
+    if head_dims and len(set(head_dims)) > 1:
+        by_hd = {}
+        for i, hd in enumerate(head_dims):
+            by_hd.setdefault(hd, []).append(i)
+        (common, n), *rest = sorted(((hd, len(ids)) for hd, ids in by_hd.items()), key=lambda x: (-x[1], x[0]))
+        out.append(f"per-layer head_dim ({common} in {n} layers; "
+                   + "; ".join(f"{hd} in layers {_spans(by_hd[hd])}" for hd, _n in rest) + ")")
+    names = [{lin.name for lin in layer} for layer in per_layer]
+    missing = {}
+    for i, have in enumerate(names):
+        gone = tuple(sorted(names[0] - have))
+        if gone:
+            missing.setdefault(gone, []).append(i)
+    for gone, ids in missing.items():
+        attn = all(n.rsplit(".", 1)[-1].lower() in NAME_HINTS["attn_in"] for n in gone)
+        out.append(f"layers {_spans(ids)} have no {', '.join(gone)}"
+                   + (" (cross-layer KV reuse: refused rather than guessed)" if attn else ""))
+    attn_names = {lin.name for layer in per_layer for lin in layer if lin.role in ("attn_in", "attn_out")}
+    shapes = {}
+    for i, layer in enumerate(per_layer):
+        for lin in layer:
+            if lin.name not in attn_names:
+                shapes.setdefault(lin.name, {}).setdefault((lin.in_features, lin.out_features), []).append(i)
+    by_split = {}                    # linears that change shape at the same layers are named together
+    for name, by_shape in shapes.items():
+        if len(by_shape) > 1:
+            groups = sorted(by_shape.items(), key=lambda x: x[1][0])
+            split = tuple(_spans(ids) for _shape, ids in groups)
+            by_split.setdefault(split, []).append(f"{name} " + " / ".join(f"{a}->{b}" for (a, b), _ids in groups))
+    for split, named in by_split.items():
+        out.append(f"linear shapes differ between layers {' and '.join(split)} ({', '.join(named)})")
+    return out
+
+
 def classify(name: str, in_f: int, out_f: int, *, hidden: int, inter: int, q_width: int, kv_width: int):
     """The structural role of a decoder-layer linear, or None. Shapes first; a name hint only breaks a tie."""
     by_shape = set()
@@ -245,19 +303,21 @@ def _describe(model, *, revision=None, trust_remote_code=False):
     H = _int(config_t, "hidden_size", "n_embd", "d_model")
     nh = _int(config_t, "num_attention_heads", "n_head")
     nkv = _int(config_t, "num_key_value_heads", default=nh) or nh
-    hd = _int(config_t, "head_dim") or (H // nh if nh else 0)
     inter = _int(config_t, "intermediate_size", "n_inner", "ffn_dim")
     layers = [(int(m.group(1)), mod) for n, mod in tree.named_modules() if (m := _LAYER.search(n))]
     if not layers:
         return _refused(name, config, "no decoder layers found (modules named '...layers.<i>')", prov)
+    head_dims = _per_layer_head_dims(config_t, len(layers))
+    hd = head_dims[0] if head_dims else (_int(config_t, "head_dim") or (H // nh if nh else 0))
     per_layer, layer_param_ids = [], set()
-    for _i, layer in sorted(layers, key=lambda x: x[0]):
+    for i, layer in sorted(layers, key=lambda x: x[0]):
+        hd_i = head_dims[i] if head_dims else hd
         found = []
         for n, mod in layer.named_modules():
             if isinstance(mod, torch.nn.Linear):
                 found.append(Linear(n, mod.in_features, mod.out_features, mod.bias is not None,
                                     classify(n, mod.in_features, mod.out_features, hidden=H, inter=inter,
-                                             q_width=nh * hd, kv_width=nkv * hd)))
+                                             q_width=nh * hd_i, kv_width=nkv * hd_i)))
         per_layer.append(tuple(found))
         layer_param_ids |= {id(p) for p in layer.parameters()}
     first = per_layer[0]
@@ -294,6 +354,10 @@ def _describe(model, *, revision=None, trust_remote_code=False):
     refusal = None
     if not any(lin.role for lin in first):
         refusal = "no decoder-layer linear classifies as an attention or MLP projection: nothing to adapt"
+    elif head_dims and (differences := _layer_differences(per_layer, head_dims)):
+        # a per-layer config (gemma4) is described exactly, then refused: pricing assumes identical decoder layers
+        refusal = "decoder layers differ, and pricing assumes identical layers: " + "; ".join(differences)
+        prov.update(head_dim="per layer, from the config's per_layer_config")
     archs = getattr(config, "architectures", None) or [None]
     prov.update(roles="classified by shape against the config's hidden/intermediate/head widths; names break ties",
                 attention="the model class's _supports_* attributes", chunked_loss="experts4bit-qlora "
