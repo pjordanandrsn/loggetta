@@ -59,6 +59,14 @@ Installing a different torch build over an existing one does nothing: pip counts
 satisfied whatever CUDA it was built for. Start from a fresh environment (or `pip install --force-reinstall` from the
 build's index).
 
+## New in 0.6.2
+
+- **A CUDA plan the installed torch cannot run is refused, with the fix.** When the torch build needs a newer
+  NVIDIA driver than the machine has, `plan` names both and gives the install order that works, instead of letting
+  `execute` fail; `inspect` shows the torch build and whether it can use the GPU.
+- **The Alpaca demonstration runs past row 284.** Training without `--dataset` skips Alpaca's 28 empty-output rows,
+  counts them in the report, and is pinned to one dataset revision; a dataset you supply is still checked strictly.
+
 ## New in 0.6.1
 
 - **gemma4 is refused with its reasons instead of failing.** On transformers 5.20, describing `google/gemma-4-E2B-it`
