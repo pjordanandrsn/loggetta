@@ -55,7 +55,7 @@ def check_here(plan: ExecutionPlan, hardware=None) -> None:
     from .hardware import probe
 
     want = plan.hardware.get("gpu") or {}
-    gpu = (hardware or probe()).gpu(plan.constraints.device)
+    gpu = (hardware or probe(torch=False)).gpu(plan.constraints.device)    # GPU facts only: no torch child
     if gpu is None:
         raise PlanNotExecutable(f"no GPU at index {plan.constraints.device} here; the plan was made for "
                                 f"{want.get('name')}")

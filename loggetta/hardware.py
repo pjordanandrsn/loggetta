@@ -8,15 +8,18 @@ Every value is a :class:`Fact` carrying its source:
 * ``user`` -- the caller supplied it, and it overrides discovery.
 
 Nothing here imports torch: an inventory must be cheap enough to take before deciding whether to load anything.
-Discovery that fails yields ``None`` with a note, never a guess. Multiple GPUs are a list from the start; no code
-below assumes there is exactly one.
+What the installed torch says about CUDA is asked in a child process (:func:`probe_torch`), so this process neither
+imports torch nor initialises CUDA. Discovery that fails yields ``None`` with a note, never a guess. Multiple GPUs are
+a list from the start; no code below assumes there is exactly one.
 """
 from __future__ import annotations
 
+import json
 import os
 import platform
 import shutil
 import subprocess
+import sys
 from dataclasses import asdict, dataclass, replace
 
 GiB = 1 << 30
@@ -70,11 +73,33 @@ class Host:
 
 
 @dataclass(frozen=True)
+class TorchCuda:
+    """What the installed torch reports about CUDA, as torch itself answered in a child process. A torch wheel is
+    built for one CUDA version, and a driver older than that version leaves ``torch.cuda.is_available()`` False even
+    though ``nvidia-smi`` lists the GPU."""
+    #: ``torch.__version__``; None when torch is not installed
+    version: str | None
+    #: ``torch.version.cuda``: the CUDA version this build targets; None for a CPU-only build or when it was not asked
+    cuda: str | None
+    #: ``torch.cuda.is_available()``; None when it could not be asked (the note says why)
+    available: bool | None
+    device_count: int | None
+    #: torch's own warning when CUDA is unavailable (e.g. "The NVIDIA driver on your system is too old"), or why torch
+    #: could not be asked
+    note: str = ""
+    #: ``CUDA_VISIBLE_DEVICES`` as the asked torch saw it (None: unset); "" or a bad index hides every GPU from torch
+    visible_devices: str | None = None
+
+
+@dataclass(frozen=True)
 class HardwareProfile:
     gpus: tuple
     host: Host
     platform: str
     notes: tuple = ()
+    #: the installed torch's CUDA facts (:func:`probe_torch`), asked only when an NVIDIA GPU is discovered; None when
+    #: not asked, and in profiles saved before this field existed
+    torch: TorchCuda | None = None
 
     def gpu(self, index: int = 0) -> GPU | None:
         for g in self.gpus:
@@ -98,7 +123,8 @@ class HardwareProfile:
         host = Host(**{k: fact(v) for k, v in d["host"].items()})
         notes = tuple(d.get("notes", ())) + ((f"profile loaded from {origin}, not probed by this process",)
                                              if origin else ())
-        return cls(gpus=gpus, host=host, platform=d["platform"], notes=notes)
+        t = d.get("torch")
+        return cls(gpus=gpus, host=host, platform=d["platform"], notes=notes, torch=TorchCuda(**t) if t else None)
 
 
 # ---------------------------------------------------------------------------------------------------------------- GPU
@@ -259,6 +285,108 @@ def _probe_amd_gpus(notes: list) -> tuple:
     return ()
 
 
+# -------------------------------------------------------------------------------------------------------------- torch
+
+#: Run by ``sys.executable`` in a child process: torch's own CUDA answer, with any warning it gives while answering.
+_TORCH_PROBE = """\
+import json, warnings
+with warnings.catch_warnings(record=True) as caught:
+    warnings.simplefilter("always")
+    import torch
+    ok = bool(torch.cuda.is_available())
+    n = torch.cuda.device_count() if ok else 0
+print(json.dumps({"version": torch.__version__, "cuda": torch.version.cuda, "available": ok, "device_count": n,
+                  "warnings": [str(w.message) for w in caught]}))
+"""
+
+#: The oldest Linux driver each CUDA major version runs on (minor-version compatibility: 13.x needs 580, 12.x 525,
+#: 11.x 450). A torch wheel built for CUDA 13.0 therefore needs driver 580 or later.
+MIN_DRIVER_FOR_CUDA = {13: 580, 12: 525, 11: 450}
+
+
+def parse_torch_probe(text: str, version: str | None = None) -> TorchCuda:
+    """The child's last line as :class:`TorchCuda`; ``version`` (from package metadata) stands in when it is unreadable."""
+    for line in reversed((text or "").strip().splitlines()):
+        try:
+            d = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(d, dict) and "available" in d:
+            warned = [w for w in d.get("warnings") or () if w]
+            note = " ".join(warned[0].split())[:400] if warned and not d["available"] else ""
+            return TorchCuda(version=d.get("version"), cuda=d.get("cuda"), available=bool(d["available"]),
+                             device_count=d.get("device_count"), note=note)
+    return TorchCuda(version=version, cuda=None, available=None, device_count=None,
+                     note="torch's CUDA answer could not be read")
+
+
+def probe_torch(timeout: float = 180) -> TorchCuda:
+    """Ask the installed torch, in a child process, which CUDA it was built for and whether it can use a GPU here."""
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        installed = version("torch")
+    except PackageNotFoundError:
+        return TorchCuda(version=None, cuda=None, available=None, device_count=None, note="torch is not installed")
+    try:
+        r = subprocess.run([sys.executable, "-c", _TORCH_PROBE], capture_output=True, text=True, timeout=timeout,
+                           check=False)
+    except (subprocess.SubprocessError, OSError) as e:
+        return TorchCuda(version=installed, cuda=None, available=None, device_count=None,
+                         note=f"asking torch about CUDA failed: {e}")
+    t = parse_torch_probe(r.stdout, installed)
+    if t.available is None and getattr(r, "returncode", 0):
+        err = " ".join((r.stderr or "").strip().splitlines()[-1:])[:400]
+        t = replace(t, note=f"importing torch failed (exit {r.returncode}): {err}")
+    return replace(t, visible_devices=os.environ.get("CUDA_VISIBLE_DEVICES"))       # the child inherits this process's
+
+
+def _driver_major(driver) -> int | None:
+    head = str(driver or "").split(".")[0]
+    return int(head) if head.isdigit() else None
+
+
+def torch_cuda_problem(t: TorchCuda | None, gpu: GPU | None):
+    """``(reason, remedies)`` when torch is installed and an NVIDIA GPU is present but torch cannot use it, else None.
+    Only a definite ``available is False`` counts: a torch that could not be asked is not proof of anything."""
+    if t is None or t.version is None or t.available is not False or gpu is None or gpu.vendor != "nvidia":
+        return None
+    driver = gpu.driver.value
+    built = f"built for CUDA {t.cuda}" if t.cuda else "a CPU-only build"
+    says = t.note.rstrip().rstrip(".")
+    reason = (f"torch {t.version} ({built}) cannot use GPU {gpu.index} ({gpu.name}, driver {driver}): "
+              f"torch.cuda.is_available() is False" + (f"; torch says: {says}" if says else ""))
+    remedies = []
+    cuda_major = int(t.cuda.split(".")[0]) if t.cuda and t.cuda.split(".")[0].isdigit() else None
+    need, have = MIN_DRIVER_FOR_CUDA.get(cuda_major), _driver_major(driver)
+    if t.cuda and need and have is not None and have >= need:     # the build fits the driver: the cause is elsewhere
+        vis = "unset" if t.visible_devices is None else repr(t.visible_devices)
+        reason += (f"; driver {have} meets CUDA {cuda_major}.x's minimum ({need}), so the build is not the cause; "
+                   f"CUDA_VISIBLE_DEVICES is {vis}")
+        return reason, [f"make GPU {gpu.index} visible to this process: check CUDA_VISIBLE_DEVICES (now {vis}), and "
+                        "that a container was started with GPU access (e.g. docker run --gpus all)",
+                        ("torch's own message above names the cause; " if says else "")
+                        + "reinstalling torch will not change it"]
+    if need and have is not None and have < need:
+        older = max((m for m, d in MIN_DRIVER_FOR_CUDA.items() if d <= have), default=None)
+        reason += f"; CUDA {cuda_major}.x needs driver {need} or later on Linux"
+        target = (f"a torch build for CUDA {older}.x (driver {have} runs one)" if older else
+                  "a torch build whose CUDA version this driver supports")
+    elif t.cuda is None:
+        target = "a CUDA build of torch that this driver supports"
+    else:
+        target = "the torch build that matches this driver"
+    remedies.append(f"in a fresh virtual environment, install {target} FIRST, from its own index "
+                    "(pip install torch --index-url https://download.pytorch.org/whl/<build>; pytorch.org lists "
+                    f"each build), then pip install {__package__.split('.')[0]}")
+    remedies.append(f"installing another torch over this one does nothing: pip counts torch {t.version.split('+')[0]} "
+                    "as already satisfied whatever CUDA it was built for, so start from a fresh environment (or "
+                    "pip install --force-reinstall from the build's index)")
+    if need and have is not None and have < need:
+        remedies.append(f"or update the NVIDIA driver to {need} or later, which runs this build as installed")
+    return reason, remedies
+
+
 # --------------------------------------------------------------------------------------------------------------- host
 
 def _read(path):
@@ -344,8 +472,10 @@ def _probe_host(root: str = "/sys/fs/cgroup") -> Host:
                 memory_available=mem_avail, memory_limit=limit)
 
 
-def probe(*, gpu_memory: dict | None = None, ram_available: int | None = None) -> HardwareProfile:
-    """Take the inventory. ``gpu_memory`` (``{index: bytes}``) and ``ram_available`` override discovery as ``user`` facts."""
+def probe(*, gpu_memory: dict | None = None, ram_available: int | None = None,
+          torch: bool = True) -> HardwareProfile:
+    """Take the inventory. ``gpu_memory`` (``{index: bytes}``) and ``ram_available`` override discovery as ``user`` facts.
+    With an NVIDIA GPU discovered, the installed torch is asked about CUDA too (``torch=False`` skips it)."""
     notes: list = []
     gpus = list(_probe_gpus(notes))
     for i, g in enumerate(gpus):
@@ -354,8 +484,9 @@ def probe(*, gpu_memory: dict | None = None, ram_available: int | None = None) -
     host = _probe_host()
     if ram_available is not None:
         host = replace(host, memory_available=Fact(int(ram_available), "user", "caller-supplied"))
+    t = probe_torch() if torch and any(g.vendor == "nvidia" for g in gpus) else None
     return HardwareProfile(gpus=tuple(gpus), host=host, platform=f"{platform.system()} {platform.machine()}",
-                           notes=tuple(notes))
+                           notes=tuple(notes), torch=t)
 
 
 def describe(hw: HardwareProfile) -> str:
@@ -374,6 +505,21 @@ def describe(hw: HardwareProfile) -> str:
         if g.pcie_gen_max:
             lines.append(f"    PCIe: gen{g.pcie_gen_current.value} x{g.pcie_width_current.value} now, "
                          f"gen{g.pcie_gen_max.value} x{g.pcie_width_max.value} max [reported]")
+    t = hw.torch
+    if t is not None:
+        if t.version is None:
+            lines.append("  torch: not installed")
+        else:
+            asked = ("unknown" if t.available is None else str(t.available)
+                     + (f", {t.device_count} device(s)" if t.available else ""))
+            lines.append(f"  torch: {t.version} ({f'built for CUDA {t.cuda}' if t.cuda else 'no CUDA build'}); "
+                         f"torch.cuda.is_available() {asked} [reported by torch, in a child process]")
+        if t.note:
+            lines.append(f"    torch says: {t.note}" if t.available is False else f"    note: {t.note}")
+        problem = torch_cuda_problem(t, next((g for g in hw.gpus if g.vendor == "nvidia"), None))
+        if problem:
+            lines.append("    a CUDA plan is refused here until torch can use the GPU:")
+            lines += [f"      - {r}" for r in problem[1]]
     h = hw.host
     lines.append(f"  CPU: {h.cpu_model.value}; {h.cpus.value:g} usable [{h.cpus.note}]")
     lines.append(f"  RAM: {gb(h.memory_available)} available to this process [{h.memory_available.source}: "
