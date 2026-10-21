@@ -87,6 +87,8 @@ class TorchCuda:
     #: torch's own warning when CUDA is unavailable (e.g. "The NVIDIA driver on your system is too old"), or why torch
     #: could not be asked
     note: str = ""
+    #: ``CUDA_VISIBLE_DEVICES`` as the asked torch saw it (None: unset); "" or a bad index hides every GPU from torch
+    visible_devices: str | None = None
 
 
 @dataclass(frozen=True)
@@ -336,7 +338,7 @@ def probe_torch(timeout: float = 180) -> TorchCuda:
     if t.available is None and getattr(r, "returncode", 0):
         err = " ".join((r.stderr or "").strip().splitlines()[-1:])[:400]
         t = replace(t, note=f"importing torch failed (exit {r.returncode}): {err}")
-    return t
+    return replace(t, visible_devices=os.environ.get("CUDA_VISIBLE_DEVICES"))       # the child inherits this process's
 
 
 def _driver_major(driver) -> int | None:
@@ -351,11 +353,19 @@ def torch_cuda_problem(t: TorchCuda | None, gpu: GPU | None):
         return None
     driver = gpu.driver.value
     built = f"built for CUDA {t.cuda}" if t.cuda else "a CPU-only build"
+    says = t.note.rstrip().rstrip(".")
     reason = (f"torch {t.version} ({built}) cannot use GPU {gpu.index} ({gpu.name}, driver {driver}): "
-              f"torch.cuda.is_available() is False" + (f"; torch says: {t.note}" if t.note else ""))
+              f"torch.cuda.is_available() is False" + (f"; torch says: {says}" if says else ""))
     remedies = []
     cuda_major = int(t.cuda.split(".")[0]) if t.cuda and t.cuda.split(".")[0].isdigit() else None
     need, have = MIN_DRIVER_FOR_CUDA.get(cuda_major), _driver_major(driver)
+    if t.cuda and need and have is not None and have >= need:     # the build fits the driver: the cause is elsewhere
+        vis = "unset" if t.visible_devices is None else repr(t.visible_devices)
+        reason += (f"; driver {have} meets CUDA {cuda_major}.x's minimum ({need}), so the build is not the cause; "
+                   f"CUDA_VISIBLE_DEVICES is {vis}")
+        return reason, [f"make GPU {gpu.index} visible to this process: check CUDA_VISIBLE_DEVICES (now {vis}), and "
+                        "that a container was started with GPU access (e.g. docker run --gpus all)",
+                        "torch's own message above names the cause; reinstalling torch will not change it"]
     if need and have is not None and have < need:
         older = max((m for m, d in MIN_DRIVER_FOR_CUDA.items() if d <= have), default=None)
         reason += f"; CUDA {cuda_major}.x needs driver {need} or later on Linux"

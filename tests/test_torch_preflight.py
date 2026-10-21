@@ -6,6 +6,7 @@ The failure this guards: ``pip install loggetta`` pulled torch 2.14.1+cu130 (CUD
 """
 import json
 import types
+from dataclasses import replace
 
 import pytest
 
@@ -65,8 +66,9 @@ def test_probe_asks_torch_only_with_an_nvidia_gpu(monkeypatch):
     monkeypatch.setattr(h.shutil, "which", lambda name: "/usr/bin/nvidia-smi" if name == "nvidia-smi" else None)
     monkeypatch.setattr(h.subprocess, "run", run)
     monkeypatch.setattr("importlib.metadata.version", lambda name: "2.14.1+cu130")
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "")
     hw = probe()
-    assert hw.torch == parse_torch_probe(TOO_OLD)
+    assert hw.torch == replace(parse_torch_probe(TOO_OLD), visible_devices="")   # as the child saw it
     assert calls[-1][1:3] == ["-c", h._TORCH_PROBE]              # a child process: this one never imports torch
     assert probe(torch=False).torch is None
 
@@ -120,6 +122,26 @@ def test_the_problem_names_torch_the_driver_and_the_order_of_the_fix():
     cpu = torch_cuda_problem(TorchCuda("2.14.1+cpu", None, False, 0), _gpu())
     assert "(a CPU-only build)" in cpu[0] and "a CUDA build of torch" in cpu[1][0] and len(cpu[1]) == 2
     assert torch_cuda_problem(parse_torch_probe(WORKS), _gpu()) is None
+
+
+def test_a_driver_that_meets_the_build_is_not_told_to_reinstall_torch():
+    """Driver 590 runs a cu130 build, so is_available False has another cause (CUDA_VISIBLE_DEVICES, a container without
+    GPU access): the refusal says the driver meets the minimum, shows the variable and torch's note, and gives no
+    reinstall remedy."""
+    t = replace(parse_torch_probe(json.dumps({"version": "2.14.1+cu130", "cuda": "13.0", "available": False,
+                                              "device_count": 0, "warnings": ["CUDA initialization: CUDA driver "
+                                                                              "initialization failed."]})),
+                visible_devices="")
+    reason, remedies = torch_cuda_problem(t, _gpu(driver="590.44.01"))
+    assert reason.endswith("torch says: CUDA initialization: CUDA driver initialization failed; driver 590 meets "
+                           "CUDA 13.x's minimum (580), so the build is not the cause; CUDA_VISIBLE_DEVICES is ''")
+    assert ".;" not in reason
+    assert remedies[0].startswith("make GPU 0 visible to this process: check CUDA_VISIBLE_DEVICES (now '')")
+    assert not any("fresh virtual environment" in r or "pip" in r for r in remedies)
+    unset = torch_cuda_problem(replace(t, visible_devices=None), _gpu(driver="590.44.01"))
+    assert "CUDA_VISIBLE_DEVICES is unset" in unset[0]
+    mismatch = torch_cuda_problem(replace(t, visible_devices=None), _gpu())   # driver 575: the build is the cause
+    assert "fresh virtual environment" in mismatch[1][0] and "meets" not in mismatch[0]
 
 
 @pytest.fixture(scope="module")
