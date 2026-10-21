@@ -3,8 +3,8 @@
  "version": 1,
  "rule": "A row is SEEN if any planner constant (the allocator reserve, the context allowance, an overhead, an estimate term) was set or tuned after looking at it; otherwise UNSEEN. Only UNSEEN rows sit on the held-out side. A family x card cohort with fewer than 2 held-out rows is unmeasured and gets no band.",
  "pinned_at": {
-  "loggetta": "73cfe100b5da2144b18f75cb45c1aad73d196435",
-  "experts4bit-qlora": "46647fc38b9a22988c8996668c17ffab3798bc3c"
+  "loggetta": "90a7697d0e6d6cdfa897cb5d629699b56f37cfe9",
+  "experts4bit-qlora": "3d6c1090326392494f4c5733840dc3d2e4199e49"
  },
  "derivation": [
   {
