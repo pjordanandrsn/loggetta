@@ -73,6 +73,45 @@ def test_probe_asks_torch_only_with_an_nvidia_gpu(monkeypatch):
     assert probe(torch=False).torch is None
 
 
+def test_probe_never_asks_torch_without_an_nvidia_gpu(monkeypatch):
+    """No GPU discovered (no nvidia-smi, no AMD tool, no /dev/kfd): no torch child, and no torch facts."""
+    calls = []
+
+    def run(cmd, **kw):
+        calls.append(cmd)
+        raise AssertionError(f"nothing should run: {cmd}")
+
+    monkeypatch.setattr(h.shutil, "which", lambda name: None)
+    monkeypatch.setitem(__import__("sys").modules, "amdsmi", None)
+    real_exists = h.os.path.exists
+    monkeypatch.setattr(h.os.path, "exists", lambda p: False if p == "/dev/kfd" else real_exists(p))
+    monkeypatch.setattr(h.subprocess, "run", run)
+    hw = probe()
+    assert hw.gpus == () and hw.torch is None and calls == []
+
+
+def test_execute_and_the_dq10_check_take_gpu_facts_without_asking_torch(monkeypatch):
+    """execute's device check and the DQ10 policy read only GPU facts, so they never spawn the torch child."""
+    import loggetta.hardware
+    from loggetta.execution import PlanNotExecutable, check_here
+
+    seen = []
+
+    def fake_probe(**kw):
+        seen.append(kw)
+        return HardwareProfile(gpus=(), host=_hw().host, platform="Linux x86_64")
+
+    monkeypatch.setattr(loggetta.hardware, "probe", fake_probe)
+    plan = types.SimpleNamespace(hardware={"gpu": {"name": "x"}}, constraints=types.SimpleNamespace(device=0))
+    with pytest.raises(PlanNotExecutable):
+        check_here(plan)
+    assert seen == [{"torch": False}]
+    import inspect
+
+    import loggetta.dense_policy
+    assert "probe(torch=False).gpu(plan.constraints.device)" in inspect.getsource(loggetta.dense_policy)
+
+
 def test_probe_records_torch_not_installed(monkeypatch):
     from importlib.metadata import PackageNotFoundError
 
@@ -142,6 +181,12 @@ def test_a_driver_that_meets_the_build_is_not_told_to_reinstall_torch():
     assert "CUDA_VISIBLE_DEVICES is unset" in unset[0]
     mismatch = torch_cuda_problem(replace(t, visible_devices=None), _gpu())   # driver 575: the build is the cause
     assert "fresh virtual environment" in mismatch[1][0] and "meets" not in mismatch[0]
+    edge = torch_cuda_problem(t, _gpu(driver="580.65.06"))                   # exactly the minimum meets it
+    assert "driver 580 meets CUDA 13.x's minimum (580)" in edge[0]
+    below = torch_cuda_problem(t, _gpu(driver="579.99"))
+    assert "CUDA 13.x needs driver 580 or later on Linux" in below[0] and "meets" not in below[0]
+    quiet = torch_cuda_problem(replace(t, note=""), _gpu(driver="590.44.01"))  # no torch message: none is cited
+    assert quiet[1][1] == "reinstalling torch will not change it" and "torch says" not in quiet[0]
 
 
 @pytest.fixture(scope="module")

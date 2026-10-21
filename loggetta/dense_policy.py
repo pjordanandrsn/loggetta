@@ -76,7 +76,7 @@ def validate_plan(plan):
     if plan.selected.backend != dense.NAME:
         raise ValueError("DQ10 policy requires the dense backend")
     topology = dense.describe(plan.model["model"], revision=plan.model.get("revision"))
-    gpu = probe().gpu(plan.constraints.device)
+    gpu = probe(torch=False).gpu(plan.constraints.device)               # GPU facts only: no torch child
     allocator = sum(line.bytes for line in plan.selected.lines if line.where == "device"
                     and not line.name.startswith(("CUDA context", "allocator reserve")))
     expected = lines(topology, gpu, plan.selected.setup, plan.workload, plan.constraints, allocator)

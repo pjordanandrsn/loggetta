@@ -365,7 +365,8 @@ def torch_cuda_problem(t: TorchCuda | None, gpu: GPU | None):
                    f"CUDA_VISIBLE_DEVICES is {vis}")
         return reason, [f"make GPU {gpu.index} visible to this process: check CUDA_VISIBLE_DEVICES (now {vis}), and "
                         "that a container was started with GPU access (e.g. docker run --gpus all)",
-                        "torch's own message above names the cause; reinstalling torch will not change it"]
+                        ("torch's own message above names the cause; " if says else "")
+                        + "reinstalling torch will not change it"]
     if need and have is not None and have < need:
         older = max((m for m, d in MIN_DRIVER_FOR_CUDA.items() if d <= have), default=None)
         reason += f"; CUDA {cuda_major}.x needs driver {need} or later on Linux"

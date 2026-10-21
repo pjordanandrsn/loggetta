@@ -102,7 +102,7 @@ def test_fresh_execution_rechecks_policy_and_one_byte_tampering_before_loading(s
     p = plan(subject, registered_hardware, Workload(seq_len=4096, steps=2), constraints(), backends=(dense,))
     import loggetta.hardware
 
-    monkeypatch.setattr(loggetta.hardware, "probe", lambda: registered_hardware)
+    monkeypatch.setattr(loggetta.hardware, "probe", lambda **kw: registered_hardware)
     assert dense_policy.validate_plan(p)["licensed"] is False
     index = next(i for i, line in enumerate(p.selected.lines) if line.name.startswith("allocator reserve"))
     changed = list(p.selected.lines)
