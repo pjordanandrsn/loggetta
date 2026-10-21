@@ -41,6 +41,24 @@ It checks the budget before downloading model weights. Estimates can miss; they 
 The released training path is single-GPU MoE training. Dense execution still requires `--allow-development-executor`:
 its memory estimate has not yet passed a capacity reading. See [Dense training](docs/DENSE.md). Serving placement can be planned; server launch uses the runtime separately.
 
+**The driver and the torch build must match.** A torch wheel is built for one CUDA version, and that version sets the
+oldest NVIDIA driver it runs on: CUDA 13.x needs driver 580 or later, CUDA 12.x 525 or later (Linux). `pip install
+loggetta` installs the default torch from PyPI, which can be built for a newer CUDA than your driver supports.
+`loggetta inspect` shows the driver, the torch build and whether torch can use the GPU, and `plan` refuses a CUDA plan
+that torch cannot run, with the reason. To install a matching torch, use a fresh virtual environment and install torch
+first, from the index for a CUDA version your driver supports, then Loggetta:
+
+```bash
+python -m venv .venv && . .venv/bin/activate
+pip install torch --index-url https://download.pytorch.org/whl/<build>   # pytorch.org lists each build's index
+pip install loggetta
+loggetta inspect
+```
+
+Installing a different torch build over an existing one does nothing: pip counts the same torch version as already
+satisfied whatever CUDA it was built for. Start from a fresh environment (or `pip install --force-reinstall` from the
+build's index).
+
 ## New in 0.6.1
 
 - **gemma4 is refused with its reasons instead of failing.** On transformers 5.20, describing `google/gemma-4-E2B-it`

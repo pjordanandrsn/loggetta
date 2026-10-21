@@ -339,9 +339,14 @@ def _hw_dict(hardware, gpu) -> dict:
         "memory_free_source": gpu.memory_free.source,
         "pcie": [gpu.pcie_gen_current.value, gpu.pcie_width_current.value, gpu.pcie_gen_max.value,
                  gpu.pcie_width_max.value]}
-    return {"gpu": g, "gpus": len(hardware.gpus), "cpu": h.cpu_model.value, "cpus": h.cpus.value,
-            "ram_available": h.memory_available.value, "ram_available_source": h.memory_available.source,
-            "ram_limit": h.memory_limit.value, "platform": hardware.platform}
+    d = {"gpu": g, "gpus": len(hardware.gpus), "cpu": h.cpu_model.value, "cpus": h.cpus.value,
+         "ram_available": h.memory_available.value, "ram_available_source": h.memory_available.source,
+         "ram_limit": h.memory_limit.value, "platform": hardware.platform}
+    if getattr(hardware, "torch", None) is not None:          # absent when torch was not asked: older plans unchanged
+        from dataclasses import asdict
+
+        d["torch"] = asdict(hardware.torch)
+    return d
 
 
 def _rank(objective, setup, dev, host, backend):
@@ -531,6 +536,15 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
         return refuse([f"no GPU at index {constraints.device}: every installed backend needs one"])
     if gpu.vendor != "nvidia":
         return refuse([vendor_refusal(gpu, backends)])
+    from .hardware import torch_cuda_problem
+
+    torch_facts = getattr(hardware, "torch", None)
+    problem = torch_cuda_problem(torch_facts, gpu)
+    if problem is not None:                     # torch is installed and says it cannot use this GPU: execute would die
+        return refuse([problem[0]], suggestions=problem[1])
+    if torch_facts is not None and torch_facts.version is not None and torch_facts.available is None:
+        warnings.append(f"could not ask torch {torch_facts.version} whether it can use the GPU "
+                        f"({torch_facts.note}); the plan assumes it can")
     if backends and not admitted:
         return refuse([why if len(refusals) == 1 else f"{b.NAME}: {why}" for b, why in refusals])
     usable = [b for b in admitted if workload.kind in b.WORKLOADS]
