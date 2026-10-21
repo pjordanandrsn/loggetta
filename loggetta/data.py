@@ -30,6 +30,11 @@ PACKING_TEXT = {
 LOSS_TEXT = {"all": "full-sequence, including prompts",
              "assistant": "assistant tokens only: each assistant turn's text and its end-of-turn marker (chat), or the "
                           "response and EOS (alpaca)"}
+#: The built-in demonstration (training without ``--dataset``): Alpaca at the Hub revision it has had since 2023-05-22.
+#: 28 of its 52,002 rows have an empty ``output`` (the first is row 284). The demonstration skips exactly those rows and
+#: counts them; a dataset the user supplies is never skipped, so an empty output there still refuses.
+DEMO_SOURCE = "tatsu-lab/alpaca"
+DEMO_REVISION = "dce01c9b08f87459cf36a430d809084718273017"
 
 
 @dataclass(frozen=True)
@@ -51,6 +56,8 @@ class TrainingData:
     loss: str = "auto"
     #: how examples share a row: "auto" (isolated for chat and alpaca, concatenated for text), "concat" or "isolated"
     packing: str = "auto"
+    #: skip rows whose output is empty, counting them; set only by the built-in demonstration (``from_dict(None)``)
+    skip_empty_output: bool = False
 
     def __post_init__(self):
         if not isinstance(self.source, str) or not self.source.strip():
@@ -66,6 +73,11 @@ class TrainingData:
             raise ValueError(f"loss must be one of {', '.join(LOSSES)}")
         if self.packing not in PACKINGS:
             raise ValueError(f"packing must be one of {', '.join(PACKINGS)}")
+        if not isinstance(self.skip_empty_output, bool):
+            raise ValueError("dataset skip_empty_output must be a boolean")
+        if self.skip_empty_output and (self.source, self.revision, self.format) != (DEMO_SOURCE, DEMO_REVISION, "alpaca"):
+            raise ValueError("skip_empty_output is the built-in demonstration's alone: a dataset you supply is "
+                             "validated row by row, and an empty output is refused")
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -75,7 +87,18 @@ class TrainingData:
         # Old plans retain the original explicitly documented demonstration workload, and plans written before the
         # loss field trained on every token.
         legacy = {"loss": "all", "packing": "concat"}
-        return cls(**{**legacy, **value}) if value is not None else cls(format="alpaca", repeat=True, **legacy)
+        if value is not None:
+            return cls(**{**legacy, **value})
+        return cls(source=DEMO_SOURCE, revision=DEMO_REVISION, format="alpaca", repeat=True, skip_empty_output=True,
+                   **legacy)
+
+
+def _empty_output(ex, spec: TrainingData, fmt: str) -> bool:
+    """True for a row the built-in demonstration skips: an Alpaca row whose output is empty or whitespace."""
+    if not spec.skip_empty_output or fmt != "alpaca":
+        return False
+    value = ex.get(spec.output_field)
+    return isinstance(value, str) and not value.strip()
 
 
 def file_sha256(path) -> str:
@@ -400,9 +423,15 @@ def _prepare_streamed(tokenizer, n_blocks: int, seq_len: int, spec: TrainingData
                                   max_passes=max_passes, tokenizer=tokenizer, verified=False)
     if spec.shuffle:
         ds = ds.shuffle(seed=seed)
+    info = {"source": source, "format": fmt, "source_rows": len(ds)}
+    if spec.skip_empty_output:
+        info["rows_skipped_empty_output"] = 0      # every skip of every pass; _write_blocks reads it after packing
 
     def examples(passes):
         for row, ex in enumerate(ds):
+            if _empty_output(ex, spec, fmt):
+                info["rows_skipped_empty_output"] += 1
+                continue
             try:
                 yield encode_masked(tokenizer, ex, spec, fmt, loss)
             except (ValueError, TypeError, KeyError) as exc:
@@ -410,8 +439,7 @@ def _prepare_streamed(tokenizer, n_blocks: int, seq_len: int, spec: TrainingData
 
     return _write_blocks(examples, n_blocks, seq_len, spec, seed=seed, cache_dir=cache_dir, loss=loss,
                          allowed=max_passes if max_passes is not None else (math.inf if spec.repeat else 1),
-                         tokenizer=tokenizer,
-                         info={"source": source, "format": fmt, "source_rows": len(ds)})
+                         tokenizer=tokenizer, info=info)
 
 
 def _write_blocks(examples, n_blocks, seq_len, spec, *, seed, cache_dir, loss, allowed, tokenizer, info):
@@ -432,7 +460,9 @@ def _write_blocks(examples, n_blocks, seq_len, spec, *, seed, cache_dir, loss, a
                     raise ValueError(f"dataset provides {written} tokens in {passes} pass(es), but the plan needs "
                                      f"{required}; reduce --steps or explicitly use --repeat-data")
                 passes += 1
+                in_pass = 0
                 for ids, mask in examples(passes):
+                    in_pass += 1
                     used_examples += 1
                     used = min(len(ids), required - written)
                     packed = np.asarray(ids[:used], dtype="<i8").tobytes()
@@ -447,6 +477,10 @@ def _write_blocks(examples, n_blocks, seq_len, spec, *, seed, cache_dir, loss, a
                     discarded += len(ids) - used
                     if written == required:
                         break
+                if not in_pass:             # a whole pass gave nothing usable: another pass never will
+                    raise ValueError(f"dataset pass {passes} yielded no usable rows"
+                                     + (f" ({info['rows_skipped_empty_output']} skipped for an empty output)"
+                                        if "rows_skipped_empty_output" in info else ""))
         info = {"dataset": spec.source, "source": info["source"], "split": spec.split, "format": info["format"],
                 "options": spec.to_dict(), "examples_used": used_examples, "source_rows": info["source_rows"],
                 "passes": passes, "repeated": passes > 1, "shuffled": spec.shuffle, "seed": seed,
@@ -565,10 +599,13 @@ def encode_dataset(tokenizer, spec: TrainingData, *, cache_dir: str | None = Non
     packing = resolve_packing(spec, fmt)
     folder = tempfile.TemporaryDirectory(prefix="training-tokens-", dir=cache_dir)
     path, mask_path = Path(folder.name) / "encoded.bin", Path(folder.name) / "encoded-mask.bin"
-    lengths, trained, digest = [], 0, hashlib.sha256()
+    lengths, trained, digest, skipped = [], 0, hashlib.sha256(), 0
     try:
         with path.open("wb") as stream, (mask_path.open("wb") if loss != "all" else _Null()) as mask_stream:
             for row, ex in enumerate(ds):
+                if _empty_output(ex, spec, fmt):
+                    skipped += 1
+                    continue
                 try:
                     ids, mask = encode_masked(tokenizer, ex, spec, fmt, loss)
                 except (ValueError, TypeError, KeyError) as exc:
@@ -605,6 +642,8 @@ def encode_dataset(tokenizer, spec: TrainingData, *, cache_dir: str | None = Non
             "loss": LOSS_TEXT[loss], "loss_mode": loss, "loss_tokens": trained if loss != "all" else int(lens.sum()),
             "packing": PACKING_TEXT[packing], "packing_mode": packing,
         }
+        if spec.skip_empty_output:
+            profile["rows_skipped_empty_output"] = skipped
         enc = EncodedData(folder, tokens, offsets, profile, source, fmt, loss, masks, packing)
         if packing == "isolated" and seq_len is not None:
             profile["packed"] = packing_summary(enc, seq_len)
