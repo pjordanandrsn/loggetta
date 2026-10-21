@@ -775,6 +775,8 @@ def _pack_isolated(enc: EncodedData, n_blocks: int, seq_len: int, spec: Training
                 "tokenizer": {"name": getattr(tokenizer, "name_or_path", None),
                               "class": type(tokenizer).__name__, "eos_token_id": tokenizer.eos_token_id},
                 "encoded_sha256": enc.profile["encoded_sha256"], "verified_against_plan": verified}
+        if "rows_skipped_empty_output" in enc.profile:     # the demonstration: rows skipped in the source, once
+            info["rows_skipped_empty_output"] = enc.profile["rows_skipped_empty_output"]
         shape = (n_blocks, seq_len)
         return PreparedData(folder, np.memmap(paths["tokens"], dtype="<i8", mode="r", shape=shape), info,
                             np.memmap(paths["mask"], dtype=np.uint8, mode="r", shape=shape),

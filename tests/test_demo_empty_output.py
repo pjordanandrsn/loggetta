@@ -52,6 +52,26 @@ def test_the_demonstration_skips_the_empty_output_row_and_counts_it(hub_rows):
         assert data.info["examples_used"] == 6
 
 
+def test_a_whitespace_only_output_is_skipped_too(monkeypatch):
+    """The encoder refuses a whitespace-only output (not value.strip()), so the demonstration skips it as well."""
+    rows = [dict(ROWS[0]), {**ROW_284, "output": " \n\t"}, dict(ROWS[1])]
+    monkeypatch.setattr(data_mod, "load_rows", lambda spec: (rows, {"kind": "hub"}))
+    good = sum(len(Tokenizer()(t)["input_ids"]) + 1 for t in [
+        "### Instruction:\nSay one.\n\n### Input:\n\n\n### Response:\none!",
+        "### Instruction:\nSay two.\n\n### Input:\n\n\n### Response:\ntwo!"])
+    with prepare_data(Tokenizer(), 1, good, TrainingData.from_dict(None)) as data:     # exactly one pass
+        assert data.info["passes"] == 1
+        assert data.info["rows_skipped_empty_output"] == 1 and data.info["examples_used"] == 2
+
+
+def test_isolated_packing_reports_the_skips_too(hub_rows):
+    import dataclasses
+
+    spec = dataclasses.replace(TrainingData.from_dict(None), packing="isolated")
+    with prepare_data(Tokenizer(), 2, 64, spec) as data:
+        assert data.info["rows_skipped_empty_output"] == 1
+
+
 def test_a_pass_with_nothing_usable_refuses_instead_of_looping(monkeypatch):
     """With repeat on, a pass that skips every row must raise, not spin forever."""
     monkeypatch.setattr(data_mod, "load_rows", lambda spec: ([dict(ROW_284), dict(ROW_284)], {"kind": "hub"}))
