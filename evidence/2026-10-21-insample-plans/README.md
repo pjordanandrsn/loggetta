@@ -103,7 +103,7 @@ At loggetta `90a7697` and experts4bit-qlora `46647fc3` on the path, with the mod
 ```
 python bench/validate_register.py --out register-insample-now.json
 python bench/insample_replan.py receipts --out lg-insample-now.json
-python bench/insample_replan.py dense --reads 'E4B/bench/dq7/receipts/dq7-5090-1/read-*.json' --configs E4B/bench/dq7/configs \
+python bench/insample_replan.py dense --reads 'DQ7_READS/read-*.json' --configs E4B/bench/dq7/configs \
     --skip qwen3_14b-device-4096 --out dq7-insample-now.json
 python bench/insample_replan.py dense --reads 'DQ9_READS/read-*.json' --configs E4B/bench/dq7/configs --out dq9-insample-now.json
 python bench/ho1_replan.py --e4b E4B --rows evidence/2026-10-10-heldout-cards/rows.json --out . --name ho1-insample-now
@@ -113,5 +113,7 @@ E4B_ABSMAX_DQ=0 E4B_TRAIN_FUSE_QKV=0 python bench/ho1_replan.py … --name ho1-p
 python -m pytest tests/test_dense_plans.py -k brackets_dq4
 ```
 
+- `DQ7_READS` holds DQ7's 14 reads: experts4bit-qlora's committed reads for box `dq7-5090-1`, under its `bench/dq7` receipt
+  directory, byte-identical to the store copies.
 - `DQ9_READS` holds DQ9's 16 reads from the private receipt store, each matching `bench/dq10/dq9-source-sha256.json`.
 - `bench/ho1_replan.py` needs Python 3.11.4 or later, for `tarfile`'s `filter=`.

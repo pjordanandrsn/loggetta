@@ -544,7 +544,7 @@ def test_every_serve_receipt_on_file_names_bulk_kv():
     missing = []
     for f in glob.glob(os.path.join(root, "*", "*.json")):
         r = json.load(open(f))
-        if r.get("schema") == "execution-receipt/1" and r.get("workload", {}).get("kind") == "serve" \
+        if isinstance(r, dict) and r.get("schema") == "execution-receipt/1" and r.get("workload", {}).get("kind") == "serve" \
                 and "bulk_kv" not in (r.get("setup") or {}) and os.path.basename(os.path.dirname(f)) not in unknown:
             missing.append(os.path.relpath(f, root))
     assert not missing, missing
