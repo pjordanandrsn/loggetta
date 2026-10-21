@@ -24,6 +24,13 @@ loggetta plan Qwen/Qwen3-30B-A3B --seq 2048
 The plan shows where weights will live, estimated memory use, and why alternatives were rejected. It checks the budget
 before downloading model weights. Estimates can miss; they are not an out-of-memory guarantee.
 
+## New in 0.6.1
+
+- **gemma4 is refused with its reasons instead of failing.** On transformers 5.20, describing `google/gemma-4-E2B-it`
+  raised; `plan` now refuses it by name, listing each layer difference the planner cannot price yet.
+- **A model with no MoE layers is refused by the MoE backend at admission,** so the dense backend owns it when it
+  can describe it, and otherwise the plan gives each backend's own reason.
+
 ## New in 0.6.0
 
 - **An AMD GPU is found and refused by name.** `plan` says "AMD GPU detected (…); not yet supported" instead of "no

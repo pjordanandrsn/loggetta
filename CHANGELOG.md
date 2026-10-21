@@ -1,5 +1,52 @@
 # Changelog
 
+## 0.6.1 — 2026-10-21
+
+**0.6.1.** A patch for dense families that experts4bit-qlora describes as MoE with zero MoE layers, gemma4 among
+them. The MoE backend now refuses such a model at admission, and the dense backend reads gemma4's per-layer
+`head_dim` and refuses its layer differences by name, so `plan` says why gemma4 is not yet plannable instead of
+failing. PyPI's description writes its links in a plain-text-safe form. The rest is tests and CI. Floors unchanged.
+
+### Plans: a model with no MoE layers is refused by the MoE backend at admission
+
+experts4bit-qlora describes some dense families (gemma4 among them) as a MoE topology with zero MoE layers. The MoE
+backend admitted that description, so it owned the plan, and the plan was refused later at pricing with "no fused expert
+stack at the loader's expert path", plus a note that experts still train. The dense backend's own refusal never showed.
+The MoE backend now refuses a topology without expert stacks ("no MoE layers (0/N): not a Mixture-of-Experts model").
+The dense backend owns the model when it can describe it. When it cannot, as with gemma4 today, the plan lists each
+backend's own reason (#78).
+
+### Dense plans: gemma4's per-layer head_dim is read per layer, and its layer differences are refused by name
+
+transformers 5.20 declares gemma4's `head_dim` per layer (`per_layer_config`) and raises on the global attribute. The
+dense backend read it globally, so describing `google/gemma-4-E2B-it` failed with `AmbiguousGlobalPerLayerAttributeError`.
+It now reads each layer's `head_dim`, classifies that layer's projections at that width, and then refuses with each
+difference that pricing, which assumes identical decoder layers, cannot represent: the per-layer head_dim (256 in 28
+layers, 512 in 7), layers 15-34 without `k_proj`/`v_proj` (cross-layer KV reuse), and the wider MLP in those layers.
+Tested on the model's own `config.json` at a pinned revision. gemma4 is still not plannable; the refusal now says why
+(#78).
+
+### Docs: PyPI's description writes its links in a plain-text-safe form
+
+PyPI also serves the description as raw text (its JSON API), and some tools read it that way. Every link in `PYPI.md`
+is now plain-text safe. Five of them ended in ")" or "." straight after the URL, and the other nine in the markdown's
+own closing parenthesis, so a plain-text autolinker took the punctuation into the URL and requested paths that 404. All
+fourteen now read `text: <url>`. Angle brackets end the URL, and markdown still renders them as links. The rendered page
+is unchanged; the fix reaches PyPI with the next release.
+
+### Tests: a default config that fails transformers' own validation is skipped by name
+
+The refusal test for unsupported default configs built each type with `AutoConfig.for_model`. transformers 5.20.1's
+default `gemma4_assistant` config fails its own validator ("hidden_size_per_layer_input must be 0, got 256"), so the test
+failed before any loggetta code ran. Building the default config is now guarded: such a failure skips with transformers'
+version and the validator's message, as a type missing from `CONFIG_MAPPING` already did. What loggetta does with a
+config that builds is still asserted. Tests only; no runtime change.
+
+### CI: the private-marker guard reports as `private-marker-guard`
+
+The guard's job reports under its own name instead of the generic `guard`, and only pull_request runs carry it;
+push runs report as `private-marker-guard (push scan)`. Every branch push is still scanned.
+
 ## 0.6.0 — 2026-10-11
 
 **0.6.0.** On an AMD machine, discovery now finds the GPU and `plan` refuses it by name, instead of reporting no

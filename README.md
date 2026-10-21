@@ -41,6 +41,13 @@ It checks the budget before downloading model weights. Estimates can miss; they 
 The released training path is single-GPU MoE training. Dense execution still requires `--allow-development-executor`:
 its memory estimate has not yet passed a capacity reading. See [Dense training](docs/DENSE.md). Serving placement can be planned; server launch uses the runtime separately.
 
+## New in 0.6.1
+
+- **gemma4 is refused with its reasons instead of failing.** On transformers 5.20, describing `google/gemma-4-E2B-it`
+  raised; `plan` now refuses it by name, listing each layer difference the planner cannot price yet.
+- **A model with no MoE layers is refused by the MoE backend at admission,** so the dense backend owns it when it
+  can describe it, and otherwise the plan gives each backend's own reason.
+
 ## New in 0.6.0
 
 - **An AMD GPU is found and refused by name.** `plan` says "AMD GPU detected (…); not yet supported" instead of "no
