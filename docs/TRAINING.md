@@ -216,7 +216,10 @@ steps = floor(N * packed_rows / (micro_batch * gradient_accumulation)), at least
 A dataset too short for the requested steps is refused by the plan, which suggests the steps that read it once.
 Pass `--epochs`, or explicitly add `--repeat-data`, to read it more than once. Repetition and passes are recorded,
 not disguised as more unique examples. Repeated passes use the same selected order. Omitting `--dataset` preserves the historical Alpaca demonstration, which repeats
-as needed and is announced in the log.
+as needed and is announced in the log. It reads `tatsu-lab/alpaca` at revision
+`dce01c9b08f87459cf36a430d809084718273017` and skips the 28 rows whose `output` is empty (the first is row 284). The
+report records how many rows it skipped (`rows_skipped_empty_output`, counted on every pass). Only the demonstration
+skips: a dataset you supply with an empty output is refused.
 
 Tokens are prepared in a temporary memory-mapped file, normally beside the adapter output's parent, and cleaned
 up afterward. This avoids retaining every training step's tokens as Python objects. Cache space per planned input
