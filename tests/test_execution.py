@@ -226,16 +226,20 @@ def test_a_serve_plan_runs_through_the_engine_and_its_receipt_carries_no_path(st
     assert r["comparison"]["device_driver"]["residual"] == 4 * GiB - (3 * GiB + GiB // 2 + GiB // 4)
 
 
-def test_a_serve_runs_data_carries_no_path_for_a_local_model_directory(stub_env, tmp_path):
-    """The server environment names the model; a local model directory is a path, so the receipt's data block drops
-    it (the receipt's own model field names the model). The arena and calibration file appear by name only."""
+@pytest.mark.parametrize("local, recorded", [
+    (False, "org/Tiny-MoE"),                               # a Hub id: recorded as given
+    (True, "local: olmoe-local"),                          # a local model directory: its name only, never its path
+])
+def test_a_serve_runs_data_names_the_model_without_a_path(stub_env, tmp_path, local, recorded):
+    """The recorded server environment names the model by the rule first_run.sh applies (#105): a local model
+    directory by its name only. The arena and calibration file appear by name only."""
     arena, calib = _serve_files(tmp_path)
-    local_model = str(tmp_path / "models" / "olmoe-local")
-    out = stub_env.run(a_serve_plan(model=local_model), seed=0, log=print, adapter_dir=str(tmp_path / "r" / "adapter"),
+    model = str(tmp_path / "models" / "olmoe-local") if local else "org/Tiny-MoE"
+    out = stub_env.run(a_serve_plan(model=model), seed=0, log=print, adapter_dir=str(tmp_path / "r" / "adapter"),
                        run_id="x", arena=arena, calib=calib,
                        engine=lambda env, **kw: {"measured": {}, "requests": {"count": 1}})
-    text = json.dumps(out["data"]) + json.dumps(out["engaged"])
-    assert str(tmp_path) not in text and "olmoe-local" not in json.dumps(out["data"]["server_env"])
+    assert out["data"]["server_env"]["E4B_PAGED_MODEL"] == recorded
+    assert str(tmp_path) not in json.dumps(out["data"]) + json.dumps(out["engaged"])
 
 
 def test_a_batched_serve_run_is_not_traced(stub_env, tmp_path):

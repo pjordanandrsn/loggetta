@@ -7,7 +7,8 @@ environment and shapes the result. ``bench/serve_validate.py`` uses the same ``m
 
 The NF4 arena is an input, never built here: baking it is an explicit, separate step (``bench/serve_validate.py --bake``).
 A receipt names the arena by base name and the sha256 of its first MiB, and the calibration file by base name and
-sha256, so a shared receipt carries no path; the server environment it records leaves out every path-valued setting.
+sha256, so a shared receipt carries no path: the server environment it records leaves those two out and names a local
+model directory by its name only (``local: <name>``, the rule ``scripts/first_run.sh`` applies).
 """
 from __future__ import annotations
 
@@ -120,6 +121,14 @@ def measure_serve(env: dict, *, concurrency: int, context_len: int, prompt_token
             "requests": {"count": concurrency, "prompt_tokens": n_prompt, "new_tokens": new_tokens}}
 
 
+def model_label(model: str) -> str:
+    """A model id as a shared record may carry it: a Hub id (``org/name``) as given, a local model directory (an
+    absolute, "."- or "~"-relative path, or an existing directory) by its name only, as ``local: <name>``."""
+    if os.path.isabs(model) or model.startswith((".", "~")) or os.path.isdir(model):
+        return "local: " + os.path.basename(model.rstrip("/"))
+    return model
+
+
 def check_inputs(plan, arena, calib, prompt_tokens: int, new_tokens: int) -> None:
     """Refuse by name, before anything loads, a serve run that cannot start or would not mean what its plan says."""
     from ..execution import PlanNotExecutable
@@ -155,9 +164,9 @@ def run(plan, *, seed, log, adapter_dir, run_id, arena=None, calib=None, prompt_
                                     log=log)
     files = {"arena": os.path.basename(arena), "arena_head_sha256": _sha256(arena, 1 << 20),
              "calib": os.path.basename(calib), "calib_sha256": _sha256(calib)}
-    # the paths stay out: the arena and calibration file appear above by name, and the model (a local directory is a
-    # path) is the receipt's own model field
-    knobs = {k: v for k, v in env.items() if k not in ("E4B_PAGED_ARENA", "E4B_PAGED_CALIB", "E4B_PAGED_MODEL")}
+    # the paths stay out: the arena and calibration file appear above by name, and a local model directory by its name
+    knobs = {k: v for k, v in env.items() if k not in ("E4B_PAGED_ARENA", "E4B_PAGED_CALIB")}
+    knobs["E4B_PAGED_MODEL"] = model_label(knobs.get("E4B_PAGED_MODEL", ""))
     return {"status": "OK", "measured": out["measured"], "correctness": {},
             "engaged": {"placement": out.get("placement"), "info": out.get("info") or {}},
             "data": {**out.get("requests", {}), **files, "server_env": knobs}}
