@@ -143,7 +143,7 @@ def test_a_fact_that_cannot_be_recorded_refuses_before_the_directory_exists(tmp_
     assert fake.calls == []                                      # refused before any fingerprint was taken
 
 
-@pytest.mark.parametrize("run_id", [None, ""])
+@pytest.mark.parametrize("run_id", [None, "", "  \t"])
 def test_v2_without_a_run_id_is_refused_before_the_directory_exists(tmp_path, fake, run_id):
     """A reader checks only that run_id is PRESENT, so a null would pass every verifier: the writer refuses it."""
     with pytest.raises(ValueError, match="records the run that produced the adapter"):
