@@ -647,6 +647,11 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
     problem = torch_cuda_problem(torch_facts, gpu)
     if problem is not None:                     # torch is installed and says it cannot use this GPU: execute would die
         return refuse([problem[0]], suggestions=problem[1])
+    from .hardware import c_compiler_problem
+
+    problem = c_compiler_problem(hardware.host, gpu)
+    if problem is not None:                     # Triton cannot build its startup helper here: the run would die late
+        return refuse([problem[0]], suggestions=problem[1])
     if torch_facts is not None and torch_facts.version is not None and torch_facts.available is None:
         warnings.append(f"could not ask torch {torch_facts.version} whether it can use the GPU "
                         f"({torch_facts.note}); the plan assumes it can")
