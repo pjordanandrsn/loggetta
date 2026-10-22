@@ -26,10 +26,12 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from fu_reduce import BANDS, band_of  # noqa: E402
 
-#: the cheapest classes registered for the cells (PREREG, "Cards")
-CLASSES = ("RTX A4000", "RTX 3090", "RTX 4090", "RTX 5090")
+#: the cheapest classes registered for the cells (PREREG, "Boxes"), all in the launch policy's allowed list
+CLASSES = ("RTX A4000", "RTX 4090", "RTX 5090")
 #: the launch's own floors for this lane (disk for torch + a 13 GB checkpoint per cell, three cells per box)
 MIN_DISK_GB, MIN_RAM_GB = 80, 24
+#: the floors fu_run.sh's per-cell alarm is priced against (PREREG, "Alarm"): a slower or smaller host is never proposed
+MIN_INET_DOWN_MBPS, MIN_CPU_CORES = 500, 8
 
 
 API = "https://console.vast.ai/api"
@@ -40,6 +42,7 @@ def offer_filter(gpu: str, *, min_disk_gb: int, min_ram_gb: int) -> dict:
     machine at create time, so this screen only proposes hosts."""
     return {"verified": {"eq": True}, "rentable": {"eq": True}, "external": {"eq": False}, "gpu_name": {"eq": gpu},
             "num_gpus": {"eq": 1}, "disk_space": {"gte": min_disk_gb}, "cpu_ram": {"gte": min_ram_gb * 1024},
+            "inet_down": {"gte": MIN_INET_DOWN_MBPS}, "cpu_cores_effective": {"gte": MIN_CPU_CORES},
             "type": "on-demand", "order": [["dph_total", "asc"]]}
 
 
@@ -85,7 +88,7 @@ def search(transport, gpu: str, extra: dict | None = None, *, filter_fn) -> list
     return body["offers"]
 
 
-def screen(transport, *, filter_fn, reads: int, stable_reads: int, per_band: int, pace_s: float = 0.5,
+def screen(transport, *, filter_fn, reads: int, stable_reads: int, per_band: int, pace_s: float = 2.0,
            sleep=time.sleep) -> dict:
     offers, n_reads = {}, 0
     for gpu in CLASSES:

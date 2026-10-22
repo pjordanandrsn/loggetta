@@ -32,6 +32,10 @@ CELLS = {
     "current-matched": {"band": "current", "torch": "auto", "exit": {0, 7}, "index": {"cu130"}},
     "cpu-torch":       {"band": None,      "torch": "cpu",  "exit": {4},    "index": {"cpu"}},
     "no-gpu":          {"band": "none",    "torch": "auto", "exit": {3},    "index": {None}},
+    # the RUNTIME image (no C compiler): refused BY NAME at the plan, before the checkpoint download (no execute step).
+    # Triton builds a helper with a C compiler at first launch; without one the run used to die after the download.
+    "no-compiler":     {"band": None,      "torch": "auto", "exit": {4},    "index": {"cu126", "cu129", "cu130"},
+                        "reason": "no working C compiler", "no_step": "execute"},
 }
 
 #: first_run.sh's exit codes. Every one but 2 (usage) is named; 7 is a trained run whose device check did not run.
@@ -93,7 +97,7 @@ def traceback_files(cell_dir: str, logs_dir: str | None, cell: str) -> list:
 
 
 def grade(cell: str, record: dict | None, listed_driver: str | None = None, tracebacks: list = (),
-          skipped: str | None = None) -> dict:
+          skipped: str | None = None, plan_reasons: list = ()) -> dict:
     spec = CELLS[cell]
     row = {"cell": cell, "expected_exit": sorted(spec["exit"]), "listed_driver": listed_driver}
     if record is None:
@@ -120,9 +124,25 @@ def grade(cell: str, record: dict | None, listed_driver: str | None = None, trac
     if not in_band:
         return {**row, "verdict": "CELL_MISMATCH", "why": why}
     met = record.get("exit") in spec["exit"] and record.get("torch_index") in spec["index"]
-    return {**row, "verdict": "MET" if met else "NOT_MET",
-            **({} if met else {"why": f"expected exit {sorted(spec['exit'])} with torch index in "
-                                      f"{sorted(spec['index'], key=str)}"})}
+    why = "" if met else f"expected exit {sorted(spec['exit'])} with torch index in {sorted(spec['index'], key=str)}"
+    if met and spec.get("reason"):          # the refusal must be THIS named reason, in the summary or the refused plan
+        said = " ".join([record.get("refusal") or ""] + [str(r) for r in plan_reasons])
+        if spec["reason"] not in said:
+            met, why = False, f"the refusal does not name {spec['reason']!r}"
+    if met and spec.get("no_step") and any(s.get("step") == spec["no_step"] for s in record.get("steps") or ()):
+        met, why = False, f"a {spec['no_step']!r} step ran: the refusal came too late"
+    row["plan_reasons"] = list(plan_reasons)
+    return {**row, "verdict": "MET" if met else "NOT_MET", **({} if met else {"why": why})}
+
+
+def refused_plan_reasons(cell_dir: str) -> list:
+    """The refusal reasons a refused plan wrote to the cell's run/plan.json, or [] (none, or not refused)."""
+    try:
+        with open(os.path.join(cell_dir, "run", "plan.json")) as f:
+            p = json.load(f)
+    except (OSError, ValueError):
+        return []
+    return list((p.get("refusal") or {}).get("reasons") or []) if p.get("status") == "refused" else []
 
 
 def reduce(cells_dir: str, run_id: str, logs_dir: str | None = None) -> dict:
@@ -147,7 +167,7 @@ def reduce(cells_dir: str, run_id: str, logs_dir: str | None = None) -> dict:
             with open(cp) as f:
                 meta = json.load(f)
         rows.append(grade(cell, record, meta.get("listed_driver") or None, traceback_files(d, logs_dir, cell),
-                          meta.get("skipped") or None))
+                          meta.get("skipped") or None, refused_plan_reasons(d)))
     graded = [r for r in rows if r["verdict"] in ("MET", "NOT_MET")]
     gate = "PASS" if graded and all(r["gate"] for r in graded) else ("FAIL" if graded else "NONE_GRADED")
     if any(r["verdict"] == "MISSING" for r in rows):

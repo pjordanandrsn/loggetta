@@ -27,6 +27,7 @@ and the verdict keeps both the listed and the read value. The bands and the expe
 | current-matched | d ≥ 590 | unset | 0 or 7 | cu130 |
 | cpu-torch | any band (GPU visible) | `cpu` | 4 (torch cannot use the GPU) | cpu |
 | no-gpu | no NVIDIA GPU, Linux | unset | 3 (no torch build fits) | none |
+| no-compiler | any band, on the RUNTIME image (no C compiler) | unset | 4, refused at the plan naming "no working C compiler", with NO execute step (so before the download) | the matched build |
 
 `first_run.sh` exit codes:
 - 0 = TRAINED, device check passed.
@@ -52,22 +53,48 @@ paths. Both this file and the README state plainly that a driver below 525 is **
 ## Boxes, cards, budget
 
 - Three rented boxes, each pinned to a machine by `fu_screen.py`: the band's cheapest passing class among RTX A4000,
-  3090, 4090 and 5090, and stable on 6 of 6 machine-filtered reads.
+  4090 and 5090 (the classes the launch policy allows), stable on 6 of 6 machine-filtered reads, with at least 500 Mbps
+  down and 8 effective CPU cores.
+- The band boxes run the image `pytorch/pytorch:2.4.0-cuda12.1-cudnn9-devel`. A container image needs a driver at
+  least as new as its CUDA (12.1 runs from driver 525), so one image starts in every band; `first_run.sh` installs its
+  own torch into a fresh environment, so the image's torch is never used.
+- A fourth box, in any band, runs the RUNTIME image (`pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime`, no C compiler) and
+  only the `no-compiler` cell. That is the image a first-time user is likely to pull, so the matrix covers the named
+  refusal there and a regression of it fails T1.
+- **Design change, 2026-10-22, before any T1 reading:** the band boxes moved from the runtime image to the devel image,
+  and the runtime image became its own registered cell (`no-compiler`). The cause was two explore runs on a 560-driver
+  RTX 4090 (receipts `fux-below-7` and `fux-below-8`, not readings). The training kernels are Triton kernels, and
+  Triton builds a helper with a C compiler at first launch. On devel the matched cell trained in 217 s. On runtime it
+  was refused at the plan with "no working C compiler", before the download (loggetta#103; before that fix, the run
+  crashed after the download).
 - **below** runs `below-default below-matched cpu-torch`, **at** runs `at-default at-matched`, and **current** runs
   `current-default current-matched`.
-- Run ids are `fu-below-N`, `fu-at-N` and `fu-current-N`, with N = 1, plus spares 2 and 3.
+- Run ids are `fu-below-N`, `fu-at-N`, `fu-current-N` and `fu-nocc-N`, with N = 1, plus spares 2 and 3.
 - `no-gpu` runs at USD 0 on a Linux host with no NVIDIA GPU, never on a rented box (the runner refuses it).
-- Expected cost is about USD 1.2. The worst case is about USD 4.5 (a 1.5 h guard at USD 0.45/h per box, plus download
-  fees), inside the USD 15 per release candidate.
+- Expected cost is about USD 1.6. The worst case is about USD 7.5: a 2.5 h hard deadline at USD 0.70/h for each band
+  box, plus a 1 h deadline for the `no-compiler` box (one cell that stops at the plan), plus download fees. That is
+  inside the USD 15 per release candidate.
 - A CELL_MISMATCH box may be re-run once on a spare id pinned to another machine.
+
+## Alarm
+
+Each cell is bounded by a hard alarm (`NEED_CELL` in `fu_run.sh`), priced against the worst host the screen admits
+(500 Mbps down, 8 cores), not the typical one. That lesson came from a reading closed when its fixed alarm fired on a slow
+host. At the floors, the matched cell moves about 18 GB (torch about 2.6 GB, the stack about 1.5 GB, the checkpoint
+13.84 GB): about 290 s at 62.5 MB/s. Installs take about 300 s, planning, loading and quantizing about 300 s, and 10
+steps about 60 s: about 950 s in all. The alarm is 2,400 s, 2.5 times that. A refusal cell stops at the plan, before the
+checkpoint. A box starts a cell only with 2,700 s (alarm plus reserve) before its deadline, so the 2.5 h deadline fits
+the three-cell box. A cell the alarm stops reads MISSING, and the run INCOMPLETE, never a pass.
 
 ## Kit and launch
 
 - The kit is this directory: this file, `fu_run.sh` (box runner), `fu_reduce.py` (reducer, standard library only),
   `fu_screen.py` (host screen; read-only, rents nothing) and `staged-first_use.sha256`.
 - The kit hash is sha256(`staged-first_use.sha256`), which pins the two staged files by the names the box sees.
-- The launch goes through the launcher from experts4bit-qlora's `bench/first_use/fu_drive.sh`. That driver pins this kit's
-  **merge** commit as a 40-hex constant.
-- Before any rental action, the driver checks every staged file against `staged-first_use.sha256` at that commit.
-- The execution ACK checks three things: the e4b kit hash, the Loggetta commit, and sha256(`staged-first_use.sha256` at
-  that commit).
+- Each box is rented directly through the provider API, with a hard deadline set at create by a detached watcher on
+  the controller. The run's registration is a commit in the private receipt store that cites this file, the kit's merge
+  commit and its kit hash.
+- Before anything is staged, the controller checks every staged file against `staged-first_use.sha256` at that commit.
+  The box runner checks them again.
+- The re-derivation checks that the box ran this kit: the merge commit, and sha256(`staged-first_use.sha256` at that
+  commit). A box that did not run it voids the reading.

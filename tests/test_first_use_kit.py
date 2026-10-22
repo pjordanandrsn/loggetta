@@ -13,6 +13,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import re
+
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -82,6 +84,49 @@ def test_exit_7_trains_but_is_not_a_pass_of_the_device_check():
 ])
 def test_the_gate_admits_only_trained_exits_and_named_refusals(exit_code, refusal, named):
     assert fu.named({"exit": exit_code, "refusal": refusal}) is named
+
+
+NOCC = ROOT / "tests" / "fixtures" / "first_use" / "no-compiler-runtime-image"
+
+
+def nocc():
+    """A REAL record: box fux-below-8 (explore), the runtime image on a 560-driver RTX 4090. first_run.json is unedited
+    (its summary predates the reasons[0] fix); plan.json has only its GPU UUID set to null."""
+    return json.loads((NOCC / "first_run.json").read_text()), json.loads((NOCC / "plan.json").read_text())
+
+
+def test_the_real_runtime_image_record_meets_the_no_compiler_cell():
+    rec, plan = nocc()
+    g = fu.grade("no-compiler", rec, plan_reasons=plan["refusal"]["reasons"])
+    assert g["verdict"] == "MET" and g["exit"] == 4 and g["torch_index"] == "cu126"
+    assert "execute" not in [s["step"] for s in rec["steps"]]                    # refused before the download
+
+
+@pytest.mark.parametrize("change, why", [
+    ({"plan_reasons": ["torch 2.14.1+cu130 cannot use GPU 0 (driver too old)"]}, "does not name"),   # another refusal
+    ({"steps_plus": "execute"}, "step ran"),                                       # it refused only after the download
+    ({"exit": 7, "refusal": "trained; the device check did not run"}, "expected exit"),   # it trained: no refusal
+])
+def test_the_no_compiler_cell_needs_the_named_refusal_before_the_download(change, why):
+    rec, plan = nocc()
+    reasons = change.get("plan_reasons", plan["refusal"]["reasons"])
+    if "steps_plus" in change:
+        rec = {**rec, "steps": rec["steps"] + [{"step": change["steps_plus"], "exit": 1, "seconds": 400}]}
+    rec = {**rec, **{k: v for k, v in change.items() if k in ("exit", "refusal")}}
+    if "plan_reasons" in change:
+        rec = {**rec, "refusal": "the plan was refused (exit 2): NOT FEASIBLE under the requested constraints."}
+    g = fu.grade("no-compiler", rec, plan_reasons=reasons)
+    assert g["verdict"] == "NOT_MET" and why in g["why"], g
+
+
+def test_reduce_reads_the_refused_plans_reasons_from_the_cell_dir(tmp_path):
+    rec, plan = nocc()
+    d = tmp_path / "cells" / "no-compiler"
+    (d / "run").mkdir(parents=True)
+    (d / "first_run.json").write_text(json.dumps(rec))
+    (d / "run" / "plan.json").write_text(json.dumps(plan))
+    v = fu.reduce(str(tmp_path / "cells"), "fu-nocc-1")
+    assert [(c["cell"], c["verdict"]) for c in v["cells"]] == [("no-compiler", "MET")] and v["gate"] == "PASS"
 
 
 def test_reduce_reads_only_the_cells_this_box_ran(tmp_path):
@@ -253,8 +298,8 @@ def flt(gpu, *, min_disk_gb, min_ram_gb):
 OFFERS = [
     {"id": 1, "machine_id": 11, "gpu_name": "RTX A4000", "driver_version": "575.64.05", "dph_total": 0.12},
     {"id": 2, "machine_id": 12, "gpu_name": "RTX 4090", "driver_version": "580.82.07", "dph_total": 0.30},
-    {"id": 3, "machine_id": 13, "gpu_name": "RTX 3090", "driver_version": "595.45.04", "dph_total": 0.20},
-    {"id": 4, "machine_id": 14, "gpu_name": "RTX 3090", "driver_version": "510.10", "dph_total": 0.05},
+    {"id": 3, "machine_id": 13, "gpu_name": "RTX 5090", "driver_version": "595.45.04", "dph_total": 0.20},
+    {"id": 4, "machine_id": 14, "gpu_name": "RTX 5090", "driver_version": "510.10", "dph_total": 0.05},
 ]
 
 
@@ -267,7 +312,30 @@ def test_the_screen_buckets_by_listed_driver_and_reads_each_pin_by_machine():
     assert all(c["stable"] == "3/3" and c["stable_ok"] for cs in out["candidates"].values() for c in cs)
     pinned = [q for q in t.queries if "machine_id" in q]
     assert len(pinned) == 9 and {q["machine_id"]["eq"] for q in pinned} == {11, 12, 13}
-    assert out["sample"].startswith("4 offers seen across 8 reads")             # its sample, never "the market"
+    assert out["sample"].startswith("4 offers seen across 6 reads")             # its sample, never "the market"
+
+
+def test_the_screen_admits_only_hosts_the_alarm_was_priced_for():
+    """The per-cell alarm is priced against the worst host the screen admits (PREREG, "Alarm"), so the screen's own filter
+    must floor what the slow phases are bound by, and it searches only classes the launch policy allows."""
+    scr = load("fu_screen")
+    f = scr.offer_filter("RTX 4090", min_disk_gb=80, min_ram_gb=24)
+    assert f["inet_down"] == {"gte": 500} and f["cpu_cores_effective"] == {"gte": 8}
+    assert "RTX 3090" not in scr.CLASSES
+    import inspect
+    assert inspect.signature(scr.screen).parameters["pace_s"].default >= 2.0      # >= 2 s between our own calls
+
+
+def test_the_alarm_covers_the_worst_admitted_host_with_headroom():
+    run = (KIT / "fu_run.sh").read_text()
+    need = int(re.search(r"^NEED_CELL=(\d+)", run, re.M).group(1))
+    reserve = int(re.search(r"RESERVE=(\d+)", run).group(1))
+    gb = 2.6 + 1.5 + 13.84                                       # torch, the stack, the checkpoint
+    worst = gb * 1000 / 62.5 + 300 + 300 + 60                    # at 500 Mbps; installs; plan+load+quantize; 10 steps
+    assert need >= 2.5 * worst * 0.98, (need, worst)             # 2.5x the worst admitted host (PREREG, "Alarm")
+    prereg = (KIT / "PREREG-first_use.md").read_text()
+    assert f"{need:,} s" in prereg and "2.5 h" in prereg
+    assert 3 * need + reserve <= 2.5 * 3600 + 600                # the three-cell box fits its 2.5 h deadline, near enough
 
 
 def test_the_screen_never_reads_an_error_as_zero_offers():
