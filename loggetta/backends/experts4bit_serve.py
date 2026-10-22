@@ -42,6 +42,42 @@ def serve_env(setup: dict, model: str, arena: str, calib: str) -> dict:
             "E4B_PAGED_CALIB": calib}
 
 
+def drive(scheduler, tracer=None) -> int:
+    """Step ``scheduler`` until nothing is queued or active, as experts4bit-qlora's server loop does: each step inside
+    ``tracer.begin()`` .. ``tracer.end()`` (``discard()`` for an empty step). ``scheduler.run_until_idle()`` steps
+    without opening a row, so a trace attached to it records nothing. Returns the steps taken."""
+    taken = 0
+    while scheduler.queue or scheduler.active:
+        if tracer is not None:
+            tracer.begin(ops=0)
+        plan = scheduler.step()
+        if tracer is not None:
+            if plan.is_empty:
+                tracer.discard()
+            else:
+                tracer.end()
+        if plan.is_empty:
+            break
+        taken += 1
+    return taken
+
+
+def decode_step_from_trace(path: str) -> dict:
+    """The single-stream decode step (:func:`measure.decode_step_b1`) from a step trace. Without one (a missing or empty
+    trace) the measure is recorded ABSENT, ``decode_step_ms_b1: None`` with a note saying why, never 0 and never a figure
+    from another path; the run itself completed, so this is not a crash."""
+    from ..measure import decode_step_b1
+
+    if not os.path.isfile(path):
+        return {"decode_step_ms_b1": None, "decode_step_note": "the step trace wrote no file (no traced step)"}
+    rows = [json.loads(ln) for ln in open(path) if ln.strip()]
+    b1 = decode_step_b1(rows) if rows else None
+    if not b1:
+        return {"decode_step_ms_b1": None,
+                "decode_step_note": f"the step trace has {len(rows)} row(s) and no single-stream decode step"}
+    return {**b1, "step_trace": os.path.basename(path), "trace_rows": len(rows)}
+
+
 def measure_serve(env: dict, *, concurrency: int, context_len: int, prompt_tokens: int, new_tokens: int, seed: int = 0,
                   trace_path: str | None = None, log=print) -> dict:
     """Build the engine under ``env`` on GPU 0, decode ``concurrency`` random prompts of ``prompt_tokens`` tokens for
@@ -49,7 +85,7 @@ def measure_serve(env: dict, *, concurrency: int, context_len: int, prompt_token
     ``trace_path``, the engine's own step trace gives the single-stream decode step (:func:`measure.decode_step_b1`)."""
     import torch
 
-    from ..measure import DriverMemorySampler, decode_step_b1, proc_status
+    from ..measure import DriverMemorySampler, proc_status
 
     os.environ.update(env)                       # PagedServeConfig.from_env reads the process environment only
     torch.cuda.set_device(0)
@@ -84,14 +120,12 @@ def measure_serve(env: dict, *, concurrency: int, context_len: int, prompt_token
             ids = torch.randint(10, vocab - 10, (n_prompt,), generator=g).tolist()
             parts.scheduler.add_request(ids, max_new_tokens=new_tokens)
         t1 = time.time()
-        steps = parts.scheduler.run_until_idle()
+        steps = drive(parts.scheduler, tracer)
         torch.cuda.synchronize()
         dt = time.time() - t1
         if tracer is not None:
             tracer.close()
-            b1 = decode_step_b1([json.loads(ln) for ln in open(trace_path) if ln.strip()])
-            if b1:
-                meas.update(b1, step_trace=os.path.basename(trace_path))
+            meas.update(decode_step_from_trace(trace_path))
     alloc, reserved = torch.cuda.max_memory_allocated(), torch.cuda.max_memory_reserved()
     meas.update(device_peak_bytes=alloc, device_reserved_peak_bytes=reserved, driver_process_peak_bytes=smi.peak or None,
                 driver_samples=smi.samples, cuda_context_bytes=(smi.peak - reserved) if smi.peak else None,

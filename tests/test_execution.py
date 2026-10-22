@@ -331,3 +331,96 @@ def test_the_engines_path_valued_report_is_named_without_its_path(stub_env, tmp_
     assert got["adapter"] == {"path": "local: my-adapter", "adapter_id": "a1"}
     assert got["levers_env"] == {"E4B_INT4_ARTIFACT_DIR": "local: art", "E4B_SERVE_ATTN_INT4": "1"}
     assert str(tmp_path) not in json.dumps(out["engaged"])
+
+
+
+class _Plan:
+    def __init__(self, empty):
+        self.is_empty = empty
+
+
+class _Sched:
+    """Two requests of three decode steps each, run one step at a time (the shape of experts4bit-qlora's scheduler)."""
+
+    def __init__(self, steps=3, stall=False):
+        self.queue, self.active, self.left, self.stall = [1], [], steps, stall
+
+    def step(self):
+        if self.stall:
+            return _Plan(True)
+        if self.queue:
+            self.active, self.queue = self.queue, []
+        self.left -= 1
+        if self.left == 0:
+            self.active = []
+        return _Plan(False)
+
+
+class _Tracer:
+    def __init__(self):
+        self.calls, self.open = [], False
+
+    def begin(self, **kw):
+        assert not self.open, "a row was opened twice"
+        self.open = True
+        self.calls.append("begin")
+
+    def end(self):
+        assert self.open
+        self.open = False
+        self.calls.append("end")
+
+    def discard(self):
+        self.open = False
+        self.calls.append("discard")
+
+
+def test_drive_opens_and_closes_a_trace_row_around_every_step():
+    """The server loop's shape: begin, step, end. scheduler.run_until_idle() never opens a row, so a trace attached
+    to it stays empty, and the GPU smoke found no decode step."""
+    from loggetta.backends.experts4bit_serve import drive
+
+    tr = _Tracer()
+    assert drive(_Sched(steps=3), tr) == 3
+    assert tr.calls == ["begin", "end"] * 3 and not tr.open
+    tr = _Tracer()
+    assert drive(_Sched(stall=True), tr) == 0 and tr.calls == ["begin", "discard"]   # an empty step is discarded
+    assert drive(_Sched(steps=2)) == 2                                                  # untraced: the same steps
+
+
+def test_a_missing_or_empty_trace_is_a_note_not_a_crash(tmp_path):
+    from loggetta.backends.experts4bit_serve import decode_step_from_trace
+
+    for got, why in ((decode_step_from_trace(str(tmp_path / "steps.jsonl")), "wrote no file"),
+                     ((tmp_path / "empty.jsonl").write_text("") or decode_step_from_trace(str(tmp_path / "empty.jsonl")),
+                      "0 row(s)")):
+        assert "decode_step_ms_b1" in got and got["decode_step_ms_b1"] is None   # ABSENT: null, never 0 or a guess
+        assert why in got["decode_step_note"]
+    rows = [{"decode_rows": 1, "prefill_tokens": 0, "step_ms": 20.0 + i} for i in range(9)]
+    (tmp_path / "b1.jsonl").write_text("\n".join(json.dumps(r) for r in rows))
+    got = decode_step_from_trace(str(tmp_path / "b1.jsonl"))
+    assert "decode_step_note" not in got and got["step_trace"] == "b1.jsonl" and got
+
+
+
+def test_driving_the_steps_gives_the_real_trace_one_row_per_step(tmp_path):
+    """experts4bit-qlora's own StepTrace (on the CPU): the fix must PRODUCE rows, one per non-empty step, not only stop
+    the crash. Through scheduler.run_until_idle() the same trace stays empty."""
+    st = pytest.importorskip("experts4bit_qlora.engines.step_trace")
+    from loggetta.backends.experts4bit_serve import drive
+
+    path = tmp_path / "steps.jsonl"
+    tr = st.StepTrace(str(path), cuda=False)
+    assert drive(_Sched(steps=5), tr) == 5
+    tr.close()
+    rows = [json.loads(ln) for ln in path.read_text().splitlines() if ln.strip()]
+    assert len(rows) == 5 and [r["step"] for r in rows] == list(range(5)) and all("step_ms" in r for r in rows)
+
+    other = tmp_path / "untraced.jsonl"
+    tr = st.StepTrace(str(other), cuda=False)
+    sched = _Sched(steps=5)
+    sched.tracer = tr
+    while sched.queue or sched.active:              # what run_until_idle does: step() with no row opened
+        sched.step()
+    tr.close()
+    assert not other.exists()
