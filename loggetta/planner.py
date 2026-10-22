@@ -44,6 +44,21 @@ def cite(obs) -> str:
     return f"receipt {obs.get('run_id')}" + (f" ({'; '.join(notes)})" if notes else "")
 
 
+#: the in-sample plan-vs-peak rows the streamed margin line refers to, under the repository's evidence/ directory
+INSAMPLE_EVIDENCE = "evidence/2026-10-21-insample-plans"
+
+
+def evidence_link(path: str) -> str:
+    """``path`` under the package's source repository as a link a pip user can open (the "Source" project URL in the
+    installed metadata, so the code names no repository), else the repository-relative path."""
+    from importlib.metadata import PackageNotFoundError, metadata
+
+    try:
+        urls = metadata(__package__.split(".")[0]).get_all("Project-URL") or []
+    except PackageNotFoundError:
+        urls = []
+    source = next((u.split(",", 1)[1].strip() for u in urls if u.split(",", 1)[0].strip().lower() == "source"), None)
+    return f"{source.rstrip('/')}/tree/main/{path}" if source else path
 #: the overhead terms the planner charges itself, each known from a receipt or a default (MemoryLine name prefixes)
 OVERHEAD_TERMS = (("CUDA context", "CUDA context"), ("allocator reserve", "allocator reserve"),
                   ("process baseline", "host baseline"))
@@ -66,9 +81,9 @@ def evidence_reasons(sel, margin: int) -> list:
                    + " (each line above names its receipt or default)")
     if margin:
         out.append(f"streamed: {sel.device_bytes / GiB:.2f} GiB plan total, and a {margin / GiB:.2f} GiB admission margin "
-                   "kept free above it (max(2.4 GB, 20% of the plan)). Streamed peaks on file have run above the plan "
-                   "total (in-sample: evidence/2026-10-21-insample-plans); the margin is what covers them, so the total "
-                   "alone is not what the process will use")
+                   "kept free above it (the larger of 2.24 GiB, i.e. 2.4 GB, and 20% of the plan). Streamed peaks on "
+                   f"file have run above the plan total (in-sample: {evidence_link(INSAMPLE_EVIDENCE)}); the margin is what covers "
+                   "them, so the total alone is not what the process will use")
     return out
 
 

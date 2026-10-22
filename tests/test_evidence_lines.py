@@ -40,8 +40,19 @@ def test_with_no_receipt_every_overhead_term_says_it_is_a_default():
 def test_a_streamed_plan_states_its_admission_margin_beside_the_total():
     sel = Sel([], device_bytes=10 * GiB)
     (text,) = planner.evidence_reasons(sel, int(2.4e9))
-    assert text.startswith("streamed: 10.00 GiB plan total, and a 2.24 GiB admission margin kept free above it")
-    assert "the total alone is not what the process will use" in text and "2026-10-21-insample-plans" in text
+    assert text.startswith("streamed: 10.00 GiB plan total, and a 2.24 GiB admission margin kept free above it "
+                           "(the larger of 2.24 GiB, i.e. 2.4 GB, and 20% of the plan)")
+    assert "the total alone is not what the process will use" in text
+    assert planner.evidence_link(planner.INSAMPLE_EVIDENCE) in text
+
+
+def test_the_evidence_link_opens_for_a_pip_user():
+    """From the installed metadata's Source URL, so the link works outside a checkout and the code names no repository."""
+    from importlib.metadata import metadata
+
+    source = next(u.split(",", 1)[1].strip() for u in metadata("loggetta").get_all("Project-URL")
+                  if u.split(",", 1)[0].strip() == "Source")
+    assert planner.evidence_link("evidence/x") == f"{source}/tree/main/evidence/x"
     assert planner.evidence_reasons(Sel([]), 0) == []          # resident: no margin line, nothing invented
 
 
