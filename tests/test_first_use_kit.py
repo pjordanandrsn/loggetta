@@ -104,6 +104,11 @@ case "${TORCH_INDEX:-}" in
   cpu)  c=4; t=cpu;  why="the plan was refused (exit 2): torch (a CPU-only build) cannot use GPU 0";;
   "")   c=0; t=cu126; why="";;
 esac
+if [ -n "${STUB_CRASH:-}" ] && [ -z "${TORCH_INDEX:-}" ]; then
+  # execute raised: first_run.sh keeps only the LAST lines of execute.txt as the refusal, never the header
+  mkdir -p "$1" && printf 'Traceback (most recent call last):\n  File "x.py", line 1, in <module>\nValueError: boom\n' > "$1/execute.txt"
+  c=6; why="the run did not train (exit 1):   File x.py, line 1, in <module> ValueError: boom"
+fi
 python3 - "$1" "$c" "$t" "$why" <<'PY'
 import json, sys
 d, c, t, why = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4]
@@ -150,6 +155,45 @@ def test_the_runner_runs_each_cell_and_reduces_them(tmp_path):
                                                     "run_id": "OLMoE-stub", "exit": 0}]
     assert (w / ("FU_SUCCESS." + "n" * 64)).exists() and (w / ("TP_DONE." + "n" * 64)).exists()
     assert json.loads((w / "cells" / "cpu-torch" / "cell.json").read_text())["torch_index_env"] == "cpu"
+
+
+@pytest.mark.skipif(not shutil.which("perl"), reason="the runner bounds each cell with perl's alarm")
+def test_a_crash_whose_refusal_hides_the_traceback_header_fails_the_gate(tmp_path):
+    w, env = stage(tmp_path)
+    r = subprocess.run(["bash", str(w / "fu_run.sh")], env={**env, "STUB_CRASH": "1"}, capture_output=True, text=True,
+                       timeout=120)
+    assert r.returncode == 0, r.stdout + r.stderr
+    v = json.loads((w / "verdict_first_use.json").read_text())
+    crashed = next(c for c in v["cells"] if c["cell"] == "below-matched")
+    assert "Traceback" not in crashed["refusal"]                     # the recorded refusal alone would read "named"
+    assert crashed["tracebacks"] == ["below-matched/run/execute.txt"] and crashed["gate"] is False
+    assert v["gate"] == "FAIL"
+
+
+def test_a_deadline_skipped_cell_is_on_record_and_the_run_is_incomplete(tmp_path):
+    w, env = stage(tmp_path)
+    import time
+
+    r = subprocess.run(["bash", str(w / "fu_run.sh")], env={**env, "FU_DEADLINE_EPOCH": str(int(time.time()) + 60)},
+                       capture_output=True, text=True, timeout=60)
+    assert r.returncode == 40                                         # no cell ran
+    v = json.loads((w / "verdict_first_use.json").read_text())      # but the reduce still recorded every cell
+    assert [(c["cell"], c["verdict"]) for c in v["cells"]] == [("below-default", "MISSING"), ("below-matched", "MISSING"),
+                                                               ("cpu-torch", "MISSING")]
+    assert all(c["skipped"].startswith("deadline") for c in v["cells"]) and v["gate"] == "INCOMPLETE"
+
+
+def test_one_ran_and_one_skipped_reads_incomplete_never_pass(tmp_path):
+    ran = tmp_path / "cells" / "at-matched"
+    ran.mkdir(parents=True)
+    (ran / "first_run.json").write_text(json.dumps({"exit": 0, "refusal": None, "torch_index": "cu130", "platform": "Linux",
+                                                    "gpu": "NVIDIA RTX A4000, 580.82.07", "seconds_to_trained": 9,
+                                                    "receipt": {"run_id": "r", "device_check": "checked"}}))
+    skipped = tmp_path / "cells" / "at-default"
+    skipped.mkdir()
+    (skipped / "cell.json").write_text(json.dumps({"cell": "at-default", "skipped": "deadline: 900s left, 1800s needed"}))
+    v = fu.reduce(str(tmp_path / "cells"), "fu-at-1")
+    assert v["met"] == 1 and v["gate"] == "INCOMPLETE"
 
 
 def test_the_runner_refuses_a_tampered_staged_file_before_any_cell(tmp_path):

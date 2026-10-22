@@ -35,9 +35,15 @@ for cell in $FU_CELLS; do
     no-gpu) say "refusing: the no-gpu cell runs on a host with no NVIDIA GPU, never on a rented GPU box"; finish 78;;
     *) say "refusing: unregistered cell $cell"; finish 78;;
   esac
-  left=$((FU_DEADLINE_EPOCH - $(date +%s)))
-  if [ $((NEED_CELL + RESERVE)) -gt "$left" ]; then say "STOP: $cell needs $((NEED_CELL + RESERVE))s, ${left}s left -- skipped"; echo "SKIPPED $cell" >> summary.txt; continue; fi
+  # the cell's directory exists BEFORE the deadline check: a skipped cell reads MISSING (the run INCOMPLETE), never absent
   mkdir -p "$W/cells/$cell"
+  left=$((FU_DEADLINE_EPOCH - $(date +%s)))
+  if [ $((NEED_CELL + RESERVE)) -gt "$left" ]; then
+    say "STOP: $cell needs $((NEED_CELL + RESERVE))s, ${left}s left -- skipped"; echo "SKIPPED $cell" >> summary.txt
+    printf '{"cell": "%s", "torch_index_env": "%s", "listed_driver": "%s", "skipped": "deadline: %ss left, %ss needed"}\n' \
+      "$cell" "$tix" "${FU_LISTED_DRIVER:-}" "$left" "$((NEED_CELL + RESERVE))" > "$W/cells/$cell/cell.json"
+    continue
+  fi
   printf '{"cell": "%s", "torch_index_env": "%s", "listed_driver": "%s"}\n' "$cell" "$tix" "${FU_LISTED_DRIVER:-}" > "$W/cells/$cell/cell.json"
   say "cell $cell (TORCH_INDEX=${tix:-<unset>})"
   # first_run.sh makes the run directory itself and refuses an existing one: hand it a fresh path inside the cell dir
@@ -49,7 +55,8 @@ for cell in $FU_CELLS; do
   echo "cell $cell rc=$rc" | tee -a summary.txt
   ran=$((ran + 1))
 done
-[ "$ran" -gt 0 ] || { say "no cell ran"; finish 40; }
+# the reduce runs even when no cell ran, so every registered cell this box was given is on record (MISSING if skipped)
 python3 $W/fu_reduce.py --dir $W/cells --run-id "$FU_RUN_ID" --out $W/verdict_first_use.json 2>&1 | tee -a summary.txt
 [ -s $W/verdict_first_use.json ] || { say "REDUCER FAILED"; finish 22; }
+[ "$ran" -gt 0 ] || { say "no cell ran"; finish 40; }
 finish 0

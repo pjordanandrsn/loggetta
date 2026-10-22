@@ -39,6 +39,7 @@ EXIT_MEANING = {0: "TRAINED, device check passed", 7: "TRAINED, device check not
                 3: "refused: no torch build fits this machine", 4: "refused: the plan was refused",
                 5: "refused: an install step failed", 6: "refused: the run did not train"}
 NAMED_REFUSALS = {3, 4, 5, 6}
+TRACEBACK = "Traceback (most recent call last)"
 
 
 def band_of(driver: str | None) -> str | None:
@@ -67,14 +68,36 @@ def named(record: dict) -> bool:
     if code in (0, 7):
         return True
     why = record.get("refusal") or ""
-    return code in NAMED_REFUSALS and bool(why.strip()) and "Traceback (most recent call last)" not in why
+    return code in NAMED_REFUSALS and bool(why.strip()) and TRACEBACK not in why
 
 
-def grade(cell: str, record: dict | None, listed_driver: str | None = None) -> dict:
+def traceback_files(cell_dir: str, logs_dir: str | None, cell: str) -> list:
+    """The cell's own outputs that hold a traceback header. first_run.sh builds a refusal from the LAST lines of a step's
+    output, which never include the header, so the gate reads the files themselves: the run's step outputs, the
+    driver read's stderr, and the runner's logs of the cell."""
+    names = []
+    run = os.path.join(cell_dir, "run")
+    if os.path.isdir(run):
+        names += [os.path.join(run, f) for f in sorted(os.listdir(run)) if f.endswith((".txt", ".err"))]
+    if logs_dir:
+        names += [os.path.join(logs_dir, f"{cell}.{ext}") for ext in ("out", "err")]
+    hits = []
+    for n in names:
+        try:
+            with open(n, errors="replace") as f:
+                if TRACEBACK in f.read():
+                    hits.append(os.path.relpath(n, os.path.dirname(cell_dir.rstrip("/"))))
+        except OSError:
+            continue
+    return hits
+
+
+def grade(cell: str, record: dict | None, listed_driver: str | None = None, tracebacks: list = (),
+          skipped: str | None = None) -> dict:
     spec = CELLS[cell]
     row = {"cell": cell, "expected_exit": sorted(spec["exit"]), "listed_driver": listed_driver}
     if record is None:
-        return {**row, "verdict": "MISSING", "gate": None}
+        return {**row, "verdict": "MISSING", "gate": None, **({"skipped": skipped} if skipped else {})}
     driver = box_driver(record)
     platform = record.get("platform") or ""
     row.update(exit=record.get("exit"), meaning=EXIT_MEANING.get(record.get("exit"), "not a first_run.sh exit"),
@@ -83,7 +106,8 @@ def grade(cell: str, record: dict | None, listed_driver: str | None = None) -> d
                seconds_to_trained=record.get("seconds_to_trained"),
                run_id=(record.get("receipt") or {}).get("run_id"),
                device_check=(record.get("receipt") or {}).get("device_check"),
-               versions=record.get("versions"), gate=named(record))
+               versions=record.get("versions"), tracebacks=list(tracebacks),
+               gate=named(record) and not tracebacks)
     if spec["band"] == "none":
         in_band = record.get("gpu") is None and platform.startswith("Linux")
         why = "" if in_band else f"the no-GPU cell needs a Linux host with no NVIDIA GPU (gpu {record.get('gpu')!r}, platform {platform!r})"
@@ -101,7 +125,12 @@ def grade(cell: str, record: dict | None, listed_driver: str | None = None) -> d
                                       f"{sorted(spec['index'], key=str)}"})}
 
 
-def reduce(cells_dir: str, run_id: str) -> dict:
+def reduce(cells_dir: str, run_id: str, logs_dir: str | None = None) -> dict:
+    """Grades every cell directory the runner made. The runner makes each one BEFORE its deadline check, so a skipped
+    cell is present and reads MISSING (the run INCOMPLETE), never silently absent."""
+    if logs_dir is None:
+        guess = os.path.join(os.path.dirname(os.path.abspath(cells_dir)), "logs")
+        logs_dir = guess if os.path.isdir(guess) else None
     rows = []
     for cell in CELLS:
         d = os.path.join(cells_dir, cell)
@@ -112,12 +141,13 @@ def reduce(cells_dir: str, run_id: str) -> dict:
         if os.path.exists(p):
             with open(p) as f:
                 record = json.load(f)
-        listed = None
+        meta = {}
         cp = os.path.join(d, "cell.json")
         if os.path.exists(cp):
             with open(cp) as f:
-                listed = json.load(f).get("listed_driver")
-        rows.append(grade(cell, record, listed))
+                meta = json.load(f)
+        rows.append(grade(cell, record, meta.get("listed_driver") or None, traceback_files(d, logs_dir, cell),
+                          meta.get("skipped") or None))
     graded = [r for r in rows if r["verdict"] in ("MET", "NOT_MET")]
     gate = "PASS" if graded and all(r["gate"] for r in graded) else ("FAIL" if graded else "NONE_GRADED")
     if any(r["verdict"] == "MISSING" for r in rows):
@@ -140,6 +170,7 @@ def self_test() -> None:
     assert grade("at-matched", {**ok, "exit": 2, "refusal": "usage"})["gate"] is False
     tb = {**ok, "exit": 6, "refusal": "Traceback (most recent call last): ..."}
     assert grade("at-matched", tb)["gate"] is False
+    assert grade("at-matched", {**ok, "exit": 6, "refusal": "ValueError: x"}, tracebacks=["run/execute.txt"])["gate"] is False
     print("fu_reduce self-test OK")
 
 
