@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.6.2 — 2026-10-22
+
+**0.6.2.** Two fixes that make first runs work. When the default torch from PyPI is built for a newer CUDA than
+the NVIDIA driver supports, `plan` used to call the machine feasible and `execute` then failed in torch. `plan` now
+refuses, with the reason and the install order that fixes it, and `inspect` shows what torch reports. And the Alpaca
+demonstration (training without `--dataset`) no longer stops at row 284 on runs longer than about 45 steps. Upgrade if
+you install Loggetta on CUDA machines or train the demonstration. Plans on a working install are unchanged apart from
+a recorded `torch` entry. Floors unchanged.
+
+### A CUDA plan that the installed torch cannot run is refused, and inspect shows why
+
+`pip install loggetta` can install a torch built for a newer CUDA than the driver supports. torch 2.14.1+cu130 needs
+driver 580; on driver 575, `nvidia-smi` lists the GPU but `torch.cuda.is_available()` is False. `inspect` and `plan`
+read the GPU from `nvidia-smi` only, so they reported a feasible plan, and `execute` then died in
+`torch.cuda.set_device` ("driver too old"). With an NVIDIA GPU discovered, the hardware probe now asks the installed
+torch, in a child process, for its version, the CUDA it was built for (`torch.version.cuda`) and whether it can use the
+GPU, and keeps torch's own warning. This process still imports no torch. `inspect` prints those facts next to the
+driver. `plan` refuses a CUDA plan when torch is installed and says it cannot use the GPU, naming torch, its CUDA, the
+driver and the driver that CUDA needs. The remedy it gives: a fresh virtual environment, a matching torch installed
+first from its own index, then Loggetta. It also says that installing another torch over the first does nothing, because
+pip counts the same version as already satisfied. When the driver already meets the build's minimum, the refusal says so
+and shows `CUDA_VISIBLE_DEVICES` and torch's note instead of suggesting a reinstall, since the cause is GPU visibility
+(the variable, or a container without GPU access). A torch that could not be asked is a warning, not a refusal. Profiles
+saved before this change still load, and plans made from them are unchanged. The README has an install note on driver
+versus torch build. (#84)
+
+### Training: the Alpaca demonstration runs past row 284
+
+Training without `--dataset` uses the Alpaca demonstration, and it stopped in data preparation at row 284
+("column 'output' must contain non-empty text"). That is the first of the 28 rows in `tatsu-lab/alpaca` with an empty
+output, so any demonstration run that needed more than about 23k tokens (some 45 steps at `--seq 512`) failed before
+loading weights. The default 20 steps stayed under that, so the quickstart was unaffected. The demonstration now skips
+exactly those rows and records how many it skipped on every pass (`rows_skipped_empty_output` in the report and the
+data profile). It is pinned to the dataset revision it has had since 2023
+(`dce01c9b08f87459cf36a430d809084718273017`), so its token stream is reproducible. A dataset you supply is still
+validated row by row, and an empty output there is still refused. A pass that yields no usable row now refuses by
+name instead of repeating forever (#86).
+
 ## 0.6.1 — 2026-10-21
 
 **0.6.1.** A patch for dense families that experts4bit-qlora describes as MoE with zero MoE layers, gemma4 among
