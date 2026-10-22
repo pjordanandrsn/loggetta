@@ -15,8 +15,8 @@ import pytest
 from loggetta import model as model_mod
 from loggetta.backends import experts4bit
 from loggetta.execution import available_before_load, execute, grade_load_bound, summarize
-from loggetta.hardware import Fact, HardwareProfile, Host
-from loggetta.plan import ExecutionPlan
+from loggetta.hardware import GPU, Fact, HardwareProfile, Host
+from loggetta.plan import Candidate, Constraints, ExecutionPlan, MemoryLine, Workload
 from loggetta.planner import load_bound, load_bound_warning
 
 GiB = 1 << 30
@@ -31,6 +31,32 @@ def host(avail_gib, source="/proc/meminfo MemAvailable"):
 
 def hwp(avail_gib):
     return HardwareProfile(gpus=(), host=host(avail_gib), platform="Linux x86_64")
+
+
+def gpu_hw(ram_gib=40.0):
+    """A 12 GiB sm_86 card on a host with ``ram_gib`` available (built here: a test module imports no other one)."""
+    r = lambda v: Fact(v, "reported")  # noqa: E731
+    g = GPU(index=0, vendor="nvidia", name="Test GPU", uuid=None, compute_capability=r((8, 6)),
+            memory_total=r(12 * GiB), memory_free=r(12 * GiB), driver=r("575.64.05"), pcie_gen_max=r(4),
+            pcie_width_max=r(16), pcie_gen_current=r(4), pcie_width_current=r(16))
+    h = Host(cpu_model=r("test cpu"), cpus=r(8), memory_total=r(64 * GiB), memory_available=r(int(ram_gib * GiB)),
+             memory_limit=r(64 * GiB))
+    return HardwareProfile(gpus=(g,), host=h, platform="Linux x86_64")
+
+
+def a_plan():
+    """A feasible hand-built plan for the card above, as execute's own tests build one."""
+    lines = (MemoryLine("frozen expert stacks", "device", 3 * GiB, "derived"),
+             MemoryLine("process baseline (torch, CUDA, libraries, model objects)", "host", GiB, "inferred"))
+    sel = Candidate(backend="experts4bit", setup={"expert_residency": "device", "expert_kernel": "grouped_nf4",
+                                                   "attn_4bit": False},
+                    lines=lines, device_bytes=3 * GiB, host_bytes=GiB, feasible=True)
+    return ExecutionPlan(status="feasible", model={"model": "org/Tiny-MoE"},
+                         hardware={"gpu": {"name": "Test GPU", "uuid": None}},
+                         workload=Workload(kind="train", seq_len=512), constraints=Constraints(),
+                         budget={"device": 12 * GiB, "device_source": "user", "host": 40 * GiB, "host_source": "user",
+                                 "headroom": GiB // 2},
+                         selected=sel, alternatives=(), reasons=(), refusal=None)
 
 
 # --------------------------------------------------------------------------------------------- which files count
@@ -189,9 +215,7 @@ def topo():
 
 
 def _hw(ram_gib):
-    from tests.test_planner import hw
-
-    return hw(ram_gib=ram_gib)
+    return gpu_hw(ram_gib)
 
 
 def test_the_plan_warns_records_and_stays_feasible(topo):
@@ -225,8 +249,6 @@ def test_no_checkpoint_size_leaves_the_plan_as_it_was(topo):
 
 
 def _with_bound(lb):
-    from tests.test_execution import a_plan
-
     p = a_plan()
     return dataclasses.replace(p, provenance={**p.provenance, "load_bound": lb})
 
@@ -245,8 +267,6 @@ def test_the_receipt_grades_the_bound_against_the_measured_peak(peak, held):
 
 
 def test_a_plan_without_a_bound_grades_nothing_and_reads_nothing(monkeypatch):
-    from tests.test_execution import a_plan
-
     import loggetta.hardware as hardware
 
     monkeypatch.setattr(hardware, "_probe_host", lambda: pytest.fail("read for a plan without a bound"))
@@ -255,8 +275,6 @@ def test_a_plan_without_a_bound_grades_nothing_and_reads_nothing(monkeypatch):
 
 
 def test_execute_reads_what_is_available_before_the_backend_loads_and_grades_it(monkeypatch):
-    from tests.test_execution import hw
-
     import loggetta.hardware as hardware
 
     order = []
@@ -273,7 +291,7 @@ def test_execute_reads_what_is_available_before_the_backend_loads_and_grades_it(
     monkeypatch.setattr(hardware, "_probe_host", probe_host)
     monkeypatch.setattr(experts4bit, "executor", lambda kind: run if kind == "train" else None)
     logged = []
-    r = execute(_with_bound(_lb(19.27)), hardware=hw(), prov={"sources": {}}, log=logged.append)
+    r = execute(_with_bound(_lb(19.27)), hardware=gpu_hw(), prov={"sources": {}}, log=logged.append)
     assert order == ["read", "run"]
     lb = r["load_bound"]
     assert lb["available_at_execute_bytes"] == 10 * GiB and lb["available_at_execute_source"].startswith("cgroup v2")
