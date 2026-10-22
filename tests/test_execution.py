@@ -424,3 +424,25 @@ def test_driving_the_steps_gives_the_real_trace_one_row_per_step(tmp_path):
         sched.step()
     tr.close()
     assert not other.exists()
+
+
+
+@pytest.mark.parametrize("measured, want", [
+    ({"decode_step_ms_b1": 4.3561, "decode_steps_b1": 63, "tokens_per_s": 151.8, "load_seconds": 4.9,
+      "generate_seconds": 0.42}, "decode step median 4.36 ms over 63 steps"),
+    ({"decode_step_ms_b1": None, "decode_step_note": "the step trace wrote no file (no traced step)",
+      "tokens_per_s": None}, "decode step ABSENT: the step trace wrote no file"),
+])
+def test_summarize_reads_a_serve_receipt(stub_env, monkeypatch, tmp_path, measured, want):
+    """The CLI summary was train-only (a serve receipt raised KeyError after it was written: found by the GPU smoke)."""
+    from loggetta.execution import summarize
+
+    arena, calib = _serve_files(tmp_path)
+    real = stub_env.run
+    monkeypatch.setattr(experts4bit, "executor", lambda kind: (lambda pl, **kw: real(
+        pl, engine=lambda env, **k: {"measured": {"device_peak_bytes": 5 * GiB, **measured},
+                                     "requests": {"count": 1, "prompt_tokens": 1024, "new_tokens": 64}}, **kw)))
+    r = execute(a_serve_plan(), out_dir=str(tmp_path / "receipts"), hardware=hw(), prov={"sources": {}},
+                inputs={"arena": arena, "calib": calib})
+    text = summarize(r)
+    assert want in text and "1 request(s) of 1024 prompt + 64 new tokens" in text and "device_allocator" in text
