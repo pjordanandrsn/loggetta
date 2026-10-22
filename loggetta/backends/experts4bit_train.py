@@ -151,10 +151,13 @@ def run(plan, *, seed: int = 0, warmup: int = 2, log=print, adapter_dir: str | N
                     from ..execution import PlanNotExecutable
                     raise PlanNotExecutable(f"NOT_RUN, refused before the first training step: {exc}") from None
                 meas["adapter_preflight_seconds"] = time.perf_counter() - t_pf
+            before = loss_branch_counters()
             out = train_loop(prep.model, prep.trainable, plan.model["model"], plan.workload, smi, meas,
                              revision=plan.model.get("revision"), seed=seed, warmup=warmup, log=log,
                              prepared_data=prepared)
-        out["engaged"] = prep.report
+        out["engaged"] = dict(prep.report)
+        if before is not None:
+            out["engaged"]["chunked_lm_loss"] = loss_branch(prep.model, before, loss_branch_counters())
         if target is not None:
             out["artifacts"] = {}
             if out["status"] != "OK":
@@ -175,6 +178,42 @@ def run(plan, *, seed: int = 0, warmup: int = 2, log=print, adapter_dir: str | N
                     out["artifact_error"] = f"{type(exc).__name__}: {exc}"
                 out["measured"]["adapter_save_seconds"] = time.perf_counter() - save_start
         return out
+
+
+def loss_branch_counters():
+    """experts4bit-qlora's chunked-LM-loss counters (``CHUNKED_LM_LOSS_STATS``: training forwards that took the chunked
+    loss, ran stock under the size gate, ran stock otherwise, ...), as numbers; None when the installed release has none."""
+    try:
+        from experts4bit_qlora.engines import chunked_lm_loss as C
+    except ImportError:
+        return None
+    return {k: v for k, v in C.CHUNKED_LM_LOSS_STATS.items() if isinstance(v, int) and not isinstance(v, bool)}
+
+
+def loss_branch(model, before: dict, after: dict | None) -> dict:
+    """Which loss branch this run's training forwards took, COUNTED (the counters' change over the training loop), with
+    what the size gate read: its threshold, the chunk size and the head width. A row near the gate then states its
+    branch from its own counters instead of having it inferred from a peak. Recording never fails a run that trained."""
+    rec = {"source": "experts4bit_qlora CHUNKED_LM_LOSS_STATS, counted over this run's training loop"}
+    try:
+        from experts4bit_qlora.engines import chunked_lm_loss as C
+
+        calls = {k: (after or {}).get(k, 0) - before.get(k, 0) for k in sorted(set(before) | set(after or {}))}
+        chunked, small, stock = (calls.get(k, 0) for k in ("chunked_calls", "small_calls", "stock_calls"))
+        rec["branch"] = ("not counted: no training forward reached the chunked-loss patch" if not chunked + small + stock
+                         else "chunked" if chunked and not small + stock else "stock" if not chunked else "mixed")
+        rec["calls"] = calls
+        rec["gate_bytes"] = C.chunked_lm_loss_min_bytes()
+        rec["chunk_tokens"] = C.chunked_lm_loss_requested()
+        head = model.get_output_embeddings() if hasattr(model, "get_output_embeddings") else getattr(model, "lm_head", None)
+        width = getattr(head, "out_features", None)
+        rec["logits_width"] = int(width) if isinstance(width, int) else None
+        refused = C.CHUNKED_LM_LOSS_STATS.get("refused")
+        if refused:
+            rec["refused"] = dict(refused)
+    except Exception as exc:                          # noqa: BLE001 - metadata about a finished run, never its failure
+        rec["error"] = f"{type(exc).__name__}: {exc}"
+    return rec
 
 
 def train_loop(model, trainable, model_id, w, smi, meas, *, revision=None, seed=0, warmup=2, log=print,
