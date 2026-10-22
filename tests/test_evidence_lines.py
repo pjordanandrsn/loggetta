@@ -46,6 +46,19 @@ def test_a_streamed_plan_states_its_admission_margin_beside_the_total():
     assert planner.evidence_link(planner.INSAMPLE_EVIDENCE) in text
 
 
+@pytest.mark.parametrize("version, ref", [("0.6.3", "v0.6.3"), ("1.0.0", "v1.0.0"),
+                                          ("0.6.3.dev2", "main"), ("0.6.3+local.abc", "main")])
+def test_the_link_pins_a_release_tag_and_a_dev_build_links_main(monkeypatch, version, ref):
+    import importlib.metadata as md
+
+    class Meta(dict):
+        def get_all(self, key):
+            return ["Source, https://example.test/org/pkg"] if key == "Project-URL" else None
+
+    monkeypatch.setattr(md, "metadata", lambda name: Meta(Version=version))
+    assert planner.evidence_link("evidence/x") == f"https://example.test/org/pkg/tree/{ref}/evidence/x"
+
+
 def test_the_evidence_link_opens_for_a_pip_user():
     """From the installed metadata's Source URL, so the link works outside a checkout and the code names no repository."""
     from importlib.metadata import metadata
