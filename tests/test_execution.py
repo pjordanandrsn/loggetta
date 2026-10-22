@@ -285,3 +285,45 @@ def test_the_cli_hands_a_serve_plans_inputs_to_execute(monkeypatch, tmp_path):
     assert main(["execute", str(saved), "--arena", "a.nf4", "--calib", "c.json", "--new-tokens", "32",
                  "--allow-development-executor", "--out", str(tmp_path / "receipts")]) == 2
     assert got["inputs"] == {"arena": "a.nf4", "calib": "c.json", "new_tokens": 32} and got["allow"] is True
+
+
+
+@pytest.mark.parametrize("name", ["E4B_PAGED_ADAPTER", "E4B_PAGED_GRAPHS", "E4B_SERVE_ATTN_INT4"])
+def test_an_inherited_serving_switch_refuses_the_run_by_name(stub_env, monkeypatch, tmp_path, name):
+    """The plan's environment is MERGED into the process's, so a switch the shell set and the plan did not would be
+    live for the run while the receipt describes the plan. Refused by name, its value never printed."""
+    arena, calib = _serve_files(tmp_path)
+    monkeypatch.setenv(name, str(tmp_path / "secret-value"))
+    with pytest.raises(PlanNotExecutable, match=name) as e:
+        stub_env.run(a_serve_plan(), seed=0, log=print, adapter_dir=str(tmp_path / "r" / "adapter"), run_id="x",
+                     arena=arena, calib=calib, engine=_never)
+    assert "secret-value" not in str(e.value)
+
+
+def test_unrelated_e4b_variables_do_not_block_a_serve_run(stub_env, monkeypatch, tmp_path):
+    arena, calib = _serve_files(tmp_path)
+    for k, v in {"E4B_RENT_SSH_HOST": "h", "E4B_TOKEN": "t", "E4B_ABSMAX_DQ": "0"}.items():
+        monkeypatch.setenv(k, v)
+    out = stub_env.run(a_serve_plan(), seed=0, log=print, adapter_dir=str(tmp_path / "r" / "adapter"), run_id="x",
+                       arena=arena, calib=calib, engine=lambda env, **kw: {"measured": {}, "requests": {}})
+    assert out["status"] == "OK"
+
+
+def test_an_inherited_lever_outside_the_prefixes_is_named(monkeypatch):
+    from loggetta.backends.experts4bit_serve import inherited_switches
+
+    monkeypatch.setenv("E4B_INT4_ARTIFACT_DIR", "/srv/artifacts")
+    assert inherited_switches({}, levers=("E4B_INT4_ARTIFACT_DIR",)) == ["E4B_INT4_ARTIFACT_DIR"]
+    assert inherited_switches({"E4B_INT4_ARTIFACT_DIR": "x"}, levers=("E4B_INT4_ARTIFACT_DIR",)) == []   # the plan sets it
+
+
+def test_the_engines_path_valued_report_is_named_without_its_path(stub_env, tmp_path):
+    arena, calib = _serve_files(tmp_path)
+    info = {"adapter": {"path": str(tmp_path / "adapters" / "my-adapter"), "adapter_id": "a1"},
+            "levers_env": {"E4B_INT4_ARTIFACT_DIR": str(tmp_path / "art"), "E4B_SERVE_ATTN_INT4": "1"}}
+    out = stub_env.run(a_serve_plan(), seed=0, log=print, adapter_dir=str(tmp_path / "r" / "adapter"), run_id="x",
+                       arena=arena, calib=calib, engine=lambda env, **kw: {"measured": {}, "requests": {}, "info": info})
+    got = out["engaged"]["info"]
+    assert got["adapter"] == {"path": "local: my-adapter", "adapter_id": "a1"}
+    assert got["levers_env"] == {"E4B_INT4_ARTIFACT_DIR": "local: art", "E4B_SERVE_ATTN_INT4": "1"}
+    assert str(tmp_path) not in json.dumps(out["engaged"])

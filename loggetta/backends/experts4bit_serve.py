@@ -129,6 +129,28 @@ def model_label(model: str) -> str:
     return model
 
 
+def _name_only(value):
+    """A path-valued setting as a shared record may carry it: an absolute, "."- or "~"-relative path by its name only."""
+    if isinstance(value, str) and (os.path.isabs(value) or value.startswith((".", "~"))):
+        return "local: " + os.path.basename(value.rstrip("/"))
+    return value
+
+
+def inherited_switches(env: dict, levers=None) -> list:
+    """The names of serving switches set in this process but not by the plan: ``measure_serve`` MERGES the plan's
+    environment into the process's, so an inherited ``E4B_PAGED_*`` (an adapter), ``E4B_SERVE_*`` or experts4bit-qlora
+    lever (``serve_paged.LEVER_ENV``) would change the run while the receipt describes the plan. Names only, never values."""
+    from ..measure import e4b_env
+
+    if levers is None:
+        try:
+            from experts4bit_qlora.serve_paged import LEVER_ENV as levers
+        except ImportError:
+            levers = ()
+    return sorted(n for n in e4b_env()["names"]
+                  if n not in env and (n.startswith(("E4B_PAGED_", "E4B_SERVE_")) or n in levers))
+
+
 def check_inputs(plan, arena, calib, prompt_tokens: int, new_tokens: int) -> None:
     """Refuse by name, before anything loads, a serve run that cannot start or would not mean what its plan says."""
     from ..execution import PlanNotExecutable
@@ -154,8 +176,14 @@ def run(plan, *, seed, log, adapter_dir, run_id, arena=None, calib=None, prompt_
         new_tokens=NEW_TOKENS, engine=None):
     """Decode a feasible serve plan's request set through experts4bit-qlora's paged engine. ``adapter_dir``'s parent is
     the run's directory (the step trace goes there). ``engine`` replaces :func:`measure_serve` (tests)."""
+    from ..execution import PlanNotExecutable
+
     check_inputs(plan, arena, calib, prompt_tokens, new_tokens)
     env = serve_env(plan.selected.setup, plan.model["model"], arena, calib)
+    stray = inherited_switches(env)
+    if stray:
+        raise PlanNotExecutable("serving switches set in this environment but not by the plan would change the run, "
+                                f"while the receipt describes the plan: {', '.join(stray)}. Unset them, or plan with them")
     run_dir = Path(adapter_dir).parent
     os.makedirs(run_dir, exist_ok=True)
     trace = str(run_dir / "steps.jsonl") if plan.workload.concurrency == 1 else None
@@ -165,8 +193,13 @@ def run(plan, *, seed, log, adapter_dir, run_id, arena=None, calib=None, prompt_
     files = {"arena": os.path.basename(arena), "arena_head_sha256": _sha256(arena, 1 << 20),
              "calib": os.path.basename(calib), "calib_sha256": _sha256(calib)}
     # the paths stay out: the arena and calibration file appear above by name, and a local model directory by its name
-    knobs = {k: v for k, v in env.items() if k not in ("E4B_PAGED_ARENA", "E4B_PAGED_CALIB")}
-    knobs["E4B_PAGED_MODEL"] = model_label(knobs.get("E4B_PAGED_MODEL", ""))
+    knobs = {k: _name_only(v) for k, v in env.items() if k not in ("E4B_PAGED_ARENA", "E4B_PAGED_CALIB")}
+    knobs["E4B_PAGED_MODEL"] = model_label(env.get("E4B_PAGED_MODEL", ""))
+    info = dict(out.get("info") or {})              # the engine's own report: its path-valued entries by name only
+    if isinstance(info.get("adapter"), dict):
+        info["adapter"] = {**info["adapter"], "path": _name_only(info["adapter"].get("path"))}
+    if isinstance(info.get("levers_env"), dict):
+        info["levers_env"] = {k: _name_only(v) for k, v in info["levers_env"].items()}
     return {"status": "OK", "measured": out["measured"], "correctness": {},
-            "engaged": {"placement": out.get("placement"), "info": out.get("info") or {}},
+            "engaged": {"placement": out.get("placement"), "info": info},
             "data": {**out.get("requests", {}), **files, "server_env": knobs}}
