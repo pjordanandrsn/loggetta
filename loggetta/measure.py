@@ -155,6 +155,9 @@ def provenance(modules=("experts4bit_qlora", "nf4_grouped", __package__.split(".
             out.setdefault("versions", {})[dist] = version(dist)
         except PackageNotFoundError:
             pass
+    # the allocator setting the run starts under (None when unset): PyTorch's caching allocator reads it at CUDA init,
+    # and it moves the reserved-but-unallocated bytes the planner learns its reserve from. Recorded only; nothing reads it
+    out["pytorch_cuda_alloc_conf"] = os.environ.get("PYTORCH_CUDA_ALLOC_CONF")
     out["started_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     return out
 

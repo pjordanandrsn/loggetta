@@ -769,3 +769,32 @@ def test_an_amd_gpu_is_refused_in_words_not_as_no_gpu(topo):
     assert "no GPU" not in why
     control = plan(topo, h, Workload())                       # the same card as NVIDIA: no vendor refusal
     assert not any("AMD" in r or "not yet supported" in r for r in (control.refusal or {}).get("reasons", []))
+
+
+def test_the_allocator_setting_is_recorded_only_and_moves_no_plan(topo):
+    """measure.provenance records PYTORCH_CUDA_ALLOC_CONF in every receipt, and nothing reads it. Every committed
+    execution receipt plans identically with the key added, for a train plan on the card the A2000 receipts measured
+    (so they engage) and for a serve plan, and the receipts do move both plans, so the comparison is not empty."""
+    import copy
+    import glob
+    import os
+    from dataclasses import replace
+
+    root = os.path.join(os.path.dirname(__file__), "..", "evidence")
+    obs = []
+    for f in sorted(glob.glob(os.path.join(root, "**", "*.json"), recursive=True)):
+        r = json.load(open(f))
+        if isinstance(r, dict) and r.get("schema") == "execution-receipt/1":
+            obs.append(r)
+    keyed = copy.deepcopy(obs)
+    for r in keyed:
+        r.setdefault("provenance", {})["pytorch_cuda_alloc_conf"] = "expandable_segments:True"
+    card = next(r for r in obs if r["workload"].get("kind") == "train")["hardware"]["gpu"]
+    h = hw()
+    on_card = replace(h, gpus=(replace(h.gpus[0], name=card["name"], driver=Fact(card["driver"], "reported")),))
+    for hardware, wl in ((on_card, Workload(seq_len=512)), (h, Workload(kind="serve", context_len=4096, concurrency=1))):
+        bare = json.dumps(plan(topo, hardware, wl).to_dict(), sort_keys=True, default=str)
+        before = json.dumps(plan(topo, hardware, wl, observations=obs).to_dict(), sort_keys=True, default=str)
+        after = json.dumps(plan(topo, hardware, wl, observations=keyed).to_dict(), sort_keys=True, default=str)
+        assert before != bare, f"the receipts on file do not move the {wl.kind} plan: the comparison would be empty"
+        assert after == before, wl.kind
