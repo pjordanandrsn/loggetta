@@ -54,6 +54,29 @@ def test_a_cc_that_does_not_exist_is_refused(monkeypatch):
     assert f.value is None and "cc could not be run" in f.note and "/nonexistent" not in f.note
 
 
+def test_an_empty_cc_counts_as_set_as_it_does_for_triton(monkeypatch):
+    monkeypatch.setenv("CC", "")
+    f = probe_c_compiler()
+    assert f.value is None and "CC is set but empty" in f.note
+
+
+def test_the_compilers_diagnostics_never_carry_a_path(monkeypatch, tmp_path):
+    """gcc's errors name the temp file, the include chain and, in a venv, a home directory. Plans, inspect and
+    first_run.json are shared, so the recorded note keeps only basenames. (The home path is built at run time.)"""
+    home = os.sep + os.path.join("home", "someone", ".venv", "include")
+    fake = tmp_path / "fakecc"
+    fake.write_text("#!/bin/sh\n"
+                    f"echo \"In file included from $1:1:\" >&2\n"
+                    f"echo \"{home}/Python.h:12:10: fatal error: pyconfig.h: No such file or directory\" >&2\n"
+                    "exit 1\n")
+    fake.chmod(0o755)
+    monkeypatch.setenv("CC", str(fake))
+    f = probe_c_compiler()
+    assert f.value is None and f.note.startswith("fakecc could not build")
+    assert "/" not in f.note and "someone" not in f.note and str(tmp_path) not in f.note
+    assert "Python.h:12:10: fatal error: pyconfig.h" in f.note and "probe.c:1" in f.note      # the diagnosis survives
+
+
 def test_no_compiler_at_all_is_refused(monkeypatch):
     monkeypatch.delenv("CC", raising=False)
     monkeypatch.setattr(shutil, "which", lambda name: None)

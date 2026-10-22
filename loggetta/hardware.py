@@ -536,29 +536,43 @@ def probe(*, gpu_memory: dict | None = None, ram_available: int | None = None,
 
 
 def probe_c_compiler(timeout_s: float = 60.0) -> Fact:
-    """The C compiler Triton would pick (triton/runtime/build.py: ``CC``, else gcc, else clang), tested the way Triton uses
-    it: compile and link a shared object against this Python's ``Python.h``. A name on PATH is not enough, because a box
-    can have gcc but no Python headers, or a ``cc`` that cannot link. Only the compiler's NAME is recorded: a full ``CC``
-    path could carry a home directory into plans and receipts."""
+    """The C compiler Triton would pick (triton/runtime/build.py: ``CC`` if set, even empty, else gcc, else clang), tested
+    the way Triton uses it: build a shared object against this Python's ``Python.h``, found through the same sysconfig
+    scheme (``posix_local`` read as ``posix_prefix``). A name on PATH is not enough: a box can have gcc but no Python
+    headers, or a ``cc`` that cannot link. Not covered: Triton also links its helper with ``-lcuda``; a box whose libcuda
+    cannot be linked still fails later.
+
+    Nothing recorded carries a path: the compiler is recorded by NAME, and the compiler's own diagnostics keep only the
+    basenames of any absolute paths in them (the temporary file, the include chain, a home directory)."""
+    import re
     import sysconfig
     import tempfile
 
-    cc = os.environ.get("CC") or shutil.which("gcc") or shutil.which("clang")
-    if not cc:
-        return Fact(None, "reported", "no C compiler: CC is unset and neither gcc nor clang is on PATH")
-    name = os.path.basename(cc.split()[0])
-    include = sysconfig.get_paths().get("include") or ""
+    cc = os.environ.get("CC")
+    if cc is None:
+        cc = shutil.which("gcc") or shutil.which("clang")
+        if not cc:
+            return Fact(None, "reported", "no C compiler: CC is unset and neither gcc nor clang is on PATH")
+    if not cc.strip():
+        return Fact(None, "reported", "CC is set but empty, and Triton uses it as set")
+    name = os.path.basename(cc)
+    scheme = sysconfig.get_default_scheme()
+    include = sysconfig.get_paths(scheme="posix_prefix" if scheme == "posix_local" else scheme).get("include") or ""
+
+    def no_paths(text: str) -> str:
+        return re.sub(r"(?<![\w.])/(?:[^\s:'\"()<>,]+/)*([^\s:'\"()<>,/]+)", r"\1", text)
+
     with tempfile.TemporaryDirectory() as d:
         src = os.path.join(d, "probe.c")
         with open(src, "w") as f:
             f.write("#include <Python.h>\nint compiler_probe(void) { return 0; }\n")
-        cmd = cc.split() + [src, "-shared", "-fPIC", "-I", include, "-o", os.path.join(d, "probe.so")]
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s)
+            r = subprocess.run([cc, src, "-shared", "-fPIC", "-I", include, "-o", os.path.join(d, "probe.so")],
+                               capture_output=True, text=True, timeout=timeout_s)
         except (OSError, subprocess.SubprocessError) as e:
             return Fact(None, "reported", f"{name} could not be run: {type(e).__name__}")
     if r.returncode != 0:
-        err = " ".join((r.stderr or r.stdout or "").split())[-300:]
+        err = no_paths(" ".join((r.stderr or r.stdout or "").split()))[-300:]
         return Fact(None, "reported", f"{name} could not build a shared object against Python.h (exit {r.returncode})"
                     + (f": {err}" if err else ""))
     return Fact(name, "reported", "built a shared object against Python.h, as Triton does at startup")
