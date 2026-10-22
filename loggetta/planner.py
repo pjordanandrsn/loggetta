@@ -30,6 +30,48 @@ OBJECTIVES = ("speed", "min_vram", "min_ram")
 MEASURED_STATUSES = ("OK", "SAVED_V1", None)
 
 
+def cite(obs) -> str:
+    """How a plan names a receipt it read: its run id, the loss branch its training forwards took where the receipt
+    counted it (a chunked and a stock loss peak differently, so a reader of a cited peak needs to know which ran), and
+    its status where that matters to a reader (SAVED_V1: the run measured normally, but its adapter manifest is
+    backend-adapter/1, not /2)."""
+    notes = []
+    branch = ((obs.get("engaged") or {}).get("chunked_lm_loss") or {}).get("branch")
+    if branch in ("chunked", "stock", "mixed"):
+        notes.append(f"{branch} LM loss, counted")
+    if obs.get("status") == "SAVED_V1":
+        notes.append("SAVED_V1: its adapter was kept as backend-adapter/1")
+    return f"receipt {obs.get('run_id')}" + (f" ({'; '.join(notes)})" if notes else "")
+
+
+#: the overhead terms the planner charges itself, each known from a receipt or a default (MemoryLine name prefixes)
+OVERHEAD_TERMS = (("CUDA context", "CUDA context"), ("allocator reserve", "allocator reserve"),
+                  ("process baseline", "host baseline"))
+
+
+def evidence_reasons(sel, margin: int) -> list:
+    """Two Why lines a reader of the total needs: which overhead terms rest on this machine's receipts and which are
+    defaults (the lines above name each receipt), and, for a streamed plan, the admission margin kept free above the
+    total, which is what covers the streamed peaks on file that ran above it."""
+    measured, assumed = [], []
+    for prefix, label in OVERHEAD_TERMS:
+        line = next((ln for ln in sel.lines if ln.name.startswith(prefix)), None)
+        if line is not None:
+            (measured if line.basis == "measured" else assumed).append(label)
+    out = []
+    if measured or assumed:
+        out.append("estimate evidence: " + (", ".join(measured) + " measured from receipts on file" if measured else
+                                            "no overhead term measured on this machine yet")
+                   + ("; " + ", ".join(assumed) + (" a default" if len(assumed) == 1 else " defaults") if assumed else "")
+                   + " (each line above names its receipt or default)")
+    if margin:
+        out.append(f"streamed: {sel.device_bytes / GiB:.2f} GiB plan total, and a {margin / GiB:.2f} GiB admission margin "
+                   "kept free above it (max(2.4 GB, 20% of the plan)). Streamed peaks on file have run above the plan "
+                   "total (in-sample: evidence/2026-10-21-insample-plans); the margin is what covers them, so the total "
+                   "alone is not what the process will use")
+    return out
+
+
 def headroom_policy(budget: int) -> int:
     """Device memory left unused for allocator fragmentation and transient spikes: max(512 MiB, 5% of the budget)."""
     return max(HEADROOM_MIN, int(HEADROOM_FRAC * budget))
@@ -91,7 +133,7 @@ def _overheads(hardware, gpu, observations, backends=()):
         if (g.get("name"), g.get("driver")) != key or m.get("cuda_context_bytes") is None \
                 or not licensed(obs, "context"):
             continue
-        src = f"receipt {obs.get('run_id')}"
+        src = cite(obs)
         alloc, reserved = m.get("device_peak_bytes"), m.get("device_reserved_peak_bytes")
         reserve_ok = bool(alloc and reserved and licensed(obs, "reserve"))
         frac = (reserved - alloc) / alloc if reserve_ok else DEFAULT_RESERVE_FRAC
@@ -193,7 +235,7 @@ def reserve_fraction(gpu, setup, observations, default, model=None, kind="train"
         top, how = tier(exact)
         e = max(top, key=frac)
         where = "this GPU, setup and model" if how == "setup" else f"this GPU and model, same {how}"
-        return frac(e), "measured", f"receipt {e.get('run_id')} ({where}; largest of {len(top)}) = {frac(e):.3f}"
+        return frac(e), "measured", f"{cite(e)} ({where}; largest of {len(top)}) = {frac(e):.3f}"
     if model and kind != "serve":
         for there in (o for o in same_setup if mname(o) == model and gname(o) != gpu.name):
             for anchor_here in here:
@@ -201,26 +243,26 @@ def reserve_fraction(gpu, setup, observations, default, model=None, kind="train"
                 if anchor_there and frac(anchor_there) > 0:
                     f = frac(there) * frac(anchor_here) / frac(anchor_there)
                     return f, "heuristic", (f"transferred: {frac(there):.3f} measured for this model on {gname(there)} "
-                                            f"(receipt {there.get('run_id')}) x anchor {mname(anchor_here)} "
+                                            f"({cite(there)}) x anchor {mname(anchor_here)} "
                                             f"{frac(anchor_here):.3f} here / {frac(anchor_there):.3f} there = {f:.3f}")
     if here and kind == "serve":
         h = pick(here)
-        return frac(h), "measured", (f"receipt {h.get('run_id')} (this GPU and setup, model {mname(h)}) = {frac(h):.3f}")
+        return frac(h), "measured", (f"{cite(h)} (this GPU and setup, model {mname(h)}) = {frac(h):.3f}")
     same_gpu = [o for o in usable if gname(o) == gpu.name]
     if same_gpu and kind != "serve":
         worst = max(same_gpu, key=frac)
         f = max(frac(worst), DEFAULT_RESERVE_FRAC)
         return f, "policy", (f"no receipt for this model on this GPU, and training never borrows another model's slack: "
-                             f"a conservative bound, the largest slack measured on this GPU (receipt {worst.get('run_id')} = "
+                             f"a conservative bound, the largest slack measured on this GPU ({cite(worst)} = "
                              f"{frac(worst):.3f}), at least the {DEFAULT_RESERVE_FRAC:.0%} default = {f:.3f}")
     if same_gpu:
         worst = max(same_gpu, key=frac)
-        return frac(worst), "measured", (f"no receipt for this setup; the largest slack measured on this GPU, receipt "
-                                         f"{worst.get('run_id')} = {frac(worst):.3f} (conservative)")
+        return frac(worst), "measured", (f"no receipt for this setup; the largest slack measured on this GPU, "
+                                         f"{cite(worst)} = {frac(worst):.3f} (conservative)")
     if same_setup and kind == "serve":              # training slack varies 8-39% by model and card; serving's did not
         worst = max(same_setup, key=frac)
         return frac(worst), "heuristic", (f"no receipt on this GPU; the largest slack measured for this setup on any GPU, "
-                                          f"receipt {worst.get('run_id')} on {gname(worst)} = {frac(worst):.3f} "
+                                          f"{cite(worst)} on {gname(worst)} = {frac(worst):.3f} "
                                           "(borrowed across cards, conservative)")
     return default[0], default[1], default[2]
 
@@ -318,7 +360,7 @@ def link_bandwidth(gpu, observations):
         g = obs.get("hardware", {}).get("gpu", {})
         v = obs.get("measured", {}).get("link_h2d_gbps")
         if v and g.get("name") == gpu.name:
-            return float(v), "measured", f"pinned host-to-device copy, receipt {obs.get('run_id')}"
+            return float(v), "measured", f"pinned host-to-device copy, {cite(obs)}"
     gen, width = gpu.pcie_gen_max.value, gpu.pcie_width_max.value
     if gen in PCIE_LANE_GBPS and width:
         return PCIE_LANE_GBPS[gen] * width, "inferred", f"theoretical PCIe gen{gen} x{width} ceiling"
@@ -683,7 +725,7 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
             obs = _observed(observations, topology.model, setup, workload, gpu)
             if obs:
                 note += (f"; measured before: device peak {obs['measured']['device_peak_bytes'] / GiB:.2f} GiB "
-                         f"(receipt {obs.get('run_id')})")
+                         f"({cite(obs)})")
             # the planner charges the context, allocator reserve and process baseline itself: drop the backend's note
             unmodelled = tuple(u for u in unmodelled if not u.startswith("CUDA context"))
             cands.append(Candidate(backend=b.NAME, setup=setup, lines=lines, device_bytes=dev, host_bytes=host,
@@ -722,6 +764,7 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
     b = next(x for x in usable if x.NAME == sel.backend)
     kw = {"topology": topology} if "topology" in inspect.signature(b.explain).parameters else {}
     reasons += b.explain(sel, feasible, infeasible, budget, st, constraints, workload, **kw)
+    reasons += evidence_reasons(sel, getattr(b, "minimum_headroom", lambda *a: 0)(sel.setup, sel.device_bytes))
     perf = getattr(b, "performance", lambda *a: None)(topology, sel.setup, workload, gpu, observations, st) or perf
     warnings += getattr(b, "plan_warnings", lambda *a: [])(sel.setup, gpu)
     warnings += getattr(b, "scope_warnings", lambda *a: [])(topology, sel.setup, workload)
