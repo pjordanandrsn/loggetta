@@ -55,13 +55,31 @@ step() {
 finish() {
   local code=$1 reason=${2:-}
   "$PYTHON" - "$DIR" "$code" "$reason" "$T0" "${TAG:-}" "$MODEL" "$REVISION" "$STEPS" "$SEQ" "$PACKAGE_SPEC" <<'PY'
-import json, os, platform, subprocess, sys, time
+import json, os, platform, re, subprocess, sys, time
+from urllib.parse import urlsplit, urlunsplit
 
 d, code, reason, t0, tag, model, rev, steps, seq, spec = sys.argv[1:]
+# a URL or VCS spec ("git+https://...", "name @ https://...") is recorded as a URL, never as "local", and never with
+# credentials: the user and password, the query and the fragment are dropped. The path is KEPT: a remote path
+# (host/org/repo@ref) is the source the user chose and is needed to reproduce the run, while a local path only leaks
+# the machine's layout. A file URL is a local path like any other
+url = re.match(r"^(?:(?P<name>[A-Za-z0-9._-]+)\s*@\s*)?(?P<url>[A-Za-z][A-Za-z0-9+.-]*://\S*)$", spec)
+if url:
+    scheme = url["url"].split("://", 1)[0].lower()
+    try:                            # urlsplit itself raises on a malformed host ("[fe80::1/x"), .port on a bad port
+        u = urlsplit(url["url"])
+        if scheme == "file" or scheme.endswith("+file"):
+            spec = "local: " + os.path.basename(u.path.rstrip("/"))
+        else:
+            host = u.hostname or ""
+            netloc = (f"[{host}]" if ":" in host else host) + (f":{u.port}" if u.port else "")
+            spec = (url["name"] + " @ " if url["name"] else "") + urlunsplit((u.scheme, netloc, u.path, "", ""))
+    except ValueError:              # keep only what cannot carry a credential
+        spec = f"{scheme}: (unparsed URL)"
 # a local wheel or directory is recorded by its name only: users share this file, and an absolute path would carry
 # their home directory and username with it. pip's rule for "is a path": a separator, a leading ".", or an existing
 # file; a bare name ("loggetta") is a requirement even where a directory of that name exists
-if "/" in spec or spec.startswith(".") or os.path.isfile(spec):
+elif "/" in spec or spec.startswith(".") or os.path.isfile(spec):
     spec = "local: " + os.path.basename(spec.rstrip("/"))
 # a local model DIRECTORY likewise: an absolute, "."- or "~"-relative path, or an existing directory. A Hub id
 # ("org/name") has a separator too, so the separator alone does not make it local
