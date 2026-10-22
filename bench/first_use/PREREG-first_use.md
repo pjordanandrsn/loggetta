@@ -54,9 +54,12 @@ paths. Both this file and the README state plainly that a driver below 525 is **
 - Three rented boxes, each pinned to a machine by `fu_screen.py`: the band's cheapest passing class among RTX A4000,
   4090 and 5090 (the classes the launch policy allows), stable on 6 of 6 machine-filtered reads, with at least 500 Mbps
   down and 8 effective CPU cores.
-- Every box runs the image `pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime`. A container image needs a driver at least
+- Every box runs the image `pytorch/pytorch:2.4.0-cuda12.1-cudnn9-devel`. A container image needs a driver at least
   as new as its CUDA (12.1 runs from driver 525), so one image starts in every band; `first_run.sh` installs its own
-  torch into a fresh environment, so the image's torch is never used.
+  torch into a fresh environment, so the image's torch is never used. It is the DEVEL image because the training
+  kernels are Triton kernels, and Triton builds a helper with a C compiler at first launch: on the runtime image (no
+  gcc) a matched cell refuses by name at the plan instead of training. Both were shown on a 560-driver RTX 4090
+  (explore, not readings): devel trained in 217 s, runtime refused with "no working C compiler".
 - **below** runs `below-default below-matched cpu-torch`, **at** runs `at-default at-matched`, and **current** runs
   `current-default current-matched`.
 - Run ids are `fu-below-N`, `fu-at-N` and `fu-current-N`, with N = 1, plus spares 2 and 3.
