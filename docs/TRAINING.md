@@ -245,6 +245,15 @@ The manifest records the base model and resolved revision when available, exact 
 alpha and adapter precision), dataset record, learning rate, seed, runtime version, tensor shapes/dtypes, and file
 checksums. Model checkpoints addressed by local paths must still be available when the adapter is reloaded.
 
+With an experts4bit-qlora that defines it, the MoE manifest is `backend-adapter/2` (experts4bit-qlora's
+`docs/ADAPTER_PORTABILITY.md`, section 6). It adds what the base was quantized to: the expert absmax form training
+resolved, the attention recipe, the fused q/k/v count, the package versions, the applied LoRA scale and a fingerprint
+of the quantized base (experts always; attention when the adapter trains it). The fingerprint is read where training
+kept the expert stacks, as the plan recorded them (`expert_residency`). `load_adapter` fingerprints the base it
+rebuilds the same way and refuses a mismatch instead of loading the adapter onto another base. With an older
+experts4bit-qlora the manifest stays `backend-adapter/1`, and no fact is filled in from a default. The dense executor
+writes `/1`. `loggetta inspect --adapter DIR` verifies a directory and prints what it records.
+
 For MoE, this is **native experts4bit-qlora adapter data, not a PEFT `save_pretrained` artifact** and not an exact training
 resume checkpoint. Save time is reported separately from measured training-step time. A failed export marks the
 run `SAVE_FAILED`; failed integrity checks do not produce an adapter presented as a successful result.

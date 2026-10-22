@@ -10,7 +10,8 @@ from torch import nn
 from torch.nn import functional as F
 
 from experts4bit_qlora.lora import LoRALinear, trainable_lora_param_ids
-from loggetta.backends.experts4bit_adapters import load_adapter, load_adapter_weights, read_manifest, save_adapter
+from loggetta.backends.experts4bit_adapters import (SCHEMA_V1, load_adapter, load_adapter_weights, read_manifest,
+                                                    save_adapter)
 from loggetta.data import TrainingData, prepare_data
 from loggetta.plan import Workload
 from test_execution import a_plan
@@ -59,7 +60,7 @@ def test_train_real_lora_export_reload_preserves_logits_and_frozen_base(tmp_path
     assert out["status"] == "OK" and frozen_digest(model) == before
     assert out["correctness"]["frozen_expert_digest"]
     path = tmp_path / "adapter"
-    result = save_adapter(model, Tokenizer(), path, plan, data=out["data"], report={"commit": "abc123"}, seed=0)
+    result = save_adapter(model, Tokenizer(), path, plan, data=out["data"], report={"commit": "abc123"}, seed=0, schema=SCHEMA_V1)
     manifest = read_manifest(path)
     assert result["tensor_count"] == 2
     assert set(manifest["tensors"]) == {"projection.lora_A", "projection.lora_B"}
@@ -104,7 +105,7 @@ def make_artifact(tmp_path):
     with torch.no_grad():
         model.projection.lora_B.fill_(0.1)
     path = tmp_path / "adapter"
-    save_adapter(model, Tokenizer(), path, a_plan(), data={}, report={"commit": "pinned-commit"}, seed=3)
+    save_adapter(model, Tokenizer(), path, a_plan(), data={}, report={"commit": "pinned-commit"}, seed=3, schema=SCHEMA_V1)
     return model, path
 
 
@@ -130,7 +131,7 @@ def test_no_overwrite_of_existing_directory(tmp_path):
     model, path = make_artifact(tmp_path)
     original = (path / "adapter.safetensors").read_bytes()
     with pytest.raises(FileExistsError, match="already exists"):
-        save_adapter(model, Tokenizer(), path, a_plan(), data={}, report={}, seed=0)
+        save_adapter(model, Tokenizer(), path, a_plan(), data={}, report={}, seed=0, schema=SCHEMA_V1)
     assert (path / "adapter.safetensors").read_bytes() == original
 
 
@@ -158,12 +159,12 @@ def test_unknown_trainables_and_nonfinite_adapters_are_not_exported(tmp_path):
     model = TinyModel()
     model.embedding.weight.requires_grad_(True)
     with pytest.raises(ValueError, match="non-adapter trainables"):
-        save_adapter(model, Tokenizer(), tmp_path / "bad", a_plan(), data={}, report={}, seed=0)
+        save_adapter(model, Tokenizer(), tmp_path / "bad", a_plan(), data={}, report={}, seed=0, schema=SCHEMA_V1)
     model.embedding.weight.requires_grad_(False)
     with torch.no_grad():
         model.projection.lora_B.fill_(float("nan"))
     with pytest.raises(ValueError, match="non-finite"):
-        save_adapter(model, Tokenizer(), tmp_path / "bad", a_plan(), data={}, report={}, seed=0)
+        save_adapter(model, Tokenizer(), tmp_path / "bad", a_plan(), data={}, report={}, seed=0, schema=SCHEMA_V1)
     assert not (tmp_path / "bad").exists()
 
 
@@ -198,7 +199,7 @@ def test_export_covers_fused_expert_and_attention_adapters(tmp_path):
                 p.add_(0.25)
     before = frozen_digest(model)
     path = tmp_path / "mixed-adapter"
-    result = save_adapter(model, Tokenizer(), path, a_plan(), data={}, report={}, seed=0)
+    result = save_adapter(model, Tokenizer(), path, a_plan(), data={}, report={}, seed=0, schema=SCHEMA_V1)
     assert result["tensor_count"] == 6  # Four fused-expert tensors and two attention tensors.
     load_adapter_weights(fresh, path)
     assert frozen_digest(fresh) == before
@@ -211,7 +212,7 @@ def test_failed_export_does_not_leave_a_complete_looking_artifact(tmp_path):
             raise OSError("simulated storage failure")
     target = tmp_path / "failed-export"
     with pytest.raises(OSError, match="storage failure"):
-        save_adapter(TinyModel(), BrokenTokenizer(), target, a_plan(), data={}, report={}, seed=0)
+        save_adapter(TinyModel(), BrokenTokenizer(), target, a_plan(), data={}, report={}, seed=0, schema=SCHEMA_V1)
     assert not target.exists()
 
 

@@ -97,7 +97,8 @@ def link_h2d(n_bytes: int = 256 << 20, reps: int = 5) -> dict:
     return {"link_h2d_gbps": st.median(rates), "link_h2d_probe": f"{n_bytes >> 20} MiB pinned x{reps}, median"}
 
 
-def run(plan, *, seed: int = 0, warmup: int = 2, log=print, adapter_dir: str | None = None) -> dict:
+def run(plan, *, seed: int = 0, warmup: int = 2, log=print, adapter_dir: str | None = None,
+        run_id: str | None = None) -> dict:
     """Prepare user data, build the selected setup, train, then export reusable native adapters.
 
     Data validation/tokenization precedes model loading. Adapter export happens after training measurement, so
@@ -150,8 +151,8 @@ def run(plan, *, seed: int = 0, warmup: int = 2, log=print, adapter_dir: str | N
             else:
                 save_start = time.perf_counter()
                 try:
-                    out["artifacts"]["adapter"] = save_adapter(prep.model, tok, target, plan,
-                                                                data=out["data"], report=prep.report, seed=seed)
+                    out["artifacts"]["adapter"] = save_adapter(prep.model, tok, target, plan, data=out["data"],
+                                                                report=prep.report, seed=seed, run_id=run_id)
                 except (OSError, ValueError, RuntimeError) as exc:
                     out["status"] = "SAVE_FAILED"
                     out["artifact_error"] = f"{type(exc).__name__}: {exc}"
