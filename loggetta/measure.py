@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -141,9 +140,11 @@ def _source_file(name):
     return spec.origin if spec else None
 
 
-#: experts4bit-qlora switches that change a run's numerics or speed: a receipt records their VALUES. Every other set E4B_*
-#: variable is recorded by NAME only (and folded into a hash), since the prefix also carries plumbing whose values
-#: identify a host (E4B_RENT_SSH_HOST, E4B_HOST) or are secrets (E4B_TOKEN). The one list test_renameable reads.
+#: experts4bit-qlora switches that change a run's numerics or speed: the ONLY E4B_* variables whose VALUES a receipt
+#: records or hashes. Every other set E4B_* variable is recorded by NAME only, in the record and in the hash alike, since
+#: the prefix also carries plumbing whose values identify a host (E4B_RENT_SSH_HOST, E4B_HOST), a path or a private
+#: model, or are secrets (E4B_TOKEN), and a hash over a low-entropy value is a guessing oracle. An allowlist, not a
+#: denylist: a knob the hash must separate goes on this list. The one list test_renameable reads.
 E4B_VALUE_KNOBS = (
     "E4B_ABSMAX_DQ", "E4B_CHUNKED_LM_LOSS", "E4B_CHUNKED_EVAL_LOSS", "E4B_TRAIN_FUSE_QKV",
     "E4B_FUSE_T1_GLUE", "E4B_FUSE_T1_GLUE_R2", "E4B_FUSE_ROUTER_EPI",
@@ -154,17 +155,15 @@ E4B_VALUE_KNOBS = (
     "E4B_PAGED_SPEC", "E4B_PAGED_SPEC_K", "E4B_PAGED_TORCH_THREADS", "E4B_PAGED_VRAM_GB",
     "E4B_SERVE_ATTN_INT4", "E4B_SERVE_ATTN_INT8", "E4B_SERVE_EXP_INT4",
 )
-#: names whose VALUE stays out of the hash too: a hash over a low-entropy value (a rental host name) is a guessing oracle
-_E4B_NAME_ONLY = re.compile(r"^E4B_RENT_|(^|_)(TOKEN|SECRET|KEY|PASSWORD|AUTH|HOST|PORT)(_|$)")
 
 
 def e4b_env(environ=None) -> dict:
     """The experts4bit-qlora environment a run starts under, comparable across receipts without carrying identifiers:
-    the sorted NAMES of every set E4B_* variable, the sha256 of the sorted ``name=value`` lines (a host, port, secret
-    or rental name contributes its name only), and the VALUES of the compute switches in ``E4B_VALUE_KNOBS``."""
+    the sorted NAMES of every set E4B_* variable, the sha256 of its sorted lines (``name=value`` for a switch in
+    ``E4B_VALUE_KNOBS``, the bare name for any other), and the VALUES of those switches."""
     env = ({k: v for k, v in os.environ.items() if k.startswith("E4B_")} if environ is None
            else {k: v for k, v in environ.items() if k.startswith("E4B_")})
-    lines = sorted(k if _E4B_NAME_ONLY.search(k) else f"{k}={v}" for k, v in env.items())
+    lines = sorted(f"{k}={v}" if k in E4B_VALUE_KNOBS else k for k, v in env.items())
     return {"names": sorted(env), "sha256": hashlib.sha256("\n".join(lines).encode()).hexdigest(),
             "values": {k: env[k] for k in E4B_VALUE_KNOBS if k in env}}
 

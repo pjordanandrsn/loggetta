@@ -141,8 +141,19 @@ def test_e4b_env_never_carries_a_rental_host_or_a_secret():
 def test_e4b_env_hash_tells_two_compute_environments_apart():
     a, b = _e4b_env(E4B_ABSMAX_DQ="0"), _e4b_env(E4B_ABSMAX_DQ="1")
     assert a["sha256"] != b["sha256"]
-    assert _e4b_env(E4B_K25_PLAN="x")["sha256"] != _e4b_env(E4B_K25_PLAN="y")["sha256"]   # a value not on the list
+    assert _e4b_env(E4B_K25_PLAN="x")["sha256"] != _e4b_env()["sha256"]      # a set name off the list still counts
     assert _e4b_env()["names"] == [] and _e4b_env()["values"] == {}
+
+
+@pytest.mark.parametrize("name", ["E4B_SSH_HOSTNAME", "E4B_ENDPOINT", "E4B_SERVER_URL", "E4B_APIKEY", "E4B_PASSWD",
+                                  "E4B_CREDENTIALS", "E4B_RECEIPTS_PATH", "E4B_MODEL_ID", "E4B_K25_PLAN"])
+def test_e4b_env_takes_a_value_only_from_the_list(name):
+    """An allowlist, not a denylist: a variable off the list moves neither the record nor the hash by its VALUE, whatever
+    its name looks like, so no naming pattern can let a host, path, model id or secret through."""
+    secret = "v-" + name.lower() + "-0123456789"
+    rec, other = _e4b_env(**{name: secret}), _e4b_env(**{name: "something-else"})
+    assert secret not in json.dumps(rec) and rec["names"] == [name] and rec["values"] == {}
+    assert rec["sha256"] == other["sha256"]
 
 
 def test_provenance_records_the_e4b_env(monkeypatch):
