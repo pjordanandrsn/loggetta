@@ -32,7 +32,11 @@ def test_schemas_are_generic():
 
 
 def test_no_environment_variable_is_read():
-    # configuration is typed objects and CLI flags; an env var would be a second, renaming-hostile surface
+    # configuration is typed objects and CLI flags; an env var would be a second, renaming-hostile surface. The two
+    # exceptions are variables OTHER tools read, which the probes must read the same way: CUDA_VISIBLE_DEVICES (torch)
+    # and CC (Triton's compiler choice, read so the C-compiler probe tests the compiler Triton will actually use)
     for f in PKG.rglob("*.py"):
         text = f.read_text()
-        assert "os.environ" not in text.replace('os.environ.get("CUDA_VISIBLE_DEVICES")', ""), f
+        for allowed in ('os.environ.get("CUDA_VISIBLE_DEVICES")', 'os.environ.get("CC")'):
+            text = text.replace(allowed, "")
+        assert "os.environ" not in text, f

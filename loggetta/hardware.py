@@ -20,7 +20,7 @@ import platform
 import shutil
 import subprocess
 import sys
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 
 GiB = 1 << 30
 
@@ -70,6 +70,11 @@ class Host:
     #: else MemAvailable. ``free``/psutil report the host, which a container cannot have.
     memory_available: Fact
     memory_limit: Fact
+    #: the C compiler Triton would use, checked the way Triton uses it (a shared object built against Python.h): its
+    #: name when that works, None with the reason when it does not. Triton compiles a helper at startup, and the training
+    #: and serving kernels are Triton kernels. "unknown" (not probed: no NVIDIA GPU, or a profile saved before this
+    #: field) never refuses.
+    c_compiler: Fact = field(default_factory=lambda: Fact(None, "unknown", "not probed"))
 
 
 @dataclass(frozen=True)
@@ -522,9 +527,54 @@ def probe(*, gpu_memory: dict | None = None, ram_available: int | None = None,
     host = _probe_host()
     if ram_available is not None:
         host = replace(host, memory_available=Fact(int(ram_available), "user", "caller-supplied"))
-    t = probe_torch() if torch and any(g.vendor == "nvidia" for g in gpus) else None
+    nvidia = any(g.vendor == "nvidia" for g in gpus)
+    t = probe_torch() if torch and nvidia else None
+    if nvidia:
+        host = replace(host, c_compiler=probe_c_compiler())
     return HardwareProfile(gpus=tuple(gpus), host=host, platform=f"{platform.system()} {platform.machine()}",
                            notes=tuple(notes), torch=t)
+
+
+def probe_c_compiler(timeout_s: float = 60.0) -> Fact:
+    """The C compiler Triton would pick (triton/runtime/build.py: ``CC``, else gcc, else clang), tested the way Triton uses
+    it: compile and link a shared object against this Python's ``Python.h``. A name on PATH is not enough, because a box
+    can have gcc but no Python headers, or a ``cc`` that cannot link. Only the compiler's NAME is recorded: a full ``CC``
+    path could carry a home directory into plans and receipts."""
+    import sysconfig
+    import tempfile
+
+    cc = os.environ.get("CC") or shutil.which("gcc") or shutil.which("clang")
+    if not cc:
+        return Fact(None, "reported", "no C compiler: CC is unset and neither gcc nor clang is on PATH")
+    name = os.path.basename(cc.split()[0])
+    include = sysconfig.get_paths().get("include") or ""
+    with tempfile.TemporaryDirectory() as d:
+        src = os.path.join(d, "probe.c")
+        with open(src, "w") as f:
+            f.write("#include <Python.h>\nint compiler_probe(void) { return 0; }\n")
+        cmd = cc.split() + [src, "-shared", "-fPIC", "-I", include, "-o", os.path.join(d, "probe.so")]
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s)
+        except (OSError, subprocess.SubprocessError) as e:
+            return Fact(None, "reported", f"{name} could not be run: {type(e).__name__}")
+    if r.returncode != 0:
+        err = " ".join((r.stderr or r.stdout or "").split())[-300:]
+        return Fact(None, "reported", f"{name} could not build a shared object against Python.h (exit {r.returncode})"
+                    + (f": {err}" if err else ""))
+    return Fact(name, "reported", "built a shared object against Python.h, as Triton does at startup")
+
+
+def c_compiler_problem(host: Host, gpu) -> tuple[str, list] | None:
+    """``(reason, remedies)`` when this machine definitely cannot build what Triton compiles at startup, else None. Only a
+    definite answer from this machine refuses; "unknown" never does."""
+    f = getattr(host, "c_compiler", None)
+    if gpu is None or gpu.vendor != "nvidia" or f is None or f.source != "reported" or f.value is not None:
+        return None
+    return (f"no working C compiler: {f.note}. The training and serving kernels are Triton kernels, and Triton "
+            "compiles a small helper against Python.h the first time it runs, so the run would fail after the download",
+            ["install a C compiler and this Python's headers, e.g. apt-get install build-essential python3-dev (or "
+             "the python3.X-dev matching this interpreter), then plan again",
+             "or set CC to a compiler that can build a shared object against Python.h"])
 
 
 def describe(hw: HardwareProfile) -> str:
@@ -568,5 +618,10 @@ def describe(hw: HardwareProfile) -> str:
     lines.append(f"  CPU: {h.cpu_model.value}; {h.cpus.value:g} usable [{h.cpus.note}]")
     lines.append(f"  RAM: {gb(h.memory_available)} available to this process [{h.memory_available.source}: "
                  f"{h.memory_available.note}]; limit {gb(h.memory_limit)}; host total {gb(h.memory_total)}")
+    cc = getattr(h, "c_compiler", None)
+    if cc is not None and cc.source == "reported":
+        lines.append(f"  C compiler (Triton builds a helper with it): {cc.value} [{cc.note}]" if cc.value else
+                     f"  C compiler: NONE WORKING [{cc.note}]; a CUDA plan is refused here until one can build "
+                     "against Python.h (e.g. apt-get install build-essential python3-dev)")
     lines += [f"  note: {n}" for n in hw.notes]
     return "\n".join(lines)
