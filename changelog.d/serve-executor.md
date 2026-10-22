@@ -7,10 +7,11 @@
 - It is a development executor until one GPU smoke proves it, so it runs only with `--allow-development-executor`.
 - It refuses by name, before anything loads, when the arena or the calibration file is missing, or when the request
   shape does not fit the plan's context. It never bakes an arena; that stays an explicit step.
-- It also refuses by name when this environment sets a serving switch that the plan does not (`E4B_PAGED_*`,
-  `E4B_SERVE_*`, or an experts4bit-qlora lever such as an adapter or an int4 artifact directory). The plan's settings
-  are merged into the process environment, so such a switch would change the run while the receipt describes the
-  plan. The refusal names the switch and never prints its value.
+- It also refuses by name when this environment sets any backend switch (`E4B_*`, `GNF4_*`) that the plan does not.
+  This is denied by default, because the backends route kernels on switches no list could keep up with. The plan's
+  settings are merged into the process environment, so such a switch would change the run while the receipt describes
+  the plan. Only plumbing the engine build never reads may be inherited: the HTTP server's `E4B_TOKEN`, `E4B_HOST` and
+  `E4B_PORT`, and the rental launcher's `E4B_RENT_*`. The refusal names the switch and never prints its value.
 - Path-valued entries in the engine's own report (an adapter's path, a lever's artifact directory) are recorded by name
   only.
 - The receipt names the arena by base name and the sha256 of its first MiB, and the calibration file by base name and

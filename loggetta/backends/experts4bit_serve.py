@@ -136,19 +136,26 @@ def _name_only(value):
     return value
 
 
-def inherited_switches(env: dict, levers=None) -> list:
-    """The names of serving switches set in this process but not by the plan: ``measure_serve`` MERGES the plan's
-    environment into the process's, so an inherited ``E4B_PAGED_*`` (an adapter), ``E4B_SERVE_*`` or experts4bit-qlora
-    lever (``serve_paged.LEVER_ENV``) would change the run while the receipt describes the plan. Names only, never values."""
-    from ..measure import e4b_env
+#: E4B_* variables a serve run may inherit, each with why the engine build never reads it. Everything else is DENIED by
+#: default: experts4bit-qlora and grouped-nf4-gemm route kernels on switches no list here could keep up with
+#: (E4B_NF4_T1_DEVICE_GROUPING, E4B_K25_PLAN, GNF4_*), and a receipt cannot tell their settings apart.
+SERVE_PLUMBING = {
+    "E4B_TOKEN": "the HTTP server's bearer token; measure_serve builds the engine, never the server",
+    "E4B_HOST": "the HTTP server's bind address; measure_serve builds the engine, never the server",
+    "E4B_PORT": "the HTTP server's port; measure_serve builds the engine, never the server",
+}
+#: prefixes of the same kind: the rental launcher's ssh settings, which experts4bit-qlora never reads
+SERVE_PLUMBING_PREFIXES = ("E4B_RENT_",)
 
-    if levers is None:
-        try:
-            from experts4bit_qlora.serve_paged import LEVER_ENV as levers
-        except ImportError:
-            levers = ()
-    return sorted(n for n in e4b_env()["names"]
-                  if n not in env and (n.startswith(("E4B_PAGED_", "E4B_SERVE_")) or n in levers))
+
+def inherited_switches(env: dict) -> list:
+    """The names of backend switches (E4B_*, GNF4_*) set in this process but not by the plan, plumbing aside:
+    ``measure_serve`` MERGES the plan's environment into the process's, so any of them would be live for the run while
+    the receipt describes the plan. Names only, never values."""
+    from ..measure import backend_env_names
+
+    return [n for n in backend_env_names()
+            if n not in env and n not in SERVE_PLUMBING and not n.startswith(SERVE_PLUMBING_PREFIXES)]
 
 
 def check_inputs(plan, arena, calib, prompt_tokens: int, new_tokens: int) -> None:
@@ -182,7 +189,7 @@ def run(plan, *, seed, log, adapter_dir, run_id, arena=None, calib=None, prompt_
     env = serve_env(plan.selected.setup, plan.model["model"], arena, calib)
     stray = inherited_switches(env)
     if stray:
-        raise PlanNotExecutable("serving switches set in this environment but not by the plan would change the run, "
+        raise PlanNotExecutable("backend switches set in this environment but not by the plan would change the run, "
                                 f"while the receipt describes the plan: {', '.join(stray)}. Unset them, or plan with them")
     run_dir = Path(adapter_dir).parent
     os.makedirs(run_dir, exist_ok=True)

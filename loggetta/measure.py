@@ -168,6 +168,11 @@ def e4b_env(environ=None) -> dict:
             "values": {k: env[k] for k in E4B_VALUE_KNOBS if k in env}}
 
 
+def backend_env_names() -> list:
+    """The sorted NAMES (never values) of every set E4B_* or GNF4_* variable: the two backends' switches."""
+    return sorted(k for k in os.environ if k.startswith(("E4B_", "GNF4_")))
+
+
 def provenance(modules=("experts4bit_qlora", "nf4_grouped", __package__.split(".")[0])) -> dict:
     """Commits, versions and argv. Call it at PROCESS START, before the measured code is imported: a commit read later
     can name code that changed on disk after the process loaded it. :func:`changed_since` checks for that."""

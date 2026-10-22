@@ -288,10 +288,12 @@ def test_the_cli_hands_a_serve_plans_inputs_to_execute(monkeypatch, tmp_path):
 
 
 
-@pytest.mark.parametrize("name", ["E4B_PAGED_ADAPTER", "E4B_PAGED_GRAPHS", "E4B_SERVE_ATTN_INT4"])
-def test_an_inherited_serving_switch_refuses_the_run_by_name(stub_env, monkeypatch, tmp_path, name):
+@pytest.mark.parametrize("name", ["E4B_PAGED_ADAPTER", "E4B_PAGED_GRAPHS", "E4B_SERVE_ATTN_INT4",
+                                  "E4B_NF4_T1_DEVICE_GROUPING", "E4B_K25_PLAN", "E4B_ABSMAX_DQ", "GNF4_ANY_SWITCH"])
+def test_an_inherited_backend_switch_refuses_the_run_by_name(stub_env, monkeypatch, tmp_path, name):
     """The plan's environment is MERGED into the process's, so a switch the shell set and the plan did not would be
-    live for the run while the receipt describes the plan. Refused by name, its value never printed."""
+    live for the run while the receipt describes the plan. Denied by default (route switches outside any prefix, and
+    every GNF4_*, included), refused by name, its value never printed."""
     arena, calib = _serve_files(tmp_path)
     monkeypatch.setenv(name, str(tmp_path / "secret-value"))
     with pytest.raises(PlanNotExecutable, match=name) as e:
@@ -300,21 +302,23 @@ def test_an_inherited_serving_switch_refuses_the_run_by_name(stub_env, monkeypat
     assert "secret-value" not in str(e.value)
 
 
-def test_unrelated_e4b_variables_do_not_block_a_serve_run(stub_env, monkeypatch, tmp_path):
+def test_plumbing_variables_do_not_block_a_serve_run(stub_env, monkeypatch, tmp_path):
     arena, calib = _serve_files(tmp_path)
-    for k, v in {"E4B_RENT_SSH_HOST": "h", "E4B_TOKEN": "t", "E4B_ABSMAX_DQ": "0"}.items():
+    for k, v in {"E4B_RENT_SSH_HOST": "h", "E4B_RENT_SSH_PORT": "1", "E4B_TOKEN": "t", "E4B_HOST": "x",
+                 "E4B_PORT": "8778", "UNRELATED_VAR": "y"}.items():
         monkeypatch.setenv(k, v)
     out = stub_env.run(a_serve_plan(), seed=0, log=print, adapter_dir=str(tmp_path / "r" / "adapter"), run_id="x",
                        arena=arena, calib=calib, engine=lambda env, **kw: {"measured": {}, "requests": {}})
     assert out["status"] == "OK"
 
 
-def test_an_inherited_lever_outside_the_prefixes_is_named(monkeypatch):
+def test_a_switch_the_plan_sets_is_not_inherited(monkeypatch):
     from loggetta.backends.experts4bit_serve import inherited_switches
 
     monkeypatch.setenv("E4B_INT4_ARTIFACT_DIR", "/srv/artifacts")
-    assert inherited_switches({}, levers=("E4B_INT4_ARTIFACT_DIR",)) == ["E4B_INT4_ARTIFACT_DIR"]
-    assert inherited_switches({"E4B_INT4_ARTIFACT_DIR": "x"}, levers=("E4B_INT4_ARTIFACT_DIR",)) == []   # the plan sets it
+    monkeypatch.setenv("GNF4_X", "1")
+    assert inherited_switches({}) == ["E4B_INT4_ARTIFACT_DIR", "GNF4_X"]
+    assert inherited_switches({"E4B_INT4_ARTIFACT_DIR": "x", "GNF4_X": "1"}) == []      # the plan sets them
 
 
 def test_the_engines_path_valued_report_is_named_without_its_path(stub_env, tmp_path):

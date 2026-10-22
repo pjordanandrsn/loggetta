@@ -45,6 +45,8 @@ def test_no_environment_variable_is_read():
                         '{k: v for k, v in os.environ.items() if k.startswith("E4B_")}',
                         # experts4bit_serve.measure_serve: a WRITE, handing a serve plan's settings to experts4bit-qlora,
                         # whose PagedServeConfig.from_env reads only the process environment
-                        'os.environ.update(env)'):
+                        'os.environ.update(env)',
+                        # measure.backend_env_names: NAMES only, so the serve executor can refuse inherited switches
+                        'sorted(k for k in os.environ if k.startswith(("E4B_", "GNF4_")))'):
             text = text.replace(allowed, "")
         assert "os.environ" not in text, f
