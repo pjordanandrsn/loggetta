@@ -39,6 +39,9 @@ def test_no_environment_variable_is_read():
     for f in PKG.rglob("*.py"):
         text = f.read_text()
         for allowed in ('os.environ.get("CUDA_VISIBLE_DEVICES")', 'os.environ.get("CC")',
-                        'os.environ.get("PYTORCH_CUDA_ALLOC_CONF")'):
+                        'os.environ.get("PYTORCH_CUDA_ALLOC_CONF")',
+                        # measure.e4b_env: experts4bit-qlora's switches, recorded only. The prefix scan yields NAMES; a
+                        # VALUE is kept only for measure.E4B_VALUE_KNOBS (test_e4b_env_* in test_execution.py hold that)
+                        '{k: v for k, v in os.environ.items() if k.startswith("E4B_")}'):
             text = text.replace(allowed, "")
         assert "os.environ" not in text, f
