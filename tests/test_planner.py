@@ -159,8 +159,8 @@ def test_serving_plans_the_paged_server_with_its_kv_pool(topo):
     again = ExecutionPlan.from_dict(json.loads(p.to_json()))
     assert again.to_json() == p.to_json() == _serve(topo, 4096, 8, cap=(12, 0)).to_json()
     from loggetta.execution import PlanNotExecutable, execute
-    with pytest.raises(PlanNotExecutable, match="planned only"):
-        execute(p)
+    with pytest.raises(PlanNotExecutable, match="development executor pending its GPU proof"):
+        execute(p, hardware=hw(cap=(12, 0)))          # on the card it was made for: refused until its GPU proof
 
 
 def test_serving_too_much_kv_is_refused_with_a_context_and_a_concurrency_that_fit(topo):

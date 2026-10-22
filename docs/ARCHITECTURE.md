@@ -163,7 +163,10 @@ ServeSetup.to_env() -> {"E4B_PAGED_*": str}                                    #
 - `BUDGET_FIELDS`: per workload kind, the setup fields the planner sizes as budgets (serve: `vram_gb`, `dram_gb`,
   `hot_rows`), which reserve matching treats as the same workload shape;
 - the handoff: `executor(kind)` returns the function that runs a feasible plan of that workload kind, or `None` when
-  the kind is planned only (serve, today); `run_tag(setup)` names the setup in a receipt's run id.
+  the backend does not execute the kind; `planned_only_reason(kind)` says why a kind does not run (or not yet:
+  experts4bit's serve executor, `experts4bit_serve.run`, is a development executor until its GPU proof); `run_tag(setup)`
+  names the setup in a receipt's run id. Inputs beyond the plan (a serve run's arena and calibration file) reach the
+  executor through `execute(..., inputs=...)`.
 
 A second backend implements the same functions; generalize into a protocol only then.
 `tests/test_planner_second_backend.py` is such a backend in pure Python (its own topology type and setup fields): the

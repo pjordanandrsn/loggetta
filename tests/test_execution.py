@@ -72,7 +72,7 @@ def test_execute_hands_the_selected_setup_to_its_backend_and_writes_the_receipt(
 
 @pytest.mark.parametrize("plan_kw, here, match", [
     ({"status": "refused"}, hw(), "refused plan"),
-    ({"kind": "serve"}, hw(), "planned only"),
+    ({"kind": "serve"}, hw(), "serve execution is a development executor"),   # no executor: the backend says why
     ({}, hw(name="Other GPU"), "plan again on this machine"),          # its receipt would name the wrong card
     ({"uuid": "GPU-aaa"}, hw(uuid="GPU-bbb"), "plan again on this machine"),  # same model of card, another card
     ({}, hw(gpus=0), "no GPU"),
@@ -164,3 +164,170 @@ def test_provenance_records_the_e4b_env(monkeypatch):
     p = provenance(modules=())
     assert p["e4b_env"]["values"].get("E4B_ABSMAX_DQ") == "0" and "E4B_RENT_SSH_HOST" in p["e4b_env"]["names"]
     assert "ssh7.rental-host.invalid" not in json.dumps(p)
+
+
+
+# ---- the serve executor (experts4bit_serve): its engine is a stand-in here, so no GPU and no backend package
+
+SERVE_SETUP = {"placement": "all-vram", "graphs": False, "max_seqs": 1, "max_tokens_per_seq": 4096}
+
+
+def a_serve_plan(allow=True, concurrency=1, model="org/Tiny-MoE"):
+    from dataclasses import replace
+
+    p = a_plan()
+    sel = replace(p.selected, setup=SERVE_SETUP)
+    return replace(p, selected=sel, model={"model": model},
+                   workload=Workload(kind="serve", context_len=4096, concurrency=concurrency),
+                   constraints=Constraints(allow_development_executor=allow))
+
+
+def _serve_files(tmp_path):
+    arena, calib = tmp_path / "olmoe.nf4", tmp_path / "calib.json"
+    arena.write_bytes(b"\x01" * 4096)
+    calib.write_text("{}")
+    return str(arena), str(calib)
+
+
+@pytest.fixture
+def stub_env(monkeypatch):
+    from loggetta.backends import experts4bit_serve
+
+    monkeypatch.setattr(experts4bit_serve, "serve_env", lambda setup, model, arena, calib: {
+        "E4B_PAGED_PLACEMENT": setup["placement"], "E4B_PAGED_MODEL": model, "E4B_PAGED_ARENA": arena,
+        "E4B_PAGED_CALIB": calib})
+    return experts4bit_serve
+
+
+def test_a_serve_plan_runs_through_the_engine_and_its_receipt_carries_no_path(stub_env, monkeypatch, tmp_path):
+    arena, calib = _serve_files(tmp_path)
+    seen = {}
+
+    def engine(env, *, concurrency, context_len, prompt_tokens, new_tokens, seed, trace_path, log):
+        seen.update(env=env, concurrency=concurrency, prompt_tokens=prompt_tokens, trace_path=trace_path)
+        return {"measured": {"device_peak_bytes": 3 * GiB + GiB // 8, "driver_process_peak_bytes": 4 * GiB,
+                             "decode_step_ms_b1": 21.5, "tokens_per_s": 46.5},
+                "info": {"moe_layers": 16}, "placement": None,
+                "requests": {"count": concurrency, "prompt_tokens": prompt_tokens, "new_tokens": new_tokens}}
+
+    real = stub_env.run
+    monkeypatch.setattr(experts4bit, "executor", lambda kind: (lambda pl, **kw: real(pl, engine=engine, **kw)))
+    r = execute(a_serve_plan(), out_dir=str(tmp_path / "receipts"), hardware=hw(), prov={"sources": {}},
+                inputs={"arena": arena, "calib": calib})
+    assert r["status"] == "OK" and r["setup"] == SERVE_SETUP
+    assert "-serve-all-vram-c4096x1-" in r["run_id"]                       # a serve run id names its context x concurrency
+    assert seen["env"]["E4B_PAGED_ARENA"] == arena and seen["concurrency"] == 1 and seen["prompt_tokens"] == 1024
+    assert seen["trace_path"].endswith("steps.jsonl")                       # one sequence: the decode step is traced
+    assert r["measured"]["decode_step_ms_b1"] == 21.5
+    assert r["data"]["arena"] == "olmoe.nf4" and len(r["data"]["arena_head_sha256"]) == 64
+    assert "E4B_PAGED_ARENA" not in r["data"]["server_env"] and r["data"]["server_env"]["E4B_PAGED_PLACEMENT"] == "all-vram"
+    assert str(tmp_path) not in json.dumps(r)                               # no path reaches a shared receipt
+    assert "serving" in r["comparison"]["device_allocator"]["what"]
+    assert r["comparison"]["device_driver"]["residual"] == 4 * GiB - (3 * GiB + GiB // 2 + GiB // 4)
+
+
+@pytest.mark.parametrize("local, recorded", [
+    (False, "org/Tiny-MoE"),                               # a Hub id: recorded as given
+    (True, "local: olmoe-local"),                          # a local model directory: its name only, never its path
+])
+def test_a_serve_runs_data_names_the_model_without_a_path(stub_env, tmp_path, local, recorded):
+    """The recorded server environment names the model by the rule first_run.sh applies (#105): a local model
+    directory by its name only. The arena and calibration file appear by name only."""
+    arena, calib = _serve_files(tmp_path)
+    model = str(tmp_path / "models" / "olmoe-local") if local else "org/Tiny-MoE"
+    out = stub_env.run(a_serve_plan(model=model), seed=0, log=print, adapter_dir=str(tmp_path / "r" / "adapter"),
+                       run_id="x", arena=arena, calib=calib,
+                       engine=lambda env, **kw: {"measured": {}, "requests": {"count": 1}})
+    assert out["data"]["server_env"]["E4B_PAGED_MODEL"] == recorded
+    assert str(tmp_path) not in json.dumps(out["data"]) + json.dumps(out["engaged"])
+
+
+def test_a_batched_serve_run_is_not_traced(stub_env, tmp_path):
+    arena, calib = _serve_files(tmp_path)
+    got = {}
+    stub_env.run(a_serve_plan(concurrency=4), seed=0, log=print, adapter_dir=str(tmp_path / "r" / "adapter"), run_id="x",
+                 arena=arena, calib=calib, engine=lambda env, **kw: got.update(kw) or {"measured": {}, "requests": {}})
+    assert got["trace_path"] is None and got["concurrency"] == 4
+
+
+def _never(env, **kw):
+    raise AssertionError("the engine was started for a serve run that must be refused first")
+
+
+@pytest.mark.parametrize("allow, files, inputs, match", [
+    (False, True, {}, "development executor pending its GPU proof"),          # not without the explicit permission
+    (True, False, {"arena": None}, "needs the model's NF4 arena"),             # never baked implicitly
+    (True, False, {"arena": "missing.nf4"}, "no NF4 arena at 'missing.nf4'"),
+    (True, True, {"calib": None}, "calibration file"),
+    (True, True, {"prompt_tokens": 4090, "new_tokens": 64}, "must fit inside the plan's context"),
+])
+def test_a_serve_run_is_refused_by_name_before_anything_loads(stub_env, tmp_path, allow, files, inputs, match):
+    arena, calib = _serve_files(tmp_path) if files else (None, str(tmp_path / "calib.json"))
+    kw = {"arena": arena, "calib": calib, **inputs}
+    with pytest.raises(PlanNotExecutable, match=match):
+        stub_env.run(a_serve_plan(allow=allow), seed=0, log=print, adapter_dir=str(tmp_path / "r" / "adapter"),
+                     run_id="x", engine=_never, **kw)
+
+
+def test_the_cli_hands_a_serve_plans_inputs_to_execute(monkeypatch, tmp_path):
+    from loggetta import execution
+    from loggetta.cli import main
+
+    saved = tmp_path / "plan.json"
+    saved.write_text(a_serve_plan(allow=False).to_json())
+    got = {}
+
+    def fake_execute(p, **kw):
+        got.update(kw, allow=p.constraints.allow_development_executor)
+        raise PlanNotExecutable("stop here")
+
+    monkeypatch.setattr(execution, "execute", fake_execute)
+    assert main(["execute", str(saved), "--arena", "a.nf4", "--calib", "c.json", "--new-tokens", "32",
+                 "--allow-development-executor", "--out", str(tmp_path / "receipts")]) == 2
+    assert got["inputs"] == {"arena": "a.nf4", "calib": "c.json", "new_tokens": 32} and got["allow"] is True
+
+
+
+@pytest.mark.parametrize("name", ["E4B_PAGED_ADAPTER", "E4B_PAGED_GRAPHS", "E4B_SERVE_ATTN_INT4",
+                                  "E4B_NF4_T1_DEVICE_GROUPING", "E4B_K25_PLAN", "E4B_ABSMAX_DQ", "GNF4_ANY_SWITCH"])
+def test_an_inherited_backend_switch_refuses_the_run_by_name(stub_env, monkeypatch, tmp_path, name):
+    """The plan's environment is MERGED into the process's, so a switch the shell set and the plan did not would be
+    live for the run while the receipt describes the plan. Denied by default (route switches outside any prefix, and
+    every GNF4_*, included), refused by name, its value never printed."""
+    arena, calib = _serve_files(tmp_path)
+    monkeypatch.setenv(name, str(tmp_path / "secret-value"))
+    with pytest.raises(PlanNotExecutable, match=name) as e:
+        stub_env.run(a_serve_plan(), seed=0, log=print, adapter_dir=str(tmp_path / "r" / "adapter"), run_id="x",
+                     arena=arena, calib=calib, engine=_never)
+    assert "secret-value" not in str(e.value)
+
+
+def test_plumbing_variables_do_not_block_a_serve_run(stub_env, monkeypatch, tmp_path):
+    arena, calib = _serve_files(tmp_path)
+    for k, v in {"E4B_RENT_SSH_HOST": "h", "E4B_RENT_SSH_PORT": "1", "E4B_TOKEN": "t", "E4B_HOST": "x",
+                 "E4B_PORT": "8778", "UNRELATED_VAR": "y"}.items():
+        monkeypatch.setenv(k, v)
+    out = stub_env.run(a_serve_plan(), seed=0, log=print, adapter_dir=str(tmp_path / "r" / "adapter"), run_id="x",
+                       arena=arena, calib=calib, engine=lambda env, **kw: {"measured": {}, "requests": {}})
+    assert out["status"] == "OK"
+
+
+def test_a_switch_the_plan_sets_is_not_inherited(monkeypatch):
+    from loggetta.backends.experts4bit_serve import inherited_switches
+
+    monkeypatch.setenv("E4B_INT4_ARTIFACT_DIR", "/srv/artifacts")
+    monkeypatch.setenv("GNF4_X", "1")
+    assert inherited_switches({}) == ["E4B_INT4_ARTIFACT_DIR", "GNF4_X"]
+    assert inherited_switches({"E4B_INT4_ARTIFACT_DIR": "x", "GNF4_X": "1"}) == []      # the plan sets them
+
+
+def test_the_engines_path_valued_report_is_named_without_its_path(stub_env, tmp_path):
+    arena, calib = _serve_files(tmp_path)
+    info = {"adapter": {"path": str(tmp_path / "adapters" / "my-adapter"), "adapter_id": "a1"},
+            "levers_env": {"E4B_INT4_ARTIFACT_DIR": str(tmp_path / "art"), "E4B_SERVE_ATTN_INT4": "1"}}
+    out = stub_env.run(a_serve_plan(), seed=0, log=print, adapter_dir=str(tmp_path / "r" / "adapter"), run_id="x",
+                       arena=arena, calib=calib, engine=lambda env, **kw: {"measured": {}, "requests": {}, "info": info})
+    got = out["engaged"]["info"]
+    assert got["adapter"] == {"path": "local: my-adapter", "adapter_id": "a1"}
+    assert got["levers_env"] == {"E4B_INT4_ARTIFACT_DIR": "local: art", "E4B_SERVE_ATTN_INT4": "1"}
+    assert str(tmp_path) not in json.dumps(out["engaged"])

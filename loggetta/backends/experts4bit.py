@@ -261,19 +261,32 @@ def label(setup: dict) -> str:
 
 
 def run_tag(setup: dict) -> str:
-    """The setup's part of a receipt's run id, e.g. ``device-grouped_nf4-attn4``."""
+    """The setup's part of a receipt's run id, e.g. ``device-grouped_nf4-attn4``, or ``serve-all-vram-graphs``."""
+    if "expert_residency" not in setup:               # a serve setup (serve_recipe.ServeSetup's fields)
+        return f"serve-{setup.get('placement', 'all-vram')}{'-graphs' if setup.get('graphs') else ''}"
     return f"{setup['expert_residency']}-{setup['expert_kernel']}{'-attn4' if setup['attn_4bit'] else ''}"
 
 
 def executor(kind: str):
     """What runs a feasible plan of this workload kind through experts4bit-qlora:
-    ``run(plan, *, seed, log, adapter_dir, run_id)``, or
-    None when the kind is planned only (serve: the plan's Why carries the server's environment)."""
+    ``run(plan, *, seed, log, adapter_dir, run_id, **inputs)``, or None for a kind it does not execute. The serve
+    executor is a development executor until its registered GPU proof (see :func:`planned_only_reason`)."""
     if kind == "train":
         from .experts4bit_train import run
 
         return run
+    if kind == "serve":
+        from .experts4bit_serve import run
+
+        return run
     return None
+
+
+def planned_only_reason(kind: str) -> str:
+    if kind == "serve":
+        return ("serve execution is a development executor pending its GPU proof (one rented smoke); use "
+                "--allow-development-executor (Constraints.allow_development_executor=True) to run it")
+    return f"the experts4bit backend does not execute {kind!r} workloads"
 
 
 def single_stream_levers(topology) -> str | None:
