@@ -9,7 +9,8 @@
 #   PACKAGE_SPEC   what to install (default: the PyPI release; a version pin, a wheel or a local path all work)
 #   TORCH_INDEX    a PyTorch index tag (cu130, cu126, ...) instead of the one read from the driver, or "pypi" for the
 #                  torch PyPI resolves by default (the first-use matrix's default-torch cell)
-#   MODEL, REVISION, STEPS, SEQ   the training run (default allenai/OLMoE-1B-7B-0924 at a pinned revision, 10, 512)
+#   MODEL, REVISION, STEPS, SEQ   the training run (default allenai/OLMoE-1B-7B-0924-Instruct at a pinned revision,
+#                                 10, 512)
 #   PYTHON         the interpreter that makes the environment (default python3; 3.10 or later)
 #
 # Every step's exit status and seconds go to DIR/first_run.json. The script exits 0 when the run trained, or with a
@@ -21,7 +22,9 @@ set -uo pipefail
 
 DIR=${1:-./first-run}
 PACKAGE_SPEC=${PACKAGE_SPEC:-loggetta}
-MODEL=${MODEL:-allenai/OLMoE-1B-7B-0924}
+# the revision belongs to the -Instruct repository (checked against the Hub API); the base repository has no such
+# commit, so the pair must move together
+MODEL=${MODEL:-allenai/OLMoE-1B-7B-0924-Instruct}
 REVISION=${REVISION:-7f1c97f440f06ce36705e4f2b843edb5925f4498}
 STEPS=${STEPS:-10}
 SEQ=${SEQ:-512}
