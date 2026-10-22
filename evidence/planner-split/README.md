@@ -65,13 +65,17 @@ RTX 4090"), registered in experts4bit-qlora before any measurement (`bench/ho2/P
 - **UNSEEN:** each family was named before any measurement, and no planner constant was set or tuned after any of these rows. Every
   row used the planner's own plan with no receipts on file, and all eight were COVERED.
 - **Cited by sha256:** each row cites the derived public copy of its Loggetta receipt in experts4bit-qlora at `512614e6`
-  (`bench/ho2/receipts/<box>/public/...`) by `sha256`. It also cites the private store's original by `store_sha256`. The two differ
+  (`bench/ho2/receipts/…/public/…` in experts4bit-qlora) by `sha256`. It also cites the private store's original by `store_sha256`. The two differ
   only in the GPU-UUID values, which the copy sets to `null`.
 - **Device placement only:** every row planned and ran experts on device. Host offload has no held-out row yet.
 - **Loss branch:** each row records it, inferred and not counted: the 1,024-token rows ran the stock loss, the 2,048-token rows the
-  chunked loss under experts4bit-qlora's auto gate. Receipts written from now on count it (#94).
+  chunked loss, both under experts4bit-qlora's auto gate. The basis is each receipt's own plan: at 1,024 tokens it prices the logits
+  held by the caller (0.25 GB LFM2, 0.395 GB ERNIE), and at 2,048 none. The measured peaks fall with it. LFM2's 2,048-token rows sit
+  exactly at the gate (4,096 × 65,536 × 4 = 1 GiB). Receipts written from now on count the branch (#94).
 - **Bands:** four cohorts now have 2 held-out rows, the minimum, so they are eligible for a band. The band itself is L2's; v2 computes
   none. Qwen3-14B / resident / RTX 5090 still has 1 row and stays unmeasured.
+- **One box per cohort:** each cohort's 2 rows come from ONE box and one host draw, at two seq lengths. A band built from them
+  carries no host-to-host variation, so L2 must say so, or require rows from 2 boxes.
 - **Pins:** `pinned_at` moves to experts4bit-qlora `512614e6` and loggetta `9e005d68`. `fills_next` drops the HO2 item it now holds.
 
 v2 is frozen at merge like v1: any change is a new versioned file.

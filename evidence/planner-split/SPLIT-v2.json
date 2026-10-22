@@ -528,7 +528,7 @@
    "seq": 1024,
    "card": "RTX 5090",
    "recipe": "NF4 base, bf16 LoRA r8, micro-batch 2, grad-accum 1, 20 steps; the planner's own plan (no receipts on file)",
-   "loss_branch": "stock (inferred, not counted)",
+   "loss_branch": "stock under the auto gate (inferred, not counted)",
    "cohort": "ERNIE-4.5-21B-A3B-PT / resident / RTX 5090",
    "tag": "UNSEEN",
    "reason": "HO2's registered held-out read (experts4bit-qlora bench/ho2/PREREG-ho2.md, #1969): the family was named before any measurement, and no planner constant was set or tuned after it. The derived copy differs from the store's receipt only in its two GPU-UUID values (null)."
@@ -544,7 +544,7 @@
    "seq": 2048,
    "card": "RTX 5090",
    "recipe": "NF4 base, bf16 LoRA r8, micro-batch 2, grad-accum 1, 20 steps; the planner's own plan (no receipts on file)",
-   "loss_branch": "chunked (inferred, not counted)",
+   "loss_branch": "chunked under the auto gate (inferred, not counted)",
    "cohort": "ERNIE-4.5-21B-A3B-PT / resident / RTX 5090",
    "tag": "UNSEEN",
    "reason": "HO2's registered held-out read (experts4bit-qlora bench/ho2/PREREG-ho2.md, #1969): the family was named before any measurement, and no planner constant was set or tuned after it. The derived copy differs from the store's receipt only in its two GPU-UUID values (null)."
@@ -560,7 +560,7 @@
    "seq": 1024,
    "card": "RTX 5090",
    "recipe": "NF4 base, bf16 LoRA r8, micro-batch 2, grad-accum 1, 20 steps; the planner's own plan (no receipts on file)",
-   "loss_branch": "stock (inferred, not counted)",
+   "loss_branch": "stock under the auto gate (inferred, not counted)",
    "cohort": "LFM2-8B-A1B / resident / RTX 5090",
    "tag": "UNSEEN",
    "reason": "HO2's registered held-out read (experts4bit-qlora bench/ho2/PREREG-ho2.md, #1969): the family was named before any measurement, and no planner constant was set or tuned after it. The derived copy differs from the store's receipt only in its two GPU-UUID values (null)."
@@ -576,7 +576,7 @@
    "seq": 2048,
    "card": "RTX 5090",
    "recipe": "NF4 base, bf16 LoRA r8, micro-batch 2, grad-accum 1, 20 steps; the planner's own plan (no receipts on file)",
-   "loss_branch": "chunked, at the auto gate (inferred, not counted)",
+   "loss_branch": "chunked under the auto gate (inferred, not counted)",
    "cohort": "LFM2-8B-A1B / resident / RTX 5090",
    "tag": "UNSEEN",
    "reason": "HO2's registered held-out read (experts4bit-qlora bench/ho2/PREREG-ho2.md, #1969): the family was named before any measurement, and no planner constant was set or tuned after it. The derived copy differs from the store's receipt only in its two GPU-UUID values (null)."
@@ -592,7 +592,7 @@
    "seq": 1024,
    "card": "RTX 4090",
    "recipe": "NF4 base, bf16 LoRA r8, micro-batch 2, grad-accum 1, 20 steps; the planner's own plan (no receipts on file)",
-   "loss_branch": "stock (inferred, not counted)",
+   "loss_branch": "stock under the auto gate (inferred, not counted)",
    "cohort": "ERNIE-4.5-21B-A3B-PT / resident / RTX 4090",
    "tag": "UNSEEN",
    "reason": "HO2's registered held-out read (experts4bit-qlora bench/ho2/PREREG-ho2.md, #1969): the family was named before any measurement, and no planner constant was set or tuned after it. The derived copy differs from the store's receipt only in its two GPU-UUID values (null)."
@@ -608,7 +608,7 @@
    "seq": 2048,
    "card": "RTX 4090",
    "recipe": "NF4 base, bf16 LoRA r8, micro-batch 2, grad-accum 1, 20 steps; the planner's own plan (no receipts on file)",
-   "loss_branch": "chunked (inferred, not counted)",
+   "loss_branch": "chunked under the auto gate (inferred, not counted)",
    "cohort": "ERNIE-4.5-21B-A3B-PT / resident / RTX 4090",
    "tag": "UNSEEN",
    "reason": "HO2's registered held-out read (experts4bit-qlora bench/ho2/PREREG-ho2.md, #1969): the family was named before any measurement, and no planner constant was set or tuned after it. The derived copy differs from the store's receipt only in its two GPU-UUID values (null)."
@@ -624,7 +624,7 @@
    "seq": 1024,
    "card": "RTX 4090",
    "recipe": "NF4 base, bf16 LoRA r8, micro-batch 2, grad-accum 1, 20 steps; the planner's own plan (no receipts on file)",
-   "loss_branch": "stock (inferred, not counted)",
+   "loss_branch": "stock under the auto gate (inferred, not counted)",
    "cohort": "LFM2-8B-A1B / resident / RTX 4090",
    "tag": "UNSEEN",
    "reason": "HO2's registered held-out read (experts4bit-qlora bench/ho2/PREREG-ho2.md, #1969): the family was named before any measurement, and no planner constant was set or tuned after it. The derived copy differs from the store's receipt only in its two GPU-UUID values (null)."
@@ -640,7 +640,7 @@
    "seq": 2048,
    "card": "RTX 4090",
    "recipe": "NF4 base, bf16 LoRA r8, micro-batch 2, grad-accum 1, 20 steps; the planner's own plan (no receipts on file)",
-   "loss_branch": "chunked, at the auto gate (inferred, not counted)",
+   "loss_branch": "chunked under the auto gate (inferred, not counted)",
    "cohort": "LFM2-8B-A1B / resident / RTX 4090",
    "tag": "UNSEEN",
    "reason": "HO2's registered held-out read (experts4bit-qlora bench/ho2/PREREG-ho2.md, #1969): the family was named before any measurement, and no planner constant was set or tuned after it. The derived copy differs from the store's receipt only in its two GPU-UUID values (null)."
