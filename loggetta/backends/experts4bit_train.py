@@ -210,7 +210,8 @@ def loss_branch(model, before: dict, after: dict | None) -> dict:
         rec["logits_width"] = int(width) if isinstance(width, int) else None
         refused = C.CHUNKED_LM_LOSS_STATS.get("refused")
         if refused:
-            rec["refused"] = dict(refused)
+            # e4b's registry of model classes it refused to patch, for the whole process (not a per-run count)
+            rec["refused_in_process"] = dict(refused)
     except Exception as exc:                          # noqa: BLE001 - metadata about a finished run, never its failure
         rec["error"] = f"{type(exc).__name__}: {exc}"
     return rec
