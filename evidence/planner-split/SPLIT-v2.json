@@ -1,0 +1,677 @@
+{
+ "schema": "loggetta-planner-split/1",
+ "version": 2,
+ "rule": "A row is SEEN if any planner constant (the allocator reserve, the context allowance, an overhead, an estimate term) was set or tuned after looking at it; otherwise UNSEEN. Only UNSEEN rows sit on the held-out side. A family x card cohort with fewer than 2 held-out rows is unmeasured and gets no band.",
+ "pinned_at": {
+  "experts4bit-qlora": "512614e6c698fdc0d5ac724ebdfc2f725553113b",
+  "loggetta": "9e005d68e377c65642f8e026a397b0c70edc19db"
+ },
+ "derivation": [
+  {
+   "id": "2026-10-04-fp1-rtx5090",
+   "repo": "loggetta",
+   "path": "evidence/2026-10-04-fp1-rtx5090",
+   "git_tree": "ad50bfd226cdd6812cb7aa709cd0581b9adaec4e",
+   "kind": "plan/measured receipts",
+   "tag": "SEEN",
+   "reason": "added by the planner change that read it: 1f2d803 FP1's 30B receipt fed into the planner: observations, raw arm receipts, before/after replan, RESULTS section 6",
+   "citation": "loggetta 1f2d803"
+  },
+  {
+   "id": "2026-10-04-p109-rtx5090-serve",
+   "repo": "loggetta",
+   "path": "evidence/2026-10-04-p109-rtx5090-serve",
+   "git_tree": "6391d6a734dd4815cd7f57ffbb8daaf4096085be",
+   "kind": "plan/measured receipts",
+   "tag": "SEEN",
+   "reason": "added by the planner change that read it: e42f320 Serving checked against P109's receipts; serve slack learned from them",
+   "citation": "loggetta e42f320"
+  },
+  {
+   "id": "2026-10-04-rtx-a2000",
+   "repo": "loggetta",
+   "path": "evidence/2026-10-04-rtx-a2000",
+   "git_tree": "8585bbe420ed6da4b7a39f841c454366b958ea5a",
+   "kind": "plan/measured receipts",
+   "tag": "SEEN",
+   "reason": "added by the planner change that read it: 1e0cf4b Evidence: receipts, run logs, hardware profile, family sweep and register validation from 2026-10-04 (RTX A2000)",
+   "citation": "loggetta 1e0cf4b"
+  },
+  {
+   "id": "2026-10-05-a2000-int4-serve",
+   "repo": "loggetta",
+   "path": "evidence/2026-10-05-a2000-int4-serve",
+   "git_tree": "c71900e382a21c487ddb33171d6b3c49300aeb36",
+   "kind": "plan/measured receipts",
+   "tag": "SEEN",
+   "reason": "added by the planner change that read it: c317787 Serve plans take the int4 levers (when fixed); A2000 evidence; serving's own host peak",
+   "citation": "loggetta c317787"
+  },
+  {
+   "id": "2026-10-05-residual-attribution",
+   "repo": "loggetta",
+   "path": "evidence/2026-10-05-residual-attribution",
+   "git_tree": "e1200a5c4f08b87dc049fd13d7be15f2b66cb13a",
+   "kind": "plan/measured receipts",
+   "tag": "SEEN",
+   "reason": "added by the planner change that read it: 62872e7 Residual attribution; two-pass tier fill",
+   "citation": "loggetta 62872e7"
+  },
+  {
+   "id": "2026-10-05-rtx-a2000-serve",
+   "repo": "loggetta",
+   "path": "evidence/2026-10-05-rtx-a2000-serve",
+   "git_tree": "9c010431b50e2036b4f61dcdbf592aab57230deb",
+   "kind": "plan/measured receipts",
+   "tag": "SEEN",
+   "reason": "added by the planner change that read it: 2564036 A planned serve, run and measured on the A2000; decode graphs gated on the device",
+   "citation": "loggetta 2564036"
+  },
+  {
+   "id": "2026-10-05-sv1-rtx5090",
+   "repo": "loggetta",
+   "path": "evidence/2026-10-05-sv1-rtx5090",
+   "git_tree": "b3a9fa9f846fde1da81b0bf6d19691350d7c6cb7",
+   "kind": "plan/measured receipts",
+   "tag": "SEEN",
+   "reason": "added by the planner change that read it: d1540c2 SV1 on a rented RTX 5090: graph pools measured, fed into serve planning",
+   "citation": "loggetta d1540c2"
+  },
+  {
+   "id": "2026-10-05-sv2-rtx5090",
+   "repo": "loggetta",
+   "path": "evidence/2026-10-05-sv2-rtx5090",
+   "git_tree": "c545110457ae368f3f305680ec33146eff1f462c",
+   "kind": "plan/measured receipts",
+   "tag": "SEEN",
+   "reason": "added by the planner change that read it: 13c9170 SV2 on a rented RTX 5090: the int4 levers measured at 30B with decode graphs, fed into serve planning",
+   "citation": "loggetta 13c9170"
+  },
+  {
+   "id": "2026-10-06-a2000-family-serve",
+   "repo": "loggetta",
+   "path": "evidence/2026-10-06-a2000-family-serve",
+   "git_tree": "2376e56af401d9f795ea2950b99dd0ea770eb4bf",
+   "kind": "plan/measured receipts",
+   "tag": "SEEN",
+   "reason": "added by the planner change that read it: 4627207 Three more families served on the A2000: two refused by the server, Granite baked and checked",
+   "citation": "loggetta 4627207"
+  },
+  {
+   "id": "2026-10-06-sv3-rtx5090",
+   "repo": "loggetta",
+   "path": "evidence/2026-10-06-sv3-rtx5090",
+   "git_tree": "80130f4ff9e847b8e84976214db5c34c96b27e72",
+   "kind": "plan/measured receipts",
+   "tag": "SEEN",
+   "reason": "added by the planner change that read it: 641f14d SV3 + four more families: the hybrid state pool to the byte, gpt-oss under-planned until its own receipt",
+   "citation": "loggetta 641f14d"
+  },
+  {
+   "id": "2026-10-06-sv4-rtx4090",
+   "repo": "loggetta",
+   "path": "evidence/2026-10-06-sv4-rtx4090",
+   "git_tree": "cae1c6a47bdeb76fb04c314abb7c7d94e4e17dc7",
+   "kind": "plan/measured receipts",
+   "tag": "SEEN",
+   "reason": "added by the planner change that read it: 35597dd SV4 on a real RTX 4090: 30B serves and tiers held; measured slack moves a 24 GB plan to all-VRAM",
+   "citation": "loggetta 35597dd"
+  },
+  {
+   "id": "2026-10-06-sv5-rtx4090",
+   "repo": "loggetta",
+   "path": "evidence/2026-10-06-sv5-rtx4090",
+   "git_tree": "00a69232d8978314978ee8b5db8fb45fb872e727",
+   "kind": "plan/measured receipts",
+   "tag": "SEEN",
+   "reason": "added by the planner change that read it: 6024451 SV5: the 24 GB all-VRAM plan ran out of memory; the planner learns capacity and lower bounds from failures",
+   "citation": "loggetta 6024451"
+  },
+  {
+   "id": "2026-10-06-sv6-rtx4090",
+   "repo": "loggetta",
+   "path": "evidence/2026-10-06-sv6-rtx4090",
+   "git_tree": "b928ddcdf92455e87c8329184abbbc48d7fb2375",
+   "kind": "plan/measured receipts",
+   "tag": "SEEN",
+   "reason": "added by the planner change that read it: cc0ac9d SV6: the revised 24 GB plan held at 8,000-token prompts; receipts teach only what their registration licenses",
+   "citation": "loggetta cc0ac9d"
+  },
+  {
+   "id": "2026-10-07-a2000-packing-ab",
+   "repo": "loggetta",
+   "path": "evidence/2026-10-07-a2000-packing-ab",
+   "git_tree": "659721b64d75b9be37520cd614f34eb18fa028b9",
+   "kind": "plan/measured receipts",
+   "tag": "SEEN",
+   "reason": "added by the planner change that read it: 878f25b Isolated packing by default for chat and alpaca: each packed example attends only to itself",
+   "citation": "loggetta 878f25b"
+  },
+  {
+   "id": "2026-10-07-dense-plan-sweep",
+   "repo": "loggetta",
+   "path": "evidence/2026-10-07-dense-plan-sweep",
+   "git_tree": "0ae592606307207a69c30f00d2f8d61e97e3eb74",
+   "kind": "plan-only (no measured peak; not a row)",
+   "tag": "n/a",
+   "reason": "plans only",
+   "citation": "loggetta d99ce1b"
+  },
+  {
+   "id": "2026-10-07-reserve-matching",
+   "repo": "loggetta",
+   "path": "evidence/2026-10-07-reserve-matching",
+   "git_tree": "93be8f80aed175c439b01172ee5de783f090e3af",
+   "kind": "plan/measured receipts",
+   "tag": "SEEN",
+   "reason": "added by the planner change that read it: 10cbf9f Reserve matching: every receipt names bulk_kv, same shape before same key, no anchor transfer for serving",
+   "citation": "loggetta 10cbf9f"
+  },
+  {
+   "id": "2026-10-07-sv7-rtx4090",
+   "repo": "loggetta",
+   "path": "evidence/2026-10-07-sv7-rtx4090",
+   "git_tree": "0ed50bf2f1665c7658310644fa8cb03f64828f7b",
+   "kind": "plan/measured receipts",
+   "tag": "SEEN",
+   "reason": "added by the planner change that read it: a30b2c4 SV7: the re-matched 24 GB plan held at 8,000-token prompts; its receipts teach the reserve and context only",
+   "citation": "loggetta a30b2c4"
+  },
+  {
+   "id": "2026-10-08-dense-plan-sweep",
+   "repo": "loggetta",
+   "path": "evidence/2026-10-08-dense-plan-sweep",
+   "git_tree": "2e9eb5d2fe418d199812e6575c9c5bd51d44776a",
+   "kind": "plan-only (no measured peak; not a row)",
+   "tag": "n/a",
+   "reason": "plans only",
+   "citation": "loggetta f1bb988"
+  },
+  {
+   "id": "2026-10-08-moe-plan-vs-driver",
+   "repo": "loggetta",
+   "path": "evidence/2026-10-08-moe-plan-vs-driver",
+   "git_tree": "4883e626543ec3ab3808a20a4689dba23f1dc04f",
+   "kind": "plan/measured receipts",
+   "tag": "SEEN",
+   "reason": "an audit of every receipt with a plan total against its driver peak; #43 then changed the training reserve rule",
+   "citation": "loggetta 9a52da5, b7178ba (#43)"
+  },
+  {
+   "id": "2026-10-09-a2000-absmax-digest-repro",
+   "repo": "loggetta",
+   "path": "evidence/2026-10-09-a2000-absmax-digest-repro",
+   "git_tree": "0e6e71f2effd1a31209864b2b2db7323adf22d2e",
+   "kind": "plan/measured receipts",
+   "tag": "SEEN",
+   "reason": "added by the planner change that read it: e070b3e Digest the frozen expert absmax as stored, compressed or not (#47) (#48)",
+   "citation": "loggetta e070b3e"
+  },
+  {
+   "id": "2026-10-09-a2000-granite-train-residual",
+   "repo": "loggetta",
+   "path": "evidence/2026-10-09-a2000-granite-train-residual",
+   "git_tree": "3ca6d15c964758387f2d9067ade839ce4cfd1bf5",
+   "kind": "plan/measured receipts",
+   "tag": "SEEN",
+   "reason": "added by the planner change that read it: b7178ba Training plans no longer borrow another model's reserve; granite-3.1's gap attributed (#43) (#49)",
+   "citation": "loggetta b7178ba"
+  },
+  {
+   "id": "2026-10-09-a2000-moe-train-residual",
+   "repo": "loggetta",
+   "path": "evidence/2026-10-09-a2000-moe-train-residual",
+   "git_tree": "67c9d29c684d27dc18671493bd2502195dec8541",
+   "kind": "plan/measured receipts",
+   "tag": "SEEN",
+   "reason": "added by the planner change that read it: 50c1553 What is live at the MoE training peak the estimate misses: an A2000 allocator replay (#43) (#44)",
+   "citation": "loggetta 50c1553"
+  },
+  {
+   "id": "2026-10-09-gnf4-moe-backward-in-sample",
+   "repo": "loggetta",
+   "path": "evidence/2026-10-09-gnf4-moe-backward-in-sample",
+   "git_tree": "bed43c39355e8eb048ffee2254429b91e868092b",
+   "kind": "plan/measured receipts",
+   "tag": "SEEN",
+   "reason": "added by the planner change that read it: 8e2f951 Price the grouped_nf4 MoE layer backward in training estimates (#43) (#45)",
+   "citation": "loggetta 8e2f951"
+  },
+  {
+   "id": "2026-10-09-moe-plan-vs-driver-after-gnf4",
+   "repo": "loggetta",
+   "path": "evidence/2026-10-09-moe-plan-vs-driver-after-gnf4",
+   "git_tree": "7fe4b2c74dff5ec09d1d246b8fe12e3c0f0046aa",
+   "kind": "plan/measured receipts",
+   "tag": "SEEN",
+   "reason": "added by the planner change that read it: ac2d898 Release prep 0.4.0: changelog, version, \"New in 0.4.0\" (tag held) (#46)",
+   "citation": "loggetta ac2d898"
+  },
+  {
+   "id": "2026-10-09-moe-plan-vs-driver-no-borrow",
+   "repo": "loggetta",
+   "path": "evidence/2026-10-09-moe-plan-vs-driver-no-borrow",
+   "git_tree": "da90a45d9832d87ccef1ca799c4c72d36ffdd4ac",
+   "kind": "plan/measured receipts",
+   "tag": "SEEN",
+   "reason": "added by the planner change that read it: b7178ba Training plans no longer borrow another model's reserve; granite-3.1's gap attributed (#43) (#49)",
+   "citation": "loggetta b7178ba"
+  },
+  {
+   "id": "2026-10-10-heldout-cards",
+   "repo": "loggetta",
+   "path": "evidence/2026-10-10-heldout-cards",
+   "git_tree": "a25475c63455cbc682387be8e300138f130ddc9f",
+   "kind": "plan/measured receipts",
+   "tag": "SEEN",
+   "reason": "HO1's 45 setups / 219 arms: its README says 'not held out: the estimator's development saw these runs, the defaults date from FP1'",
+   "citation": "loggetta evidence/2026-10-10-heldout-cards/README.md"
+  },
+  {
+   "id": "register-rows",
+   "repo": "loggetta",
+   "path": "bench/validate_register.py",
+   "git_blob": "4e5deb35cc2d329a6eda976d8b0bf5cfe229b0e7",
+   "kind": "6 allocator estimate/measured rows (tp4 RTX 5090 OLMoE x2, Granite, Qwen3-30B; TC3 Qwen3-30B offload on the A2000 and the 4090)",
+   "tag": "SEEN",
+   "reason": "read on 2026-10-04, the day the planner's defaults were set; tagged SEEN conservatively (ruled 2026-10-21)",
+   "citation": "loggetta 1e0cf4b (docs/RESULTS.md section 3)"
+  },
+  {
+   "id": "dq4-5090-2",
+   "repo": "experts4bit-qlora",
+   "path": "bench/dq4/receipts/dq4-5090-2",
+   "git_tree": "bff67234e620bb29c064f344afdec596cc11f0e2",
+   "kind": "DQ4's dense allocator brackets",
+   "tag": "SEEN",
+   "reason": "the dense estimate was itemized and checked against DQ4's measured peaks (loggetta#11); D7 keeps the brackets as a gate",
+   "citation": "loggetta d99ce1b (#11)"
+  },
+  {
+   "id": "dq9-5090-1",
+   "repo": "experts4bit-qlora",
+   "path": "bench/dq9/receipts/dq9-5090-1",
+   "git_tree": "d86f133f68c84567b6b9a0079bb74c3ad6ab9517",
+   "kind": "DQ9's fitting reads (16 across both runs)",
+   "tag": "SEEN",
+   "reason": "the packaged DQ10 policy's reserve/context hypotheses were fitted on them (bench/dq10/dq10_derive.py); opt-in and unlicensed, but planner constants",
+   "citation": "experts4bit-qlora bench/dq10/dq9-source-sha256.json; loggetta 05ee04d (#36)"
+  },
+  {
+   "id": "dq9-5090-2",
+   "repo": "experts4bit-qlora",
+   "path": "bench/dq9/receipts/dq9-5090-2",
+   "git_tree": "b100020c7ff5d010698af00f397494da0eb8c13d",
+   "kind": "DQ9's fitting reads (16 across both runs)",
+   "tag": "SEEN",
+   "reason": "the packaged DQ10 policy's reserve/context hypotheses were fitted on them (bench/dq10/dq10_derive.py); opt-in and unlicensed, but planner constants",
+   "citation": "experts4bit-qlora bench/dq10/dq9-source-sha256.json; loggetta 05ee04d (#36)"
+  },
+  {
+   "id": "tc1-5090-112",
+   "repo": "experts4bit-qlora",
+   "path": "bench/h2h-2026-10-02/tc1/receipts/tc1-5090-112",
+   "git_tree": "cd853fdc0daaf3169b30c2d48df0c7c65476c972",
+   "kind": "TC1 training arms",
+   "tag": "SEEN",
+   "reason": "experts4bit-qlora#1526's estimate terms were fitted or checked on it (#1532, #1649, #1658)",
+   "citation": "experts4bit-qlora c2e47751, 29370aaa, fe0c181b"
+  },
+  {
+   "id": "tc1-5090-114",
+   "repo": "experts4bit-qlora",
+   "path": "bench/h2h-2026-10-02/tc1/receipts/tc1-5090-114",
+   "git_tree": "85b8ca337e74f82ca642e53c199bea3fd8c7bd70",
+   "kind": "TC1 training arms",
+   "tag": "SEEN",
+   "reason": "experts4bit-qlora#1526's estimate terms were fitted or checked on it (#1532, #1649, #1658)",
+   "citation": "experts4bit-qlora c2e47751, 29370aaa, fe0c181b"
+  },
+  {
+   "id": "tc1-5090-147",
+   "repo": "experts4bit-qlora",
+   "path": "bench/p129/receipts/tc1-5090-147",
+   "git_tree": "9cce8e6dc87441da3b2ab2315bbef3278ff5c317",
+   "kind": "TC1 training arms",
+   "tag": "SEEN",
+   "reason": "experts4bit-qlora#1526's estimate terms were fitted or checked on it (#1532, #1649, #1658)",
+   "citation": "experts4bit-qlora c2e47751, 29370aaa, fe0c181b"
+  },
+  {
+   "id": "tc1-5090-150",
+   "repo": "experts4bit-qlora",
+   "path": "bench/p129/receipts/tc1-5090-150",
+   "git_tree": "fcdf73f5935043aec01170adaa94d8efd6006a38",
+   "kind": "TC1 training arms",
+   "tag": "SEEN",
+   "reason": "experts4bit-qlora#1526's estimate terms were fitted or checked on it (#1532, #1649, #1658)",
+   "citation": "experts4bit-qlora c2e47751, 29370aaa, fe0c181b"
+  },
+  {
+   "id": "tc1-5090-148",
+   "repo": "private receipt store",
+   "path": null,
+   "kind": "TC1 training arms (no public copy)",
+   "store_commit": "27e791f63004edf586bfbbddd47f05ed0ab07893",
+   "store_git_tree": "034b01f86bbc76f04e9cb61bebfb8cfa7e0bd9f0",
+   "tag": "SEEN",
+   "reason": "experts4bit-qlora#1532's backward term cites it",
+   "citation": "experts4bit-qlora c2e47751"
+  },
+  {
+   "id": "dq7-5090-1",
+   "repo": "experts4bit-qlora",
+   "path": "bench/dq7/receipts/dq7-5090-1",
+   "git_tree": "4ad92ba9428f2f9a98134b42b65b20216e49fa4c",
+   "kind": "DQ7's 14 completed arms (16 registered; Qwen3-32B at 4096 never completed)",
+   "tag": "SEEN except the held-out row",
+   "reason": "per row",
+   "citation": "per row",
+   "rows": [
+    {
+     "file": "bench/dq7/receipts/dq7-5090-1/read-llama31_8b-device-2048.json",
+     "sha256": "9433bd8cee23e0e9b5011e696841693b732a5d49d8fa08d1125f76e45d583752",
+     "model": "llama31_8b",
+     "placement": "device",
+     "seq": 2048,
+     "tag": "SEEN",
+     "reason": "every Llama DQ7 arm: the full-logit backward tensor priced after DQ7's diagnosis",
+     "citation": "loggetta efe1c93 (#28, closes #27)"
+    },
+    {
+     "file": "bench/dq7/receipts/dq7-5090-1/read-llama31_8b-device-4096.json",
+     "sha256": "5ae719d286bb41d87db63b05b6ed1d93bfd4a2b5a8652c16bb075376b47b4b5e",
+     "model": "llama31_8b",
+     "placement": "device",
+     "seq": 4096,
+     "tag": "SEEN",
+     "reason": "every Llama DQ7 arm: the full-logit backward tensor priced after DQ7's diagnosis",
+     "citation": "loggetta efe1c93 (#28, closes #27)"
+    },
+    {
+     "file": "bench/dq7/receipts/dq7-5090-1/read-llama31_8b-device-512.json",
+     "sha256": "0440c5fbb624f363daa4b6417593c6ceb4a97874c5f3332ae0cf427f4b8f2ac9",
+     "model": "llama31_8b",
+     "placement": "device",
+     "seq": 512,
+     "tag": "SEEN",
+     "reason": "every Llama DQ7 arm: the full-logit backward tensor priced after DQ7's diagnosis",
+     "citation": "loggetta efe1c93 (#28, closes #27)"
+    },
+    {
+     "file": "bench/dq7/receipts/dq7-5090-1/read-llama31_8b-stream-2048.json",
+     "sha256": "2bdf003bfc368274c3d0215c4621f0618f396600caadef80c9784311c9458ca5",
+     "model": "llama31_8b",
+     "placement": "stream",
+     "seq": 2048,
+     "tag": "SEEN",
+     "reason": "every streamed DQ7 arm: DQ7_STREAM_HEADROOM was set to the observed maximum, 2,395,904,403 B",
+     "citation": "loggetta 6acf647 (#26)"
+    },
+    {
+     "file": "bench/dq7/receipts/dq7-5090-1/read-llama31_8b-stream-4096.json",
+     "sha256": "df5efad49560b805ff25a90e9a330c2fa7e1d6702484f784f44eeafb4c798c0a",
+     "model": "llama31_8b",
+     "placement": "stream",
+     "seq": 4096,
+     "tag": "SEEN",
+     "reason": "every streamed DQ7 arm: DQ7_STREAM_HEADROOM was set to the observed maximum, 2,395,904,403 B",
+     "citation": "loggetta 6acf647 (#26)"
+    },
+    {
+     "file": "bench/dq7/receipts/dq7-5090-1/read-llama31_8b-stream-512.json",
+     "sha256": "3fb1da22b305edc24ab576e0011c0abb5c6b45e3d37c89ff5f04c400551326ea",
+     "model": "llama31_8b",
+     "placement": "stream",
+     "seq": 512,
+     "tag": "SEEN",
+     "reason": "every streamed DQ7 arm: DQ7_STREAM_HEADROOM was set to the observed maximum, 2,395,904,403 B",
+     "citation": "loggetta 6acf647 (#26)"
+    },
+    {
+     "file": "bench/dq7/receipts/dq7-5090-1/read-qwen3_14b-device-2048.json",
+     "sha256": "5488a07f2e46bd8ca519135c834e0f52f1e500cb33ad0e3ae46c8a09d524074d",
+     "model": "qwen3_14b",
+     "placement": "device",
+     "seq": 2048,
+     "tag": "SEEN",
+     "reason": "D7's derivation rung (below 4096)",
+     "citation": "loggetta bench/D7-PREREG.md"
+    },
+    {
+     "file": "bench/dq7/receipts/dq7-5090-1/read-qwen3_14b-device-512.json",
+     "sha256": "1ce29102ec421ef433dde3db14b4ec983eb9778a6ff2ec48de38d1148270b637",
+     "model": "qwen3_14b",
+     "placement": "device",
+     "seq": 512,
+     "tag": "SEEN",
+     "reason": "D7's derivation rung (below 4096)",
+     "citation": "loggetta bench/D7-PREREG.md"
+    },
+    {
+     "file": "bench/dq7/receipts/dq7-5090-1/read-qwen3_14b-stream-2048.json",
+     "sha256": "dbbed10dec78b94e50d316d5ae8d34d8a3995d92cf19479c198b06ad636e80c8",
+     "model": "qwen3_14b",
+     "placement": "stream",
+     "seq": 2048,
+     "tag": "SEEN",
+     "reason": "every streamed DQ7 arm: DQ7_STREAM_HEADROOM was set to the observed maximum, 2,395,904,403 B",
+     "citation": "loggetta 6acf647 (#26)"
+    },
+    {
+     "file": "bench/dq7/receipts/dq7-5090-1/read-qwen3_14b-stream-4096.json",
+     "sha256": "6dd58c7028aa3f09506454466017eaa7bf9239bbe400e647524d708305e95de7",
+     "model": "qwen3_14b",
+     "placement": "stream",
+     "seq": 4096,
+     "tag": "SEEN",
+     "reason": "every streamed DQ7 arm: DQ7_STREAM_HEADROOM was set to the observed maximum, 2,395,904,403 B",
+     "citation": "loggetta 6acf647 (#26)"
+    },
+    {
+     "file": "bench/dq7/receipts/dq7-5090-1/read-qwen3_14b-stream-512.json",
+     "sha256": "ce1107f0c2f5971052bf83d1728fdf25963e5ecde2c3e23282811e0d1daaf0e4",
+     "model": "qwen3_14b",
+     "placement": "stream",
+     "seq": 512,
+     "tag": "SEEN",
+     "reason": "every streamed DQ7 arm: DQ7_STREAM_HEADROOM was set to the observed maximum, 2,395,904,403 B",
+     "citation": "loggetta 6acf647 (#26)"
+    },
+    {
+     "file": "bench/dq7/receipts/dq7-5090-1/read-qwen3_32b-device-2048.json",
+     "sha256": "c7d1118086178a47311bd01bbf9fc63f908da6d04483eb773d75eba7795c7280",
+     "model": "qwen3_32b",
+     "placement": "device",
+     "seq": 2048,
+     "tag": "SEEN",
+     "reason": "D7's derivation rung (below 4096)",
+     "citation": "loggetta bench/D7-PREREG.md"
+    },
+    {
+     "file": "bench/dq7/receipts/dq7-5090-1/read-qwen3_32b-stream-2048.json",
+     "sha256": "e4d78ba425a696ac13a18d1b7dcfecf1f9e1d167dd83650e853b81c4851df7c8",
+     "model": "qwen3_32b",
+     "placement": "stream",
+     "seq": 2048,
+     "tag": "SEEN",
+     "reason": "every streamed DQ7 arm: DQ7_STREAM_HEADROOM was set to the observed maximum, 2,395,904,403 B",
+     "citation": "loggetta 6acf647 (#26)"
+    }
+   ]
+  }
+ ],
+ "held_out": [
+  {
+   "id": "dq7-5090-1/qwen3_14b/device/4096",
+   "repo": "experts4bit-qlora",
+   "file": "bench/dq7/receipts/dq7-5090-1/read-qwen3_14b-device-4096.json",
+   "sha256": "dcf1c95d7805d377ad755872ec28289c98e2826904a4d0721e3e4006434a8e8b",
+   "store_sha256": "dcf1c95d7805d377ad755872ec28289c98e2826904a4d0721e3e4006434a8e8b",
+   "model": "Qwen/Qwen3-14B",
+   "placement": "resident (device)",
+   "seq": 4096,
+   "card": "RTX 5090",
+   "recipe": "NF4 base, fp32 LoRA r16, micro-batch 1, grad-accum 1",
+   "cohort": "Qwen3-14B / resident / RTX 5090",
+   "tag": "UNSEEN",
+   "reason": "D7's held-out rung for its cohort; no constant was set or tuned after it (#26 covers streamed arms only, #28 Llama only, DQ10 was fitted on DQ9's own reads). Reading is not tuning (ruled 2026-10-21)."
+  },
+  {
+   "id": "ho2-5090-1/ernie/device/1024",
+   "repo": "experts4bit-qlora",
+   "file": "bench/ho2/receipts/ho2-5090-1/public/run/receipts_ernie_1024/ERNIE-4.5-21B-A3B-PT-device-grouped_nf4-t2048-20261022T103355Z-90852e7b.json",
+   "sha256": "9c966b4c7eec036f8e0b875c66e5f460e63c43a2818c77b9062173b00d0cff76",
+   "store_sha256": "00a2b88b2d582a3cfd7c6d38f12de856f95d7503e3c6367828206b35e47b770e",
+   "model": "baidu/ERNIE-4.5-21B-A3B-PT",
+   "placement": "resident (device)",
+   "seq": 1024,
+   "card": "RTX 5090",
+   "recipe": "NF4 base, bf16 LoRA r8, micro-batch 2, grad-accum 1, 20 steps; the planner's own plan (no receipts on file)",
+   "loss_branch": "stock (inferred, not counted)",
+   "cohort": "ERNIE-4.5-21B-A3B-PT / resident / RTX 5090",
+   "tag": "UNSEEN",
+   "reason": "HO2's registered held-out read (experts4bit-qlora bench/ho2/PREREG-ho2.md, #1969): the family was named before any measurement, and no planner constant was set or tuned after it. The derived copy differs from the store's receipt only in its two GPU-UUID values (null)."
+  },
+  {
+   "id": "ho2-5090-1/ernie/device/2048",
+   "repo": "experts4bit-qlora",
+   "file": "bench/ho2/receipts/ho2-5090-1/public/run/receipts_ernie_2048/ERNIE-4.5-21B-A3B-PT-device-grouped_nf4-t4096-20261022T103621Z-298af42a.json",
+   "sha256": "5086c2d0ba7579287f794b9aaecfe9e67551841fca5dc39220bbf393cfe1896d",
+   "store_sha256": "c13bc5ea6d3a5f92640250f7f6c2654aabf1d1a3cca110594be21ee7c24732c2",
+   "model": "baidu/ERNIE-4.5-21B-A3B-PT",
+   "placement": "resident (device)",
+   "seq": 2048,
+   "card": "RTX 5090",
+   "recipe": "NF4 base, bf16 LoRA r8, micro-batch 2, grad-accum 1, 20 steps; the planner's own plan (no receipts on file)",
+   "loss_branch": "chunked (inferred, not counted)",
+   "cohort": "ERNIE-4.5-21B-A3B-PT / resident / RTX 5090",
+   "tag": "UNSEEN",
+   "reason": "HO2's registered held-out read (experts4bit-qlora bench/ho2/PREREG-ho2.md, #1969): the family was named before any measurement, and no planner constant was set or tuned after it. The derived copy differs from the store's receipt only in its two GPU-UUID values (null)."
+  },
+  {
+   "id": "ho2-5090-1/lfm2/device/1024",
+   "repo": "experts4bit-qlora",
+   "file": "bench/ho2/receipts/ho2-5090-1/public/run/receipts_lfm2_1024/LFM2-8B-A1B-device-grouped_nf4-t2048-20261022T103131Z-b9b53bd7.json",
+   "sha256": "6fb6670991b132e827bc80781ac836b06d9e11b6708040899f9b319f250b2669",
+   "store_sha256": "fe678f2ca44eb41a2acb350033f5f129496367b2ac7f728f6da062f2b3975b8a",
+   "model": "LiquidAI/LFM2-8B-A1B",
+   "placement": "resident (device)",
+   "seq": 1024,
+   "card": "RTX 5090",
+   "recipe": "NF4 base, bf16 LoRA r8, micro-batch 2, grad-accum 1, 20 steps; the planner's own plan (no receipts on file)",
+   "loss_branch": "stock (inferred, not counted)",
+   "cohort": "LFM2-8B-A1B / resident / RTX 5090",
+   "tag": "UNSEEN",
+   "reason": "HO2's registered held-out read (experts4bit-qlora bench/ho2/PREREG-ho2.md, #1969): the family was named before any measurement, and no planner constant was set or tuned after it. The derived copy differs from the store's receipt only in its two GPU-UUID values (null)."
+  },
+  {
+   "id": "ho2-5090-1/lfm2/device/2048",
+   "repo": "experts4bit-qlora",
+   "file": "bench/ho2/receipts/ho2-5090-1/public/run/receipts_lfm2_2048/LFM2-8B-A1B-device-grouped_nf4-t4096-20261022T103258Z-da5d7b32.json",
+   "sha256": "8f6d0fdca0ed7702cd6297688c1a5711b75f276a85e3eeec1f8a740a11619dbe",
+   "store_sha256": "7e1a66cbd8878bdb04ef8b9554d611fb7ccaec96054afae1132ed980a70442f6",
+   "model": "LiquidAI/LFM2-8B-A1B",
+   "placement": "resident (device)",
+   "seq": 2048,
+   "card": "RTX 5090",
+   "recipe": "NF4 base, bf16 LoRA r8, micro-batch 2, grad-accum 1, 20 steps; the planner's own plan (no receipts on file)",
+   "loss_branch": "chunked, at the auto gate (inferred, not counted)",
+   "cohort": "LFM2-8B-A1B / resident / RTX 5090",
+   "tag": "UNSEEN",
+   "reason": "HO2's registered held-out read (experts4bit-qlora bench/ho2/PREREG-ho2.md, #1969): the family was named before any measurement, and no planner constant was set or tuned after it. The derived copy differs from the store's receipt only in its two GPU-UUID values (null)."
+  },
+  {
+   "id": "ho2-4090-2/ernie/device/1024",
+   "repo": "experts4bit-qlora",
+   "file": "bench/ho2/receipts/ho2-4090-2/public/run/receipts_ernie_1024/ERNIE-4.5-21B-A3B-PT-device-grouped_nf4-t2048-20261022T113051Z-8933e770.json",
+   "sha256": "d09a062a17d76b6c36584f63743603f6300fc84858546e1fdf8d11f983501aad",
+   "store_sha256": "835341017bd9b7f604847375ecb7a8990595f9bbb63336cffb010e4789e09259",
+   "model": "baidu/ERNIE-4.5-21B-A3B-PT",
+   "placement": "resident (device)",
+   "seq": 1024,
+   "card": "RTX 4090",
+   "recipe": "NF4 base, bf16 LoRA r8, micro-batch 2, grad-accum 1, 20 steps; the planner's own plan (no receipts on file)",
+   "loss_branch": "stock (inferred, not counted)",
+   "cohort": "ERNIE-4.5-21B-A3B-PT / resident / RTX 4090",
+   "tag": "UNSEEN",
+   "reason": "HO2's registered held-out read (experts4bit-qlora bench/ho2/PREREG-ho2.md, #1969): the family was named before any measurement, and no planner constant was set or tuned after it. The derived copy differs from the store's receipt only in its two GPU-UUID values (null)."
+  },
+  {
+   "id": "ho2-4090-2/ernie/device/2048",
+   "repo": "experts4bit-qlora",
+   "file": "bench/ho2/receipts/ho2-4090-2/public/run/receipts_ernie_2048/ERNIE-4.5-21B-A3B-PT-device-grouped_nf4-t4096-20261022T113328Z-0a6ba069.json",
+   "sha256": "21ef5b83ecdb8b0d30b902e92f2b703507a345242090c1d7900bdce1fe3a8f1c",
+   "store_sha256": "fcdd6ca6896b96eababf1bdd6b3992344e81a6e090fda88e919bf3a2dbb02d92",
+   "model": "baidu/ERNIE-4.5-21B-A3B-PT",
+   "placement": "resident (device)",
+   "seq": 2048,
+   "card": "RTX 4090",
+   "recipe": "NF4 base, bf16 LoRA r8, micro-batch 2, grad-accum 1, 20 steps; the planner's own plan (no receipts on file)",
+   "loss_branch": "chunked (inferred, not counted)",
+   "cohort": "ERNIE-4.5-21B-A3B-PT / resident / RTX 4090",
+   "tag": "UNSEEN",
+   "reason": "HO2's registered held-out read (experts4bit-qlora bench/ho2/PREREG-ho2.md, #1969): the family was named before any measurement, and no planner constant was set or tuned after it. The derived copy differs from the store's receipt only in its two GPU-UUID values (null)."
+  },
+  {
+   "id": "ho2-4090-2/lfm2/device/1024",
+   "repo": "experts4bit-qlora",
+   "file": "bench/ho2/receipts/ho2-4090-2/public/run/receipts_lfm2_1024/LFM2-8B-A1B-device-grouped_nf4-t2048-20261022T112637Z-af9abb47.json",
+   "sha256": "0dae3a2b89cabd329e2cde333b4043ef02b94506846ae410266b93bbae400aac",
+   "store_sha256": "d3d48b8df7ab308a908115699ba842880dc84358a6bf52707b29dd322182a5fd",
+   "model": "LiquidAI/LFM2-8B-A1B",
+   "placement": "resident (device)",
+   "seq": 1024,
+   "card": "RTX 4090",
+   "recipe": "NF4 base, bf16 LoRA r8, micro-batch 2, grad-accum 1, 20 steps; the planner's own plan (no receipts on file)",
+   "loss_branch": "stock (inferred, not counted)",
+   "cohort": "LFM2-8B-A1B / resident / RTX 4090",
+   "tag": "UNSEEN",
+   "reason": "HO2's registered held-out read (experts4bit-qlora bench/ho2/PREREG-ho2.md, #1969): the family was named before any measurement, and no planner constant was set or tuned after it. The derived copy differs from the store's receipt only in its two GPU-UUID values (null)."
+  },
+  {
+   "id": "ho2-4090-2/lfm2/device/2048",
+   "repo": "experts4bit-qlora",
+   "file": "bench/ho2/receipts/ho2-4090-2/public/run/receipts_lfm2_2048/LFM2-8B-A1B-device-grouped_nf4-t4096-20261022T112851Z-60f70d7d.json",
+   "sha256": "2390caeaead7c0198f97d89ebb57e0b115a9708e0c543957afdf6112d64d9cd1",
+   "store_sha256": "494a12b009cac1fc49abd4204ea0733b3e4e01df75141829443386aecea62c59",
+   "model": "LiquidAI/LFM2-8B-A1B",
+   "placement": "resident (device)",
+   "seq": 2048,
+   "card": "RTX 4090",
+   "recipe": "NF4 base, bf16 LoRA r8, micro-batch 2, grad-accum 1, 20 steps; the planner's own plan (no receipts on file)",
+   "loss_branch": "chunked, at the auto gate (inferred, not counted)",
+   "cohort": "LFM2-8B-A1B / resident / RTX 4090",
+   "tag": "UNSEEN",
+   "reason": "HO2's registered held-out read (experts4bit-qlora bench/ho2/PREREG-ho2.md, #1969): the family was named before any measurement, and no planner constant was set or tuned after it. The derived copy differs from the store's receipt only in its two GPU-UUID values (null)."
+  }
+ ],
+ "cohorts": {
+  "Qwen3-14B / resident / RTX 5090": {
+   "held_out_rows": 1,
+   "band": "unmeasured"
+  },
+  "ERNIE-4.5-21B-A3B-PT / resident / RTX 4090": {
+   "held_out_rows": 2,
+   "band": "eligible (2 held-out rows); the band is L2's, not computed here"
+  },
+  "ERNIE-4.5-21B-A3B-PT / resident / RTX 5090": {
+   "held_out_rows": 2,
+   "band": "eligible (2 held-out rows); the band is L2's, not computed here"
+  },
+  "LFM2-8B-A1B / resident / RTX 4090": {
+   "held_out_rows": 2,
+   "band": "eligible (2 held-out rows); the band is L2's, not computed here"
+  },
+  "LFM2-8B-A1B / resident / RTX 5090": {
+   "held_out_rows": 2,
+   "band": "eligible (2 held-out rows); the band is L2's, not computed here"
+  }
+ },
+ "default_band": "unmeasured family/card: no band",
+ "fills_next": [
+  "loggetta#21's registered RTX 4090 reading",
+  "DQ10's new-family holdouts when they read"
+ ],
+ "supersedes": "SPLIT.json (version 1), unchanged"
+}
