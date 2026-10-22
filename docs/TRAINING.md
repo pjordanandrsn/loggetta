@@ -250,9 +250,10 @@ With an experts4bit-qlora that defines it, the MoE manifest is `backend-adapter/
 resolved, the attention recipe, the fused q/k/v count, the package versions, the applied LoRA scale and a fingerprint
 of the quantized base (experts always; attention when the adapter trains it). The fingerprint is read where training
 kept the expert stacks, as the plan recorded them (`expert_residency`). These checks run right after the model is
-prepared, before the first training step, so a run that could not record them is refused before it trains. If `/2`
-can only fail at save, the adapter is kept as `/1`, the manifest and the receipt name the reason, and the run status
-is `SAVED_V1`. `load_adapter` fingerprints the base it rebuilds the same way and refuses a mismatch instead of loading
+prepared, before the first training step, so a run that could not record them is refused before it trains. The base
+is fingerprinted again at save and compared scope by scope. If `/2` can only fail at save (a base that changed during
+training, for one), the adapter is kept as `/1`, the manifest and the receipt name the reason, and the run status is
+`SAVED_V1`. `load_adapter` fingerprints the base it rebuilds the same way and refuses a mismatch instead of loading
 the adapter onto another base. With an older
 experts4bit-qlora the manifest stays `backend-adapter/1`, and no fact is filled in from a default. The dense executor
 writes `/1`. `loggetta inspect --adapter DIR` verifies a directory and prints what it records.

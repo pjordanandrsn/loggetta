@@ -72,13 +72,14 @@ class FakeSchema(types.SimpleNamespace):
         fields = dict.fromkeys(V2_KEYS, "")
         if extra_field:
             fields[extra_field] = ""
-        super().__init__(V2_FIELDS=fields, KNOWN_SCHEMES=("qfp-v1",), calls=[], fail_source=fail_source)
+        super().__init__(V2_FIELDS=fields, KNOWN_SCHEMES=("qfp-v1",), calls=[], fail_source=fail_source,
+                         sha={"attention": "a" * 64, "experts": "a" * 64})
 
     def quant_fingerprint(self, model, scope, *, source="resident"):
         self.calls.append((scope, source))
         if source == self.fail_source:
             raise ValueError(f"quant_fingerprint: expert stack experts is evicted by expert offload; source={source!r}")
-        return {"scheme_id": "qfp-v1", "scope": scope, "source": source, "modules": 2, "sha256": "a" * 64,
+        return {"scheme_id": "qfp-v1", "scope": scope, "source": source, "modules": 2, "sha256": self.sha[scope],
                 "bytes_hashed": 1, "seconds": 0.01}
 
     def lora_scale_applied(self, model):
@@ -452,7 +453,7 @@ def test_the_trainer_fingerprints_before_training_and_saves_that_record(tmp_path
     T = stubbed_trainer(monkeypatch, report=FACTS, train=train)
     out = T.run(plan_with(), adapter_dir=str(tmp_path / "a"), run_id="run-x")
     assert order == [("train", 2)]                               # both scopes fingerprinted BEFORE the first step
-    assert len(fake.calls) == 2                                  # and not again at save: the preflight's record is used
+    assert len(fake.calls) == 4                                  # and again at save, compared scope by scope
     assert out["status"] == "OK" and out["artifacts"]["adapter"]["format"] == A.SCHEMA_V2
     assert "adapter_preflight_seconds" in out["measured"]
     m = json.loads((tmp_path / "a" / A.MANIFEST).read_text())
@@ -479,3 +480,34 @@ def test_a_saved_v1_run_is_reported_and_its_measurements_stay_evidence(tmp_path,
                                "all_finite": True, "frozen_expert_bytes_unchanged": True, "adapters_moved": True}}
     text = summarize(receipt)
     assert "adapter NOTE: saved as backend-adapter/1, not /2: save-time reason" in text and "FAILED" not in text
+
+
+def test_a_base_that_changed_during_training_is_saved_as_v1_naming_the_scope(tmp_path, fake, monkeypatch):
+    """The frozen-digest check samples only some expert layers and no attention base: the save re-fingerprints and
+    compares, scope by scope, with what the preflight took before the first step."""
+    def train(model, trainable, model_id, w, smi, meas, **k):
+        fake.sha["attention"] = "c" * 64                         # an attention base weight changed during training
+        return {"status": "OK", "measured": meas, "correctness": {}, "data": {}}
+
+    T = stubbed_trainer(monkeypatch, report=FACTS, train=train)
+    out = T.run(plan_with(), adapter_dir=str(tmp_path / "a"), run_id="run-x")
+    assert out["status"] == "SAVED_V1"
+    assert "the base changed during training: the ['attention'] fingerprint(s)" in out["artifact_error"]
+    m = json.loads((tmp_path / "a" / A.MANIFEST).read_text())
+    assert m["schema"] == A.SCHEMA_V1 and "base changed" in m["v2_refused"]
+
+
+def test_end_to_end_a_changed_attention_weight_is_caught_at_save(tmp_path, real):
+    model = real_moe()
+    report = {"commit": "0" * 40, **real.resolved_training_facts(model, None, fast_stats=None, qkv_stats=None)}
+    pre = A.v2_preflight(model, dict(plan_with().selected.setup), report, run_id="r")
+    with torch.no_grad():
+        model.self_attn.q_proj.base.weight[0, 0] += 1.0          # the base moved after the preflight
+    out = A.save_adapter(model, Tokenizer(), tmp_path / "a", plan_with(), data={}, report=report, seed=0, run_id="r",
+                         preflight=pre)
+    assert out["format"] == A.SCHEMA_V1 and "['attention']" in out["v2_refused"]
+    clean = real_moe()
+    pre = A.v2_preflight(clean, dict(plan_with().selected.setup), report, run_id="r")
+    out = A.save_adapter(clean, Tokenizer(), tmp_path / "b", plan_with(), data={}, report=report, seed=0, run_id="r",
+                         preflight=pre)
+    assert out["format"] == A.SCHEMA_V2 and "v2_refused" not in out

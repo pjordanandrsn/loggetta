@@ -75,9 +75,8 @@ def v2_preflight(model, setup: dict, report: dict, *, run_id: str | None) -> dic
     recorded. The trainer calls it right after ``prepare_qlora_training``, BEFORE the first step, so a run that could
     not save a ``/2`` manifest is refused before it trains, not after (a finished run would otherwise end SAVE_FAILED).
     Every input is known by then: the training facts are in ``report`` (``prepare_qlora_training`` adds them after
-    ``enable_fast_train`` resolved them), the LoRA scale is a module constant, and the base is frozen for the whole
-    run (the trainer's frozen-digest check fails the run if expert bytes change), so its fingerprint taken here is the
-    fingerprint of the base the adapter trained on."""
+    ``enable_fast_train`` resolved them), and the LoRA scale is a module constant. The base fingerprints taken here are
+    compared at save with fresh ones (:func:`v2_fields`), which is what proves the base did not change during training."""
     schema = adapter_schema()
     if schema is None:
         raise V2Unavailable("backend-adapter/2 needs experts4bit-qlora's adapter_schema; the installed release predates it")
@@ -104,11 +103,22 @@ def v2_preflight(model, setup: dict, report: dict, *, run_id: str | None) -> dic
 
 
 def v2_fields(model, setup: dict, report: dict, *, run_id: str | None, preflight: dict | None = None) -> dict:
-    """The fields ``backend-adapter/2`` adds to v1's: :func:`v2_preflight`'s (taken now unless the trainer already
-    took them before its first step) and ``created_at``, the time the manifest is written."""
-    fields = dict(preflight) if preflight is not None else v2_preflight(model, setup, report, run_id=run_id)
-    if fields.get("run_id") != run_id:
-        raise V2Unavailable(f"the preflight recorded run {fields.get('run_id')!r}, the save names {run_id!r}")
+    """The fields ``backend-adapter/2`` adds to v1's, taken now, and ``created_at``. With the trainer's ``preflight``
+    (taken before its first step), the base is fingerprinted AGAIN here and compared scope by scope: the frozen-digest
+    check during training samples only some expert layers and no attention base, so this comparison is what proves the
+    base the manifest records is the base the adapter trained on. A scope that differs raises :class:`V2Unavailable`
+    naming it, and the trainer keeps the tensors as ``/1``."""
+    fields = v2_preflight(model, setup, report, run_id=run_id)
+    if preflight is not None:
+        if preflight.get("run_id") != run_id:
+            raise V2Unavailable(f"the preflight recorded run {preflight.get('run_id')!r}, the save names {run_id!r}")
+        before, after = preflight.get("fingerprints") or {}, fields["fingerprints"]
+        changed = sorted(s for s in set(before) | set(after)
+                         if (before.get(s) or {}).get("sha256") != (after.get(s) or {}).get("sha256")
+                         or (before.get(s) or {}).get("modules") != (after.get(s) or {}).get("modules"))
+        if changed:
+            raise V2Unavailable(f"the base changed during training: the {changed} fingerprint(s) taken before the first "
+                                f"step differ from the ones at save")
     fields["created_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     return fields
 
