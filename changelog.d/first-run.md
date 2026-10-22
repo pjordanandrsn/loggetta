@@ -10,3 +10,5 @@ at a pinned revision. It writes each step's exit status and seconds to `first_ru
 refusal: no torch build fits (3), the plan was refused (4), an install step failed (5), or the run did not train (6).
 A local wheel or directory given as `PACKAGE_SPEC` is recorded in `first_run.json` by its name only, never its path, so
 a shared summary carries no home directory.
+- A refused plan's summary in `first_run.json` is now the refusal's own first reason, verbatim, read from the refused
+  `plan.json`. It was a grep of the printed banner, which kept only "NOT FEASIBLE under the requested constraints."
