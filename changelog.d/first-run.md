@@ -14,3 +14,7 @@ a shared summary carries no home directory.
   `plan.json`. It was a grep of the printed banner, which kept only "NOT FEASIBLE under the requested constraints."
 - A local model directory given as `MODEL` is recorded in `first_run.json` by its name only, never its path, and a
   refusal reason never carries the home directory (it reads `~`).
+- A URL or VCS `PACKAGE_SPEC` (`git+https://...`, `name @ https://...`) is recorded as a URL, not as `local`, with any
+  user, password, query and fragment dropped, so a token in the URL never reaches `first_run.json`. The URL's path is
+  kept as given, since it names what was installed: a user or organization name in a remote path stays. A `file://` URL
+  is a local path, recorded by its name only. A URL that does not parse is recorded by its scheme alone.

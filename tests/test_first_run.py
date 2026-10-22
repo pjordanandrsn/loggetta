@@ -229,6 +229,7 @@ def test_first_run_names_a_refused_plan(tmp_path):
      "loggetta @ git+https://github.com/example/loggetta@v0.7.0"),
     ("https://[::1]:8080/loggetta.whl", "https://[::1]:8080/loggetta.whl"),
     ("https://bob:pw@wheels.example.com:99999/x.whl", "https: (unparsed URL)"),   # a port out of range
+    ("https://bob:pw@[fe80::1/x.whl", "https: (unparsed URL)"),                  # an unclosed IPv6 bracket
     # a file URL is a local path: its name only
     ("file:///srv/wheels/loggetta-0.7.0-py3-none-any.whl", "local: loggetta-0.7.0-py3-none-any.whl"),
     ("git+file:///srv/src/loggetta", "local: loggetta"),
