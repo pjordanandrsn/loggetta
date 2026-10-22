@@ -1,0 +1,43 @@
+{
+ "exit": 3,
+ "gpu": null,
+ "package_spec": "./lg-um",
+ "platform": "macOS-26.4.1-arm64-arm-64bit-Mach-O",
+ "receipt": null,
+ "refusal": "no NVIDIA GPU discovered: training here needs CUDA. no nvidia-smi on PATH: no NVIDIA GPU discovered; no AMD GPU discovered (amdsmi, rocm-smi, /dev/kfd) ",
+ "schema": "first-run/1",
+ "seconds_to_trained": null,
+ "steps": [
+  {
+   "exit": 0,
+   "seconds": 1,
+   "step": "venv"
+  },
+  {
+   "exit": 0,
+   "seconds": 2,
+   "step": "pip_upgrade"
+  },
+  {
+   "exit": 0,
+   "seconds": 2,
+   "step": "inspect_driver_install"
+  },
+  {
+   "exit": 3,
+   "seconds": 0,
+   "step": "torch_index"
+  }
+ ],
+ "torch_index": null,
+ "trained": false,
+ "versions": {
+  "loggetta": "0.6.2"
+ },
+ "workload": {
+  "model": "allenai/OLMoE-1B-7B-0924-Instruct",
+  "revision": "7f1c97f440f06ce36705e4f2b843edb5925f4498",
+  "seq": 512,
+  "steps": 10
+ }
+}
