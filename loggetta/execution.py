@@ -197,5 +197,6 @@ def summarize(receipt: dict) -> str:
     if adapter:
         rows.append(f"  adapter   {adapter['path']} ({adapter['tensor_count']} tensors; {adapter.get('format', 'runtime format')})")
     if receipt.get("artifact_error"):
-        rows.append(f"  adapter save FAILED: {receipt['artifact_error']}")
+        rows.append(f"  adapter {'NOTE' if receipt['status'] == 'SAVED_V1' else 'save FAILED'}: "
+                    f"{receipt['artifact_error']}")
     return "\n".join(rows)

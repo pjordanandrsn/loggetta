@@ -72,13 +72,14 @@ class FakeSchema(types.SimpleNamespace):
         fields = dict.fromkeys(V2_KEYS, "")
         if extra_field:
             fields[extra_field] = ""
-        super().__init__(V2_FIELDS=fields, KNOWN_SCHEMES=("qfp-v1",), calls=[], fail_source=fail_source)
+        super().__init__(V2_FIELDS=fields, KNOWN_SCHEMES=("qfp-v1",), calls=[], fail_source=fail_source,
+                         sha={"attention": "a" * 64, "experts": "a" * 64})
 
     def quant_fingerprint(self, model, scope, *, source="resident"):
         self.calls.append((scope, source))
         if source == self.fail_source:
             raise ValueError(f"quant_fingerprint: expert stack experts is evicted by expert offload; source={source!r}")
-        return {"scheme_id": "qfp-v1", "scope": scope, "source": source, "modules": 2, "sha256": "a" * 64,
+        return {"scheme_id": "qfp-v1", "scope": scope, "source": source, "modules": 2, "sha256": self.sha[scope],
                 "bytes_hashed": 1, "seconds": 0.01}
 
     def lora_scale_applied(self, model):
@@ -125,7 +126,7 @@ def test_a_device_run_whose_stacks_are_evicted_is_refused_and_writes_nothing(tmp
     monkeypatch.setattr(A, "adapter_schema", lambda: schema)
     with pytest.raises(ValueError, match="evicted"):
         A.save_adapter(bf16_stack_model(), Tokenizer(), tmp_path / "a", plan_with(expert_residency="device"),
-                       data={}, report=FACTS, seed=0, run_id="r")
+                       data={}, report=FACTS, seed=0, run_id="r", schema=A.SCHEMA_V2)
     assert not (tmp_path / "a").exists()
 
 
@@ -138,17 +139,17 @@ def test_a_fact_that_cannot_be_recorded_refuses_before_the_directory_exists(tmp_
     plan = plan_with(expert_residency=bad.get("residency", "device"))
     with pytest.raises(ValueError, match=match):
         A.save_adapter(bf16_stack_model(), Tokenizer(), tmp_path / "a", plan, data={}, report=bad.get("report", FACTS),
-                       seed=0, run_id="r")
+                       seed=0, run_id="r", schema=A.SCHEMA_V2)
     assert not (tmp_path / "a").exists()
     assert fake.calls == []                                      # refused before any fingerprint was taken
 
 
-@pytest.mark.parametrize("run_id", [None, ""])
+@pytest.mark.parametrize("run_id", [None, "", "  \t"])
 def test_v2_without_a_run_id_is_refused_before_the_directory_exists(tmp_path, fake, run_id):
     """A reader checks only that run_id is PRESENT, so a null would pass every verifier: the writer refuses it."""
     with pytest.raises(ValueError, match="records the run that produced the adapter"):
         A.save_adapter(bf16_stack_model(), Tokenizer(), tmp_path / "a", plan_with(), data={}, report=FACTS, seed=0,
-                       run_id=run_id)
+                       run_id=run_id, schema=A.SCHEMA_V2)
     assert not (tmp_path / "a").exists() and fake.calls == []
 
 
@@ -156,8 +157,28 @@ def test_a_schema_field_this_writer_does_not_record_is_refused_not_omitted(tmp_p
     schema = FakeSchema(extra_field="arena_index")
     monkeypatch.setattr(A, "adapter_schema", lambda: schema)
     with pytest.raises(ValueError, match=r"does not record: \['arena_index'\]"):
-        A.save_adapter(bf16_stack_model(), Tokenizer(), tmp_path / "a", plan_with(), data={}, report=FACTS, seed=0, run_id="r")
+        A.save_adapter(bf16_stack_model(), Tokenizer(), tmp_path / "a", plan_with(), data={}, report=FACTS, seed=0,
+                       run_id="r", schema=A.SCHEMA_V2)
     assert not (tmp_path / "a").exists()
+
+
+@pytest.mark.parametrize("why, kw", [
+    ("evicted", {"schema_obj": FakeSchema(fail_source="resident")}),
+    ("lacks", {"report": {k: v for k, v in FACTS.items() if k != "versions"}}),
+    ("not one", {"run_id": None}),
+])
+def test_an_automatic_v2_that_cannot_be_recorded_keeps_the_tensors_as_v1_and_says_why(tmp_path, monkeypatch, why, kw):
+    """Trained tensors are never discarded over manifest metadata: /1, with the reason in the result and manifest."""
+    schema = kw.get("schema_obj") or FakeSchema()
+    monkeypatch.setattr(A, "adapter_schema", lambda: schema)
+    model = bf16_stack_model()
+    out = A.save_adapter(model, Tokenizer(), tmp_path / "a", plan_with(), data={}, report=kw.get("report", FACTS),
+                         seed=0, run_id=kw.get("run_id", "r"))
+    m = json.loads((tmp_path / "a" / A.MANIFEST).read_text())
+    assert out["format"] == m["schema"] == A.SCHEMA_V1
+    assert why in out["v2_refused"] and m["v2_refused"] == out["v2_refused"]
+    assert not set(V2_KEYS) & set(m)                             # no /2 field on a /1 manifest
+    assert out["tensor_count"] == len(A.trainable_adapters(model)) > 0
 
 
 def test_without_the_schema_the_writer_stays_on_v1_and_v2_is_refused_by_name(tmp_path, monkeypatch):
@@ -353,7 +374,7 @@ def test_end_to_end_an_offload_run_fingerprints_from_the_host_homes(tmp_path, re
     report = {"commit": "0" * 40, **real.resolved_training_facts(model, None, fast_stats=None, qkv_stats=None)}
     with pytest.raises(ValueError, match="evicted"):              # recorded as device, but evicted: refused, nothing written
         A.save_adapter(model, Tokenizer(), tmp_path / "dev", plan_with(expert_residency="device"), data={},
-                       report=report, seed=0, run_id="r")
+                       report=report, seed=0, run_id="r", schema=A.SCHEMA_V2)
     assert not (tmp_path / "dev").exists()
     A.save_adapter(model, Tokenizer(), tmp_path / "host", plan_with(expert_residency="host"), data={}, report=report,
                    seed=0, run_id="r")
@@ -381,3 +402,112 @@ def test_end_to_end_one_base_written_in_both_absmax_forms_fingerprints_different
     assert a["expert_absmax"]["form"] == "fp32" and b["expert_absmax"]["form"] == "double-quantized"
     assert a["fingerprints"]["experts"]["sha256"] != b["fingerprints"]["experts"]["sha256"]
     assert a["fingerprints"]["attention"]["sha256"] == b["fingerprints"]["attention"]["sha256"]   # attention untouched
+
+
+def stubbed_trainer(monkeypatch, *, report, train):
+    """experts4bit_train.run() on the CPU: every CUDA touch, the tokenizer, the data and the training loop stubbed."""
+    import contextlib
+
+    import transformers
+    from experts4bit_qlora import recipe
+    from loggetta import data as data_mod
+    from loggetta import measure
+    from loggetta.backends import experts4bit_train as T
+
+    model = bf16_stack_model()
+    monkeypatch.setattr(transformers.AutoTokenizer, "from_pretrained", lambda *a, **k: Tokenizer())
+    monkeypatch.setattr(data_mod, "prepare_data", lambda *a, **k: contextlib.nullcontext(
+        types.SimpleNamespace(info={"tokens": 1, "examples_used": 1, "passes": 1, "loss": "all",
+                                    "token_cache_bytes": 0})))
+    monkeypatch.setattr(torch.cuda, "set_device", lambda *a: None)
+    monkeypatch.setattr(torch.cuda, "max_memory_allocated", lambda *a: 0)
+    real_zeros = torch.zeros
+    monkeypatch.setattr(torch, "zeros", lambda *a, device=None, **k: real_zeros(*a, **k))
+    monkeypatch.setattr(T, "link_h2d", lambda: {})
+    monkeypatch.setattr(measure, "DriverMemorySampler", contextlib.nullcontext)
+    monkeypatch.setattr(recipe, "prepare_qlora_training",
+                        lambda *a, **k: types.SimpleNamespace(model=model, trainable=[], report=report))
+    monkeypatch.setattr(T, "train_loop", train)
+    return T
+
+
+def test_the_trainer_refuses_a_v2_it_cannot_record_before_the_first_step(tmp_path, fake, monkeypatch):
+    from loggetta.execution import PlanNotExecutable
+
+    def never(*a, **k):
+        raise AssertionError("a training step ran before the /2 refusal")
+
+    T = stubbed_trainer(monkeypatch, report={k: v for k, v in FACTS.items() if k != "expert_absmax"}, train=never)
+    with pytest.raises(PlanNotExecutable, match=r"NOT_RUN, refused before the first training step: .*expert_absmax"):
+        T.run(plan_with(), adapter_dir=str(tmp_path / "a"), run_id="run-x")
+    assert not (tmp_path / "a").exists() and fake.calls == []
+
+
+def test_the_trainer_fingerprints_before_training_and_saves_that_record(tmp_path, fake, monkeypatch):
+    order = []
+
+    def train(model, trainable, model_id, w, smi, meas, **k):     # the real loop fills and returns ``meas``
+        order.append(("train", len(fake.calls)))
+        return {"status": "OK", "measured": meas, "correctness": {}, "data": {}}
+
+    T = stubbed_trainer(monkeypatch, report=FACTS, train=train)
+    out = T.run(plan_with(), adapter_dir=str(tmp_path / "a"), run_id="run-x")
+    assert order == [("train", 2)]                               # both scopes fingerprinted BEFORE the first step
+    assert len(fake.calls) == 4                                  # and again at save, compared scope by scope
+    assert out["status"] == "OK" and out["artifacts"]["adapter"]["format"] == A.SCHEMA_V2
+    assert "adapter_preflight_seconds" in out["measured"]
+    m = json.loads((tmp_path / "a" / A.MANIFEST).read_text())
+    assert m["run_id"] == "run-x" and sorted(m["fingerprints"]) == ["attention", "experts"]
+
+
+def test_a_saved_v1_run_is_reported_and_its_measurements_stay_evidence(tmp_path, fake, monkeypatch):
+    from loggetta import planner
+    from loggetta.execution import summarize
+
+    def train(*a, **k):
+        return {"status": "OK", "measured": {}, "correctness": {}, "data": {}}
+
+    T = stubbed_trainer(monkeypatch, report=FACTS, train=train)
+    monkeypatch.setattr(A, "v2_fields", lambda *a, **k: (_ for _ in ()).throw(A.V2Unavailable("save-time reason")))
+    out = T.run(plan_with(), adapter_dir=str(tmp_path / "a"), run_id="run-x")
+    assert out["status"] == "SAVED_V1" and "save-time reason" in out["artifact_error"]
+    assert json.loads((tmp_path / "a" / A.MANIFEST).read_text())["schema"] == A.SCHEMA_V1
+    assert "SAVED_V1" in planner.MEASURED_STATUSES
+    receipt = {"run_id": "r", "status": "SAVED_V1", "artifact_error": out["artifact_error"],
+               "artifacts": out["artifacts"], "comparison": {},
+               "measured": {"s_per_step_median": 1.0, "timed_steps": 1, "tokens_per_s": 1.0},
+               "correctness": {"losses": [1.0, 0.5], "loss_first_third_mean": 1.0, "loss_last_third_mean": 0.5,
+                               "all_finite": True, "frozen_expert_bytes_unchanged": True, "adapters_moved": True}}
+    text = summarize(receipt)
+    assert "adapter NOTE: saved as backend-adapter/1, not /2: save-time reason" in text and "FAILED" not in text
+
+
+def test_a_base_that_changed_during_training_is_saved_as_v1_naming_the_scope(tmp_path, fake, monkeypatch):
+    """The frozen-digest check samples only some expert layers and no attention base: the save re-fingerprints and
+    compares, scope by scope, with what the preflight took before the first step."""
+    def train(model, trainable, model_id, w, smi, meas, **k):
+        fake.sha["attention"] = "c" * 64                         # an attention base weight changed during training
+        return {"status": "OK", "measured": meas, "correctness": {}, "data": {}}
+
+    T = stubbed_trainer(monkeypatch, report=FACTS, train=train)
+    out = T.run(plan_with(), adapter_dir=str(tmp_path / "a"), run_id="run-x")
+    assert out["status"] == "SAVED_V1"
+    assert "the base changed during training: the ['attention'] fingerprint(s)" in out["artifact_error"]
+    m = json.loads((tmp_path / "a" / A.MANIFEST).read_text())
+    assert m["schema"] == A.SCHEMA_V1 and "base changed" in m["v2_refused"]
+
+
+def test_end_to_end_a_changed_attention_weight_is_caught_at_save(tmp_path, real):
+    model = real_moe()
+    report = {"commit": "0" * 40, **real.resolved_training_facts(model, None, fast_stats=None, qkv_stats=None)}
+    pre = A.v2_preflight(model, dict(plan_with().selected.setup), report, run_id="r")
+    with torch.no_grad():
+        model.self_attn.q_proj.base.weight[0, 0] += 1.0          # the base moved after the preflight
+    out = A.save_adapter(model, Tokenizer(), tmp_path / "a", plan_with(), data={}, report=report, seed=0, run_id="r",
+                         preflight=pre)
+    assert out["format"] == A.SCHEMA_V1 and "['attention']" in out["v2_refused"]
+    clean = real_moe()
+    pre = A.v2_preflight(clean, dict(plan_with().selected.setup), report, run_id="r")
+    out = A.save_adapter(clean, Tokenizer(), tmp_path / "b", plan_with(), data={}, report=report, seed=0, run_id="r",
+                         preflight=pre)
+    assert out["format"] == A.SCHEMA_V2 and "v2_refused" not in out

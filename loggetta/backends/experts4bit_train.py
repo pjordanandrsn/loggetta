@@ -110,7 +110,7 @@ def run(plan, *, seed: int = 0, warmup: int = 2, log=print, adapter_dir: str | N
 
     from ..data import TrainingData, prepare_data
     from ..measure import DriverMemorySampler, proc_status
-    from .experts4bit_adapters import save_adapter, validate_target
+    from .experts4bit_adapters import V2Unavailable, adapter_schema, save_adapter, v2_preflight, validate_target
 
     target = validate_target(adapter_dir) if adapter_dir is not None else None
     spec = TrainingData.from_dict(plan.workload.data)
@@ -140,6 +140,17 @@ def run(plan, *, seed: int = 0, warmup: int = 2, log=print, adapter_dir: str | N
             meas["load_seconds"] = time.time() - t0
             meas["load_device_peak_bytes"] = torch.cuda.max_memory_allocated()
             meas["host_anon_after_load_bytes"] = proc_status().get("RssAnon")
+            preflight = None
+            if target is not None and adapter_schema() is not None:
+                # everything a backend-adapter/2 manifest records is known now: refuse before the first step, not
+                # after the run (the base is frozen, so its fingerprint now is the trained-on base's)
+                t_pf = time.perf_counter()
+                try:
+                    preflight = v2_preflight(prep.model, dict(plan.selected.setup), prep.report, run_id=run_id)
+                except V2Unavailable as exc:
+                    from ..execution import PlanNotExecutable
+                    raise PlanNotExecutable(f"NOT_RUN, refused before the first training step: {exc}") from None
+                meas["adapter_preflight_seconds"] = time.perf_counter() - t_pf
             out = train_loop(prep.model, prep.trainable, plan.model["model"], plan.workload, smi, meas,
                              revision=plan.model.get("revision"), seed=seed, warmup=warmup, log=log,
                              prepared_data=prepared)
@@ -152,7 +163,13 @@ def run(plan, *, seed: int = 0, warmup: int = 2, log=print, adapter_dir: str | N
                 save_start = time.perf_counter()
                 try:
                     out["artifacts"]["adapter"] = save_adapter(prep.model, tok, target, plan, data=out["data"],
-                                                                report=prep.report, seed=seed, run_id=run_id)
+                                                                report=prep.report, seed=seed, run_id=run_id,
+                                                                preflight=preflight)
+                    if out["artifacts"]["adapter"].get("v2_refused"):
+                        # trained tensors were kept as /1; the run says so instead of reading as a plain OK
+                        out["status"] = "SAVED_V1"
+                        out["artifact_error"] = ("saved as backend-adapter/1, not /2: "
+                                                 + out["artifacts"]["adapter"]["v2_refused"])
                 except (OSError, ValueError, RuntimeError) as exc:
                     out["status"] = "SAVE_FAILED"
                     out["artifact_error"] = f"{type(exc).__name__}: {exc}"
