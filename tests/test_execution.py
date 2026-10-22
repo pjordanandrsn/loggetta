@@ -331,3 +331,142 @@ def test_the_engines_path_valued_report_is_named_without_its_path(stub_env, tmp_
     assert got["adapter"] == {"path": "local: my-adapter", "adapter_id": "a1"}
     assert got["levers_env"] == {"E4B_INT4_ARTIFACT_DIR": "local: art", "E4B_SERVE_ATTN_INT4": "1"}
     assert str(tmp_path) not in json.dumps(out["engaged"])
+
+
+
+class _Plan:
+    def __init__(self, empty):
+        self.is_empty = empty
+
+
+class _Sched:
+    """Two requests of three decode steps each, run one step at a time (the shape of experts4bit-qlora's scheduler)."""
+
+    def __init__(self, steps=3, stall=False):
+        self.queue, self.active, self.left, self.stall = [1], [], steps, stall
+
+    def step(self):
+        if self.stall:
+            return _Plan(True)
+        if self.queue:
+            self.active, self.queue = self.queue, []
+        self.left -= 1
+        if self.left == 0:
+            self.active = []
+        return _Plan(False)
+
+
+class _Tracer:
+    def __init__(self):
+        self.calls, self.open = [], False
+
+    def begin(self, **kw):
+        assert not self.open, "a row was opened twice"
+        self.open = True
+        self.calls.append("begin")
+
+    def end(self):
+        assert self.open
+        self.open = False
+        self.calls.append("end")
+
+    def discard(self):
+        self.open = False
+        self.calls.append("discard")
+
+
+def test_drive_opens_and_closes_a_trace_row_around_every_step():
+    """The server loop's shape: begin, step, end. scheduler.run_until_idle() never opens a row, so a trace attached
+    to it stays empty, and the GPU smoke found no decode step."""
+    from loggetta.backends.experts4bit_serve import drive
+
+    tr = _Tracer()
+    assert drive(_Sched(steps=3), tr) == 3
+    assert tr.calls == ["begin", "end"] * 3 and not tr.open
+    tr = _Tracer()
+    assert drive(_Sched(stall=True), tr) == 0 and tr.calls == ["begin", "discard"]   # an empty step is discarded
+    assert drive(_Sched(steps=2)) == 2                                                  # untraced: the same steps
+
+
+def test_a_missing_or_empty_trace_is_a_note_not_a_crash(tmp_path):
+    from loggetta.backends.experts4bit_serve import decode_step_from_trace
+
+    for got, why in ((decode_step_from_trace(str(tmp_path / "steps.jsonl")), "wrote no file"),
+                     ((tmp_path / "empty.jsonl").write_text("") or decode_step_from_trace(str(tmp_path / "empty.jsonl")),
+                      "0 row(s)")):
+        assert "decode_step_ms_b1" in got and got["decode_step_ms_b1"] is None   # ABSENT: null, never 0 or a guess
+        assert why in got["decode_step_note"]
+    rows = [{"decode_rows": 1, "prefill_tokens": 0, "step_ms": 20.0 + i} for i in range(9)]
+    (tmp_path / "b1.jsonl").write_text("\n".join(json.dumps(r) for r in rows))
+    got = decode_step_from_trace(str(tmp_path / "b1.jsonl"))
+    assert "decode_step_note" not in got and got["step_trace"] == "b1.jsonl" and got
+
+
+
+def test_driving_the_steps_gives_the_real_trace_one_row_per_step(tmp_path):
+    """experts4bit-qlora's own StepTrace (on the CPU): the fix must PRODUCE rows, one per non-empty step, not only stop
+    the crash. Through scheduler.run_until_idle() the same trace stays empty."""
+    st = pytest.importorskip("experts4bit_qlora.engines.step_trace")
+    from loggetta.backends.experts4bit_serve import drive
+
+    path = tmp_path / "steps.jsonl"
+    tr = st.StepTrace(str(path), cuda=False)
+    assert drive(_Sched(steps=5), tr) == 5
+    tr.close()
+    rows = [json.loads(ln) for ln in path.read_text().splitlines() if ln.strip()]
+    assert len(rows) == 5 and [r["step"] for r in rows] == list(range(5)) and all("step_ms" in r for r in rows)
+
+    other = tmp_path / "untraced.jsonl"
+    tr = st.StepTrace(str(other), cuda=False)
+    sched = _Sched(steps=5)
+    sched.tracer = tr
+    while sched.queue or sched.active:              # what run_until_idle does: step() with no row opened
+        sched.step()
+    tr.close()
+    assert not other.exists()
+
+
+
+@pytest.mark.parametrize("measured, want", [
+    ({"decode_step_ms_b1": 4.3561, "decode_steps_b1": 63, "tokens_per_s": 151.8, "load_seconds": 4.9,
+      "generate_seconds": 0.42}, "decode step median 4.36 ms over 63 steps"),
+    ({"decode_step_ms_b1": None, "decode_step_note": "the step trace wrote no file (no traced step)",
+      "tokens_per_s": None}, "decode step ABSENT: the step trace wrote no file"),
+])
+def test_summarize_reads_a_serve_receipt(stub_env, monkeypatch, tmp_path, measured, want):
+    """The CLI summary was train-only (a serve receipt raised KeyError after it was written: found by the GPU smoke)."""
+    from loggetta.execution import summarize
+
+    arena, calib = _serve_files(tmp_path)
+    real = stub_env.run
+    monkeypatch.setattr(experts4bit, "executor", lambda kind: (lambda pl, **kw: real(
+        pl, engine=lambda env, **k: {"measured": {"device_peak_bytes": 5 * GiB, **measured},
+                                     "requests": {"count": 1, "prompt_tokens": 1024, "new_tokens": 64}}, **kw)))
+    r = execute(a_serve_plan(), out_dir=str(tmp_path / "receipts"), hardware=hw(), prov={"sources": {}},
+                inputs={"arena": arena, "calib": calib})
+    text = summarize(r)
+    assert want in text and "1 request(s) of 1024 prompt + 64 new tokens" in text and "device_allocator" in text
+
+
+
+def test_the_cli_executes_a_serve_plan_end_to_end_through_its_summary(stub_env, monkeypatch, tmp_path, capsys):
+    """`loggetta execute` on a saved serve plan, a stand-in engine underneath, through the printed summary: the hop the
+    GPU smoke found raising after the receipt was written. Exit 0, a receipt on disk, the decode step in the summary."""
+    from loggetta import execution
+    from loggetta.cli import main
+
+    arena, calib = _serve_files(tmp_path)
+    saved = tmp_path / "plan.json"
+    saved.write_text(a_serve_plan(allow=False).to_json())
+    real = stub_env.run
+    monkeypatch.setattr(execution, "check_here", lambda plan, hardware=None: None)   # the plan names a test card
+    monkeypatch.setattr(experts4bit, "executor", lambda kind: (lambda pl, **kw: real(
+        pl, engine=lambda env, **k: {"measured": {"device_peak_bytes": 5 * GiB, "decode_step_ms_b1": 4.3561,
+                                                  "decode_steps_b1": 63, "tokens_per_s": 151.8},
+                                     "requests": {"count": 1, "prompt_tokens": 1024, "new_tokens": 64}}, **kw)))
+    out = tmp_path / "receipts"
+    rc = main(["execute", str(saved), "--arena", arena, "--calib", calib, "--allow-development-executor",
+               "--out", str(out)])
+    text = capsys.readouterr().out
+    assert rc == 0 and len(list(out.glob("*.json"))) == 1
+    assert "decode step median 4.36 ms over 63 steps" in text and "receipt:" in text

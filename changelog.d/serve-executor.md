@@ -19,3 +19,7 @@
   (`local: <name>`), as `first_run.json` does.
 - A serve receipt's run id names the context and concurrency (`...-serve-all-vram-c4096x1-...`).
 - `bench/serve_validate.py` keeps its command line and receipt format, and now calls the same measuring code.
+- The serve executor steps the engine as experts4bit-qlora's server loop does, opening and closing a trace row around
+  each step, so a one-sequence run's decode step is traced. `scheduler.run_until_idle()` steps without opening a row,
+  so the trace stayed empty. A missing or empty trace is now recorded as a note, never a crash. A GPU smoke on an RTX
+  4090 found this; the same gap was in `bench/serve_validate.py` before the executor moved into the package.

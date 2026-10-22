@@ -216,16 +216,26 @@ def load_observations(path: str | None) -> list:
 
 def summarize(receipt: dict) -> str:
     m, c, cmp = receipt["measured"], receipt["correctness"], receipt["comparison"]
-    frozen_kind = "dense" if "frozen_dense_bytes_unchanged" in c else "expert"
     g = lambda n: "n/a" if n is None else f"{n / GiB:.2f} GiB"  # noqa: E731
-    rows = [f"Run {receipt['run_id']}: {receipt['status']}",
-            f"  step time  median {m['s_per_step_median']:.2f} s (steps {m['timed_steps']}), "
-            f"{m['tokens_per_s']:.0f} tokens/s  [measured]",
-            f"  loss       {c['losses'][0]:.4f} -> {c['losses'][-1]:.4f}; first third {c['loss_first_third_mean']:.4f}, "
-            f"last third {c['loss_last_third_mean']:.4f}; finite={c['all_finite']}",
-            f"  integrity  sampled frozen {frozen_kind} bytes unchanged={c[f'frozen_{frozen_kind}_bytes_unchanged']}; "
-            f"adapters moved={c['adapters_moved']}",
-            "  memory                      estimated   measured   residual"]
+    rows = [f"Run {receipt['run_id']}: {receipt['status']}"]
+    if (receipt.get("workload") or {}).get("kind") == "serve":
+        req = receipt.get("data") or {}
+        b1 = m.get("decode_step_ms_b1")
+        rows += [f"  served     {req.get('count', '?')} request(s) of {req.get('prompt_tokens', '?')} prompt + "
+                 f"{req.get('new_tokens', '?')} new tokens; load {m.get('load_seconds')} s, decode {m.get('generate_seconds')} s",
+                 "  decode     " + (f"{m.get('tokens_per_s'):.1f} tokens/s" if m.get("tokens_per_s") is not None else "n/a")
+                 + "  [measured]",
+                 "  one stream " + (f"decode step median {b1:.2f} ms over {m.get('decode_steps_b1')} steps  [measured]"
+                                    if b1 is not None else f"decode step ABSENT: {m.get('decode_step_note', 'not traced')}")]
+    else:
+        frozen_kind = "dense" if "frozen_dense_bytes_unchanged" in c else "expert"
+        rows += [f"  step time  median {m['s_per_step_median']:.2f} s (steps {m['timed_steps']}), "
+                 f"{m['tokens_per_s']:.0f} tokens/s  [measured]",
+                 f"  loss       {c['losses'][0]:.4f} -> {c['losses'][-1]:.4f}; first third {c['loss_first_third_mean']:.4f}, "
+                 f"last third {c['loss_last_third_mean']:.4f}; finite={c['all_finite']}",
+                 f"  integrity  sampled frozen {frozen_kind} bytes unchanged={c[f'frozen_{frozen_kind}_bytes_unchanged']}; "
+                 f"adapters moved={c['adapters_moved']}"]
+    rows.append("  memory                      estimated   measured   residual")
     for k, v in cmp.items():
         res = v.get("residual")
         rows.append(f"    {k:24s} {g(v['estimated']):>10s} {g(v['measured']):>10s} "
