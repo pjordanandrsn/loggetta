@@ -8,6 +8,7 @@ of 6.38 GiB, a 12.89 GiB checkpoint, and a peak RSS of 13.1 GiB.
 """
 import dataclasses
 import json
+import os
 
 import pytest
 
@@ -51,7 +52,21 @@ def test_a_local_directory_is_listed(tmp_path):
     (tmp_path / "model.safetensors").write_bytes(b"x" * 1000)
     (tmp_path / "config.json").write_text("{}")
     got = model_mod.checkpoint_size(str(tmp_path))
-    assert got["bytes"] == 1000 and got["files"] == 1 and str(tmp_path) in got["source"]
+    assert got == {"bytes": 1000, "files": 1, "source": f"local directory {tmp_path.name}"}   # no home path recorded
+
+
+def test_an_unreadable_directory_is_no_answer_not_a_traceback(tmp_path):
+    d = tmp_path / "ckpt"
+    d.mkdir()
+    (d / "model.safetensors").write_bytes(b"x")
+    d.chmod(0)
+    try:
+        if os.access(d, os.R_OK):
+            pytest.skip("running as a user who reads a mode-0 directory (root)")
+        got = model_mod.checkpoint_size(str(d))
+    finally:
+        d.chmod(0o755)
+    assert got == {"bytes": None, "files": 0, "source": "local directory ckpt: PermissionError"}
 
 
 def test_no_answer_is_none_with_the_reasons_and_never_raises(monkeypatch):
@@ -98,10 +113,10 @@ def test_the_wsl2_receipt_exceeds_its_bound_check_and_the_bound_held():
     est, ckpt = int(6.38 * GiB), 13838721960
     lb = load_bound(est, hwp(14.5), {"bytes": ckpt, "files": 3, "source": "Hub API file metadata"})
     assert lb["bound_bytes"] == est + ckpt and lb["exceeds_available"] is True
-    assert lb["basis"].startswith("inferred upper bound")
+    assert lb["basis"].startswith("inferred bound") and "upper" not in lb["basis"]
     text = load_bound_warning(lb)
     for part in ("19.27 GiB", "6.38 GiB", "12.89 GiB", "14.50 GiB", "/proc/meminfo MemAvailable", "OOM-killed",
-                 "inferred upper bound, not a measurement", "WSL2"):
+                 "inferred bound, not a measurement", "WSL2"):
         assert part in text, part
     graded = grade_load_bound(_with_bound(lb), {"available_at_execute_bytes": int(14.5 * GiB)},
                               {"host_peak_bytes": int(13.1 * GiB)})
@@ -181,7 +196,7 @@ def _with_bound(lb):
 
 
 def _lb(bound_gib, exceeds=False):
-    return {"basis": "inferred upper bound: host estimate + checkpoint weight files on disk; not measured",
+    return {"basis": "inferred bound: host estimate + checkpoint weight files on disk; not measured, graded per receipt",
             "bound_bytes": int(bound_gib * GiB), "host_estimate_bytes": GiB, "checkpoint_bytes": int(bound_gib * GiB) - GiB,
             "checkpoint_files": 1, "checkpoint_source": "s", "available_at_plan_bytes": 14 * GiB,
             "available_at_plan_source": "src", "exceeds_available": exceeds}
@@ -238,5 +253,5 @@ def test_the_summary_labels_the_bound_inferred_and_the_peak_measured():
                "load_bound": {**_lb(19.27), "measured_peak_bytes": int(13.1 * GiB), "held": True,
                               "available_at_execute_bytes": int(14.5 * GiB)}}
     text = summarize(receipt)
-    assert ("load bound 19.27 GiB [inferred upper bound] vs peak RSS 13.10 GiB [measured]: held; "
+    assert ("load bound 19.27 GiB [inferred bound] vs peak RSS 13.10 GiB [measured]: held; "
             "available before load 14.50 GiB") in text

@@ -233,7 +233,7 @@ def summarize(receipt: dict) -> str:
     lb = receipt.get("load_bound")
     if lb:
         verdict = {True: "held", False: "EXCEEDED", None: "not graded"}[lb.get("held")]
-        rows.append(f"  load bound {g(lb['bound_bytes'])} [inferred upper bound] vs peak RSS {g(lb.get('measured_peak_bytes'))} "
+        rows.append(f"  load bound {g(lb['bound_bytes'])} [inferred bound] vs peak RSS {g(lb.get('measured_peak_bytes'))} "
                     f"[measured]: {verdict}; available before load {g(lb.get('available_at_execute_bytes'))}")
     if receipt.get("artifact_error"):
         saved = bool((receipt.get("artifacts") or {}).get("adapter"))       # a note about a saved adapter, not a failure

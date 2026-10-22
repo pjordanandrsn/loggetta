@@ -81,10 +81,13 @@ def checkpoint_size(model, *, revision=None) -> dict:
     from pathlib import Path
 
     path = Path(str(model)).expanduser()
-    if path.is_dir():
-        files = _weight_files({p.name: p.stat().st_size for p in path.iterdir() if p.is_file()})
+    if path.is_dir():                                    # the directory's own name only: no home path in a receipt
+        try:
+            files = _weight_files({p.name: p.stat().st_size for p in path.iterdir() if p.is_file()})
+        except OSError as e:
+            return {"bytes": None, "files": 0, "source": f"local directory {path.name}: {type(e).__name__}"}
         return {"bytes": sum(files.values()) if files else None, "files": len(files),
-                "source": f"local directory {path}" if files else f"no weight files in {path}"}
+                "source": f"local directory {path.name}" if files else f"no weight files in local directory {path.name}"}
     errors = []
     try:
         from huggingface_hub import HfApi
@@ -103,7 +106,7 @@ def checkpoint_size(model, *, revision=None) -> dict:
         snap = Path(snapshot_download(str(model), revision=revision, local_files_only=True))
         files = _weight_files({p.name: p.stat().st_size for p in snap.iterdir() if p.is_file()})
         if files:
-            return {"bytes": sum(files.values()), "files": len(files), "source": f"local Hub cache {snap}"}
+            return {"bytes": sum(files.values()), "files": len(files), "source": f"local Hub cache, {model}@{snap.name}"}
         errors.append("the local Hub cache holds no weight files")
     except Exception as e:
         errors.append(f"local Hub cache: {type(e).__name__}")

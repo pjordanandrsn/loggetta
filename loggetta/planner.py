@@ -537,17 +537,18 @@ def vendor_refusal(gpu, backends=()) -> str:
 
 
 def load_bound(host_bytes: int, hardware, checkpoint: dict | None) -> dict | None:
-    """An inferred UPPER bound on the host memory the load can touch: the plan's host estimate (the steady state) plus
-    every byte of the checkpoint's weight files, which the loader maps from disk and which count in the process's RSS.
-    The load-time transients the estimate leaves out (the streaming loader's per-tensor quantize, page cache) are
-    bounded by the second term, not priced: a bound, never a refusal. It is compared with what THIS machine had
-    available at plan time; execute reads that again before loading and the receipt grades the bound against the run's
-    measured peak (VmHWM). None when the checkpoint's size is unknown."""
+    """An inferred bound on the host memory the load touches: the plan's host estimate (the steady state) plus every
+    byte of the checkpoint's weight files, which the loader maps from disk and which count in the process's RSS. It is
+    not shown to be an upper bound: the load-time transients the estimate leaves out (the streaming loader's per-tensor
+    quantize, page cache) are not priced, and a quantize transient's anonymous bytes can sit on top of the mapped
+    shards. Every receipt grades it against the run's measured peak (VmHWM). It warns, never refuses, and is compared
+    with what THIS machine had available at plan time; execute reads that again before loading. None when the
+    checkpoint's size is unknown."""
     if not checkpoint or checkpoint.get("bytes") is None:
         return None
     avail = hardware.host.memory_available
     bound = int(host_bytes) + int(checkpoint["bytes"])
-    return {"basis": "inferred upper bound: host estimate + checkpoint weight files on disk; not measured",
+    return {"basis": "inferred bound: host estimate + checkpoint weight files on disk; not measured, graded per receipt",
             "bound_bytes": bound, "host_estimate_bytes": int(host_bytes),
             "checkpoint_bytes": int(checkpoint["bytes"]), "checkpoint_files": checkpoint.get("files"),
             "checkpoint_source": checkpoint.get("source"),
@@ -560,7 +561,7 @@ def load_bound_warning(lb: dict) -> str:
             f"{lb['host_estimate_bytes'] / GiB:.2f} GiB + the checkpoint's {lb['checkpoint_bytes'] / GiB:.2f} GiB on "
             f"disk, which loading maps) exceeds the {lb['available_at_plan_bytes'] / GiB:.2f} GiB this machine had "
             f"available at plan time ({lb['available_at_plan_source']}): the load may page or be OOM-killed. This is "
-            "an inferred upper bound, not a measurement; mapped checkpoint pages count against a VM or container "
+            "an inferred bound, not a measurement; mapped checkpoint pages count against a VM or container "
             "memory cap (WSL2, Docker) even when the kernel calls them reclaimable")
 
 
