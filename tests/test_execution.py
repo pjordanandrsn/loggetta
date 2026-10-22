@@ -446,3 +446,27 @@ def test_summarize_reads_a_serve_receipt(stub_env, monkeypatch, tmp_path, measur
                 inputs={"arena": arena, "calib": calib})
     text = summarize(r)
     assert want in text and "1 request(s) of 1024 prompt + 64 new tokens" in text and "device_allocator" in text
+
+
+
+def test_the_cli_executes_a_serve_plan_end_to_end_through_its_summary(stub_env, monkeypatch, tmp_path, capsys):
+    """`loggetta execute` on a saved serve plan, a stand-in engine underneath, through the printed summary: the hop the
+    GPU smoke found raising after the receipt was written. Exit 0, a receipt on disk, the decode step in the summary."""
+    from loggetta import execution
+    from loggetta.cli import main
+
+    arena, calib = _serve_files(tmp_path)
+    saved = tmp_path / "plan.json"
+    saved.write_text(a_serve_plan(allow=False).to_json())
+    real = stub_env.run
+    monkeypatch.setattr(execution, "check_here", lambda plan, hardware=None: None)   # the plan names a test card
+    monkeypatch.setattr(experts4bit, "executor", lambda kind: (lambda pl, **kw: real(
+        pl, engine=lambda env, **k: {"measured": {"device_peak_bytes": 5 * GiB, "decode_step_ms_b1": 4.3561,
+                                                  "decode_steps_b1": 63, "tokens_per_s": 151.8},
+                                     "requests": {"count": 1, "prompt_tokens": 1024, "new_tokens": 64}}, **kw)))
+    out = tmp_path / "receipts"
+    rc = main(["execute", str(saved), "--arena", arena, "--calib", calib, "--allow-development-executor",
+               "--out", str(out)])
+    text = capsys.readouterr().out
+    assert rc == 0 and len(list(out.glob("*.json"))) == 1
+    assert "decode step median 4.36 ms over 63 steps" in text and "receipt:" in text
