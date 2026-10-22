@@ -304,28 +304,42 @@ print(json.dumps({"version": torch.__version__, "cuda": torch.version.cuda, "ava
 MIN_DRIVER_FOR_CUDA = {13: 580, 12: 525, 11: 450}
 
 
-#: The PyTorch CUDA builds a first install chooses between, newest first: (index tag, CUDA major). Each must publish a
-#: torch the backend stack accepts (grouped-nf4-gemm requires torch 2.8 or later). Read from download.pytorch.org on
-#: 2026-10-22: torch 2.14.1 is published for cu130 and cu126; the newest cu118 torch is 2.7.1, below that floor.
-#: ``first_run.sh`` checks the installed torch against the GPU afterwards, so a stale row fails loudly, never silently.
-TORCH_BUILDS = (("cu130", 13), ("cu126", 12))
+#: The PyTorch CUDA builds a first install chooses between, in order of preference (the newest torch first): (index
+#: tag, CUDA version, the oldest driver it runs on). Each must publish a torch the backend stack accepts (grouped-nf4-gemm requires torch 2.8 or later).
+#: Read from download.pytorch.org on 2026-10-22: torch 2.14.1 for cu130 and cu126, 2.13.0 for cu129; the newest cu118
+#: torch is 2.7.1, below that floor. The driver minimum is CUDA's (minor-version compatibility: 13.x needs 580, 12.x
+#: 525). ``first_run.sh`` asks the installed torch about the GPU afterwards, so a stale row fails loudly, never silently.
+TORCH_BUILDS = (("cu130", (13, 0), 580), ("cu126", (12, 6), 525), ("cu129", (12, 9), 525))
+#: GPUs from compute capability 10.0 (Blackwell: sm_100, sm_120) have kernels only in builds for CUDA 12.8 or later
+#: (the CUDA toolkit added those architectures in 12.8), and need a driver from the 570 series or later.
+BLACKWELL_CC, BLACKWELL_MIN_CUDA, BLACKWELL_MIN_DRIVER = (10, 0), (12, 8), 570
 TORCH_INDEX_URL = "https://download.pytorch.org/whl/{tag}"
 
 
-def torch_build_for_driver(driver) -> tuple:
-    """``(tag, reason)``: the newest PyTorch CUDA build in :data:`TORCH_BUILDS` that this NVIDIA driver runs (per
-    :data:`MIN_DRIVER_FOR_CUDA`), or ``(None, reason)`` naming why none fits. Read before torch is installed, so it uses
-    only the driver version ``nvidia-smi`` reports."""
+def torch_build_for_driver(driver, compute_capability=None) -> tuple:
+    """``(tag, reason)``: the first PyTorch CUDA build in :data:`TORCH_BUILDS` that this NVIDIA driver runs and that
+    carries kernels for this GPU's architecture, or ``(None, reason)`` naming why none fits. Read before torch is
+    installed, so it uses only what ``nvidia-smi`` reports (the driver version and the compute capability)."""
     have = _driver_major(driver)
     if have is None:
         return None, f"the NVIDIA driver version could not be read ({driver!r})"
-    for tag, cuda_major in TORCH_BUILDS:
-        need = MIN_DRIVER_FOR_CUDA[cuda_major]
+    cc = tuple(compute_capability) if compute_capability else None
+    blackwell = cc is not None and cc >= BLACKWELL_CC
+    if blackwell and have < BLACKWELL_MIN_DRIVER:
+        return None, (f"compute capability {cc[0]}.{cc[1]} (Blackwell) needs driver {BLACKWELL_MIN_DRIVER} or later; "
+                      f"this one is {have}: update the NVIDIA driver")
+    for tag, cuda, need in TORCH_BUILDS:
+        if blackwell and cuda < BLACKWELL_MIN_CUDA:
+            continue
         if have >= need:
-            return tag, f"driver {have} runs CUDA {cuda_major}.x builds (needs {need} or later)"
-    oldest = min(MIN_DRIVER_FOR_CUDA[c] for _, c in TORCH_BUILDS)
-    return None, (f"driver {have} is older than every supported torch build needs: the oldest, "
-                  f"{TORCH_BUILDS[-1][0]}, needs driver {oldest} or later; update the NVIDIA driver")
+            why = f"driver {have} runs CUDA {cuda[0]}.{cuda[1]} builds (needs {need} or later)"
+            if blackwell:
+                why += (f"; compute capability {cc[0]}.{cc[1]} needs a build for CUDA "
+                        f"{BLACKWELL_MIN_CUDA[0]}.{BLACKWELL_MIN_CUDA[1]} or later")
+            return tag, why
+    oldest = min(need for _, _, need in TORCH_BUILDS)
+    return None, (f"driver {have} is older than every supported torch build needs: the oldest needs driver {oldest} "
+                  f"or later; update the NVIDIA driver")
 
 
 def parse_torch_probe(text: str, version: str | None = None) -> TorchCuda:
@@ -542,7 +556,7 @@ def describe(hw: HardwareProfile) -> str:
             lines.append(f"    torch says: {t.note}" if t.available is False else f"    note: {t.note}")
         nv = next((g for g in hw.gpus if g.vendor == "nvidia"), None)
         if nv is not None:
-            tag, why = torch_build_for_driver(nv.driver.value)
+            tag, why = torch_build_for_driver(nv.driver.value, nv.compute_capability.value)
             lines.append(f"    torch build for this driver: {tag} ({why}); install it first: pip install torch "
                          f"--index-url {TORCH_INDEX_URL.format(tag=tag)}" if tag else
                          f"    torch build for this driver: none ({why})")

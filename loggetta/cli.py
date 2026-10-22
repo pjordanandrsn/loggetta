@@ -181,7 +181,7 @@ def main(argv=None) -> int:
         if nv is None:
             print("no NVIDIA GPU discovered: training here needs CUDA. " + "; ".join(hw.notes), file=sys.stderr)
             return 3
-        tag, why = torch_build_for_driver(nv.driver.value)
+        tag, why = torch_build_for_driver(nv.driver.value, nv.compute_capability.value)
         if tag is None:
             print(f"no torch build fits GPU {nv.index} ({nv.name}): {why}", file=sys.stderr)
             return 3

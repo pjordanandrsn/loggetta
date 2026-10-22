@@ -59,8 +59,8 @@ Installing a different torch build over an existing one does nothing: pip counts
 satisfied whatever CUDA it was built for. Start from a fresh environment (or `pip install --force-reinstall` from the
 build's index).
 
-`loggetta inspect` also names the build for your driver; `loggetta inspect --torch-index` prints only its tag (for
-example `cu126`), with no torch installed yet. [`scripts/first_run.sh`](scripts/first_run.sh) does the whole first run
+From the next release, `loggetta inspect` also names the build for your driver, and `loggetta inspect --torch-index`
+prints only its tag (for example `cu126`), with no torch installed yet. [`scripts/first_run.sh`](scripts/first_run.sh) does the whole first run
 in a new directory: it reads the driver, installs that torch first, then Loggetta, and runs `inspect`, `plan` and 10
 training steps on OLMoE-1B-7B. Each step's exit status and time go to `first_run.json`, and it ends trained or with a
 named refusal.

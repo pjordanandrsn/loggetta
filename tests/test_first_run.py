@@ -11,32 +11,38 @@ from loggetta import cli, hardware as H
 SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "first_run.sh"
 
 
-@pytest.mark.parametrize("driver, tag", [
-    ("580.65.06", "cu130"), ("590.10", "cu130"),       # CUDA 13 needs 580
-    ("575.57.08", "cu126"), ("525.60.13", "cu126"),    # a CUDA 12 build runs on 525 and later
+@pytest.mark.parametrize("driver, cc, tag", [
+    ("580.65.06", (8, 9), "cu130"), ("590.10", None, "cu130"),           # CUDA 13 needs 580
+    ("575.57.08", (8, 9), "cu126"), ("525.60.13", (8, 6), "cu126"),     # the newest torch a 12.x driver runs
+    ("580.65.06", (12, 0), "cu130"),                                    # Blackwell on a 13.x driver
+    ("575.57.08", (12, 0), "cu129"), ("570.86.10", (10, 0), "cu129"),   # Blackwell: CUDA 12.8 or later, not cu126
 ])
-def test_the_newest_build_the_driver_runs(driver, tag):
-    got, why = H.torch_build_for_driver(driver)
+def test_the_build_fits_the_driver_and_the_architecture(driver, cc, tag):
+    got, why = H.torch_build_for_driver(driver, cc)
     assert got == tag and why.startswith(f"driver {driver.split('.')[0]} runs CUDA")
+    if cc and cc >= (10, 0):
+        assert "needs a build for CUDA 12.8 or later" in why
 
 
-@pytest.mark.parametrize("driver, match", [
-    ("470.256.02", "older than every supported torch build needs: the oldest, cu126, needs driver 525"),
-    (None, "could not be read"), ("n/a", "could not be read"),
+@pytest.mark.parametrize("driver, cc, match", [
+    ("470.256.02", (8, 6), "older than every supported torch build needs: the oldest needs driver 525"),
+    ("565.57.01", (12, 0), "compute capability 12.0 (Blackwell) needs driver 570 or later; this one is 565"),
+    (None, None, "could not be read"), ("n/a", (8, 9), "could not be read"),
 ])
-def test_no_build_fits_is_a_named_reason(driver, match):
-    tag, why = H.torch_build_for_driver(driver)
+def test_no_build_fits_is_a_named_reason(driver, cc, match):
+    tag, why = H.torch_build_for_driver(driver, cc)
     assert tag is None and match in why
 
 
-def test_every_build_names_a_known_cuda_and_the_list_is_newest_first():
-    majors = [m for _, m in H.TORCH_BUILDS]
-    assert all(m in H.MIN_DRIVER_FOR_CUDA for m in majors) and majors == sorted(majors, reverse=True)
+def test_every_build_is_a_known_cuda_with_the_drivers_minimum():
+    for tag, cuda, need in H.TORCH_BUILDS:
+        assert tag == f"cu{cuda[0]}{cuda[1]}" and need == H.MIN_DRIVER_FOR_CUDA[cuda[0]]
+    assert any(cuda >= H.BLACKWELL_MIN_CUDA and need <= H.BLACKWELL_MIN_DRIVER for _, cuda, need in H.TORCH_BUILDS)
 
 
-def gpu(driver="575.57.08", vendor="nvidia"):
+def gpu(driver="575.57.08", vendor="nvidia", cc=(8, 9)):
     f = lambda v: H.Fact(v, "reported")  # noqa: E731
-    return H.GPU(index=0, vendor=vendor, name="Test GPU", uuid=None, compute_capability=f((8, 9)),
+    return H.GPU(index=0, vendor=vendor, name="Test GPU", uuid=None, compute_capability=f(cc),
                  memory_total=f(24 << 30), memory_free=f(24 << 30), driver=f(driver), pcie_gen_max=f(4),
                  pcie_width_max=f(16), pcie_gen_current=f(4), pcie_width_current=f(16))
 
@@ -52,6 +58,7 @@ def profile(gpus):
     ([gpu("575.57.08")], 0, "cu126", ""),
     ([gpu("580.65.06")], 0, "cu130", ""),
     ([gpu("470.256.02")], 3, "", "no torch build fits GPU 0 (Test GPU): driver 470 is older"),
+    ([gpu("575.57.08", cc=(12, 0))], 0, "cu129", ""),
     ([], 3, "", "no NVIDIA GPU discovered"),
 ])
 def test_inspect_torch_index_prints_only_the_tag_or_refuses_by_name(monkeypatch, capsys, gpus, rc, out, err):
@@ -72,7 +79,7 @@ def test_inspect_prints_the_build_for_the_driver():
     hw = replace(profile([gpu("575.57.08")]), torch=H.TorchCuda(version=None, cuda=None, available=None,
                                                                 device_count=None, note=""))
     text = H.describe(hw)
-    assert ("torch build for this driver: cu126 (driver 575 runs CUDA 12.x builds (needs 525 or later)); install it "
+    assert ("torch build for this driver: cu126 (driver 575 runs CUDA 12.6 builds (needs 525 or later)); install it "
             "first: pip install torch --index-url https://download.pytorch.org/whl/cu126") in text
 
 

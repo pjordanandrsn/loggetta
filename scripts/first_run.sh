@@ -113,7 +113,13 @@ if [ -z "$TAG" ]; then
   TAG=$("$VPY" -m loggetta inspect --torch-index 2> "$DIR/torch_index.err")
   rc=$?
   printf '%s\t%s\t%s\n' "torch_index" "$rc" "0" >> "$LOG"
-  [ "$rc" -eq 0 ] && [ -n "$TAG" ] || finish 3 "$(tr '\n' ' ' < "$DIR/torch_index.err")"
+  if [ "$rc" -eq 3 ]; then
+    finish 3 "$(tr '\n' ' ' < "$DIR/torch_index.err")"
+  elif [ "$rc" -ne 0 ] || [ -z "$TAG" ]; then
+    # a release from before `inspect --torch-index` exits 2 on the unknown option: that is not "no build fits"
+    finish 5 "the installed package cannot name a torch build (inspect --torch-index exited $rc; releases before it \
+lack the option; set TORCH_INDEX to a build tag, e.g. cu126): $(tail -2 "$DIR/torch_index.err" | tr '\n' ' ')"
+  fi
   step inspect_driver_uninstall "$VPY" -m pip uninstall -q -y loggetta || finish 5 "could not remove the bootstrap install"
 fi
 
@@ -135,7 +141,11 @@ step plan "$VPY" -m loggetta plan "$MODEL" --revision "$REVISION" --seq "$SEQ" -
   --out "$DIR/plan.json" > "$DIR/plan.txt" 2>&1
 rc=$?
 cat "$DIR/plan.txt" >&2
-[ "$rc" -eq 0 ] || finish 4 "the plan was refused: $(grep -m3 -iE 'refus|cannot|reason' "$DIR/plan.txt" | tr '\n' ' ')"
+if [ "$rc" -ne 0 ]; then
+  why=$(grep -m3 -iE 'refus|cannot|reason|not feasible' "$DIR/plan.txt" | tr '\n' ' ')
+  [ -n "$why" ] || why=$(tail -3 "$DIR/plan.txt" | tr '\n' ' ')
+  finish 4 "the plan was refused (exit $rc): $why"
+fi
 step execute "$VPY" -m loggetta execute "$DIR/plan.json" --out "$DIR/receipts" > "$DIR/execute.txt" 2>&1
 rc=$?
 tail -25 "$DIR/execute.txt" >&2
