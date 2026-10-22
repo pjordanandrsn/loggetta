@@ -82,6 +82,42 @@ def test_no_answer_is_none_with_the_reasons_and_never_raises(monkeypatch):
     assert "Hub API: OSError" in got["source"] and "local Hub cache: OSError" in got["source"]
 
 
+@pytest.mark.parametrize("where", ["dir", "empty_dir", "unreadable_dir", "cache", "nothing"])
+def test_no_recorded_source_carries_a_local_path(where, tmp_path, monkeypatch):
+    """Users share plans and receipts: a home directory or username in them would ship with the file."""
+    import huggingface_hub
+
+    home = tmp_path / "home" / "someuser"
+    monkeypatch.setenv("HOME", str(home))
+    ckpt = home / "models" / "ckpt"
+    ckpt.mkdir(parents=True)
+    if where != "empty_dir":
+        (ckpt / "model.safetensors").write_bytes(b"x" * 10)
+    snap = home / ".cache" / "huggingface" / "hub" / "models--org--m" / "snapshots" / ("a" * 40)
+
+    def offline(*a, **k):
+        raise OSError("offline")
+
+    monkeypatch.setattr(huggingface_hub.HfApi, "model_info", offline)
+    if where == "cache":
+        snap.mkdir(parents=True)
+        (snap / "model.safetensors").write_bytes(b"x" * 10)
+        monkeypatch.setattr(huggingface_hub, "snapshot_download", lambda *a, **k: str(snap))
+    else:
+        monkeypatch.setattr(huggingface_hub, "snapshot_download", offline)
+    if where == "unreadable_dir":
+        ckpt.chmod(0)
+    try:
+        got = model_mod.checkpoint_size(str(ckpt) if "dir" in where else "org/m")
+    finally:
+        ckpt.chmod(0o755)
+    src = got["source"]
+    assert os.path.expanduser("~") not in src and str(tmp_path) not in src and "someuser" not in src
+    assert not src.startswith("/") and " /" not in src
+    if where == "cache":
+        assert got["bytes"] == 10 and src == f"local Hub cache, org/m@{'a' * 40}"
+
+
 def test_the_hub_answer_is_file_metadata_only(monkeypatch):
     import huggingface_hub
 
