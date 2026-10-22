@@ -559,8 +559,13 @@ def probe_c_compiler(timeout_s: float = 60.0) -> Fact:
     scheme = sysconfig.get_default_scheme()
     include = sysconfig.get_paths(scheme="posix_prefix" if scheme == "posix_local" else scheme).get("include") or ""
 
-    def no_paths(text: str) -> str:
-        return re.sub(r"(?<![\w.])/(?:[^\s:'\"()<>,]+/)*([^\s:'\"()<>,/]+)", r"\1", text)
+    def no_paths(text: str, known: list) -> str:
+        # the probe's own strings first, literally, longest first: the temp dir, the include dir, CC, the home directory
+        for s, tag in sorted(known, key=lambda k: -len(k[0] or "")):
+            if s and len(s) > 1:                                  # whole paths only: a home dir must not eat a longer sibling
+                text = re.sub(re.escape(s.rstrip("/")) + r"(?=/|\s|$|['\":,)])", tag, text)
+        text = re.sub(r"(?<=-[ILl])/", " /", text)              # a path glued to a flag (-I/...) is still a path
+        return re.sub(r"(?<![\w.])/(?:[^\s:'\"()<>,]+/)*([^\s:'\"()<>,/]*)", r"\1", text)
 
     with tempfile.TemporaryDirectory() as d:
         src = os.path.join(d, "probe.c")
@@ -572,7 +577,8 @@ def probe_c_compiler(timeout_s: float = 60.0) -> Fact:
         except (OSError, subprocess.SubprocessError) as e:
             return Fact(None, "reported", f"{name} could not be run: {type(e).__name__}")
     if r.returncode != 0:
-        err = no_paths(" ".join((r.stderr or r.stdout or "").split()))[-300:]
+        known = [(d, "<tmp>"), (include, "<include>"), (cc, name), (os.path.expanduser("~"), "~")]
+        err = no_paths(" ".join((r.stderr or r.stdout or "").split()), known)[-300:]
         return Fact(None, "reported", f"{name} could not build a shared object against Python.h (exit {r.returncode})"
                     + (f": {err}" if err else ""))
     return Fact(name, "reported", "built a shared object against Python.h, as Triton does at startup")

@@ -54,6 +54,35 @@ def test_a_cc_that_does_not_exist_is_refused(monkeypatch):
     assert f.value is None and "cc could not be run" in f.note and "/nonexistent" not in f.note
 
 
+def _fake_cc(tmp_path, monkeypatch, line):
+    """CC is a script that writes one diagnostic line to stderr and fails; HOME is a home path built at run time."""
+    home = os.sep + os.path.join("home", "someone")
+    monkeypatch.setenv("HOME", home)
+    fake = tmp_path / "fakecc"
+    fake.write_text("#!/bin/sh\n" f"echo \"{line(home)}\" >&2\n" "exit 1\n")
+    fake.chmod(0o755)
+    monkeypatch.setenv("CC", str(fake))
+    return probe_c_compiler()
+
+
+def test_no_user_name_survives_in_a_path_glued_to_a_flag(monkeypatch, tmp_path):
+    srv = os.sep + os.path.join("srv", "someone", "include")       # not under HOME: only the flag split catches it
+    f = _fake_cc(tmp_path, monkeypatch, lambda home: f"cc1: note: search path -I{home}/.venv/include -I{srv}")
+    assert f.value is None and "someone" not in f.note and "/" not in f.note, f.note
+
+
+def test_no_user_name_survives_in_a_directory_path_ending_in_a_slash(monkeypatch, tmp_path):
+    other = os.sep + os.path.join("home", "someone2")
+    f = _fake_cc(tmp_path, monkeypatch, lambda home: f"cc1: note: cannot read {home}/ or {other}/")
+    assert f.value is None and "someone" not in f.note and "/" not in f.note, f.note
+
+
+def test_the_home_directory_is_replaced_as_a_whole_path_only(monkeypatch, tmp_path):
+    other = os.sep + os.path.join("home", "someone2")
+    f = _fake_cc(tmp_path, monkeypatch, lambda home: f"error: {other}/x.h and {home}/y.h")
+    assert "someone" not in f.note and "~2" not in f.note and "x.h" in f.note and "y.h" in f.note, f.note
+
+
 def test_an_empty_cc_counts_as_set_as_it_does_for_triton(monkeypatch):
     monkeypatch.setenv("CC", "")
     f = probe_c_compiler()
