@@ -165,7 +165,7 @@ def test_first_run_names_a_refused_plan(tmp_path):
 @pytest.mark.parametrize("spec, recorded", [
     ("loggetta", "loggetta"),                                   # a PyPI spec is not a path: recorded as given
     ("loggetta==0.7.0", "loggetta==0.7.0"),
-    ("/home/someuser/wheels/loggetta-0.7.0-py3-none-any.whl", "local: loggetta-0.7.0-py3-none-any.whl"),
+    ("/srv/wheels/loggetta-0.7.0-py3-none-any.whl", "local: loggetta-0.7.0-py3-none-any.whl"),
 ])
 def test_first_run_never_records_a_local_path(tmp_path, spec, recorded):
     """Users share first_run.json: an absolute PACKAGE_SPEC would carry their home directory and username with it."""
