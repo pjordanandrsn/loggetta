@@ -58,6 +58,11 @@ finish() {
 import json, os, platform, subprocess, sys, time
 
 d, code, reason, t0, tag, model, rev, steps, seq, spec = sys.argv[1:]
+# a local wheel or directory is recorded by its name only: users share this file, and an absolute path would carry
+# their home directory and username with it. pip's rule for "is a path": a separator, a leading ".", or an existing
+# file; a bare name ("loggetta") is a requirement even where a directory of that name exists
+if "/" in spec or spec.startswith(".") or os.path.isfile(spec):
+    spec = "local: " + os.path.basename(spec.rstrip("/"))
 rows = []
 for line in open(os.path.join(d, "steps.tsv")):
     name, rc, secs = line.rstrip("\n").split("\t")

@@ -8,3 +8,5 @@ named refusal (exit 3). `scripts/first_run.sh` runs a first install end to end i
 environment, the matching torch FIRST, then the package, `inspect`, `plan`, and 10 training steps on OLMoE-1B-7B-0924-Instruct
 at a pinned revision. It writes each step's exit status and seconds to `first_run.json` and ends trained, or with a named
 refusal: no torch build fits (3), the plan was refused (4), an install step failed (5), or the run did not train (6).
+A local wheel or directory given as `PACKAGE_SPEC` is recorded in `first_run.json` by its name only, never its path, so
+a shared summary carries no home directory.
