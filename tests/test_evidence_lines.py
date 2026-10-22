@@ -47,7 +47,8 @@ def test_a_streamed_plan_states_its_admission_margin_beside_the_total():
 
 
 @pytest.mark.parametrize("version, ref", [("0.6.3", "v0.6.3"), ("1.0.0", "v1.0.0"),
-                                          ("0.6.3.dev2", "main"), ("0.6.3+local.abc", "main")])
+                                          ("0.6.3.dev2", "main"), ("0.6.3+local.abc", "main"),
+                                          ("0.6.3.dev0+g1a2b3c", "main"), ("0.7.0rc1", "main"), ("0.7.0b2", "main")])
 def test_the_link_pins_a_release_tag_and_a_dev_build_links_main(monkeypatch, version, ref):
     import importlib.metadata as md
 
