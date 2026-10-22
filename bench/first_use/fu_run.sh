@@ -33,6 +33,7 @@ for cell in $FU_CELLS; do
     below-default|at-default|current-default) tix=pypi;;
     below-matched|at-matched|current-matched) tix="";;
     cpu-torch) tix=cpu;;
+    no-compiler) tix="";;              # the matched torch, on the RUNTIME image: a named refusal at the plan
     no-gpu) say "refusing: the no-gpu cell runs on a host with no NVIDIA GPU, never on a rented GPU box"; finish 78;;
     *) say "refusing: unregistered cell $cell"; finish 78;;
   esac

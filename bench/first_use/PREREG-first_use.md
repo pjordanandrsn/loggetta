@@ -27,6 +27,7 @@ and the verdict keeps both the listed and the read value. The bands and the expe
 | current-matched | d ≥ 590 | unset | 0 or 7 | cu130 |
 | cpu-torch | any band (GPU visible) | `cpu` | 4 (torch cannot use the GPU) | cpu |
 | no-gpu | no NVIDIA GPU, Linux | unset | 3 (no torch build fits) | none |
+| no-compiler | any band, on the RUNTIME image (no C compiler) | unset | 4, refused at the plan naming "no working C compiler", with NO execute step (so before the download) | the matched build |
 
 `first_run.sh` exit codes:
 - 0 = TRAINED, device check passed.
@@ -54,18 +55,25 @@ paths. Both this file and the README state plainly that a driver below 525 is **
 - Three rented boxes, each pinned to a machine by `fu_screen.py`: the band's cheapest passing class among RTX A4000,
   4090 and 5090 (the classes the launch policy allows), stable on 6 of 6 machine-filtered reads, with at least 500 Mbps
   down and 8 effective CPU cores.
-- Every box runs the image `pytorch/pytorch:2.4.0-cuda12.1-cudnn9-devel`. A container image needs a driver at least
-  as new as its CUDA (12.1 runs from driver 525), so one image starts in every band; `first_run.sh` installs its own
-  torch into a fresh environment, so the image's torch is never used. It is the DEVEL image because the training
-  kernels are Triton kernels, and Triton builds a helper with a C compiler at first launch: on the runtime image (no
-  gcc) a matched cell refuses by name at the plan instead of training. Both were shown on a 560-driver RTX 4090
-  (explore, not readings): devel trained in 217 s, runtime refused with "no working C compiler".
+- The band boxes run the image `pytorch/pytorch:2.4.0-cuda12.1-cudnn9-devel`. A container image needs a driver at
+  least as new as its CUDA (12.1 runs from driver 525), so one image starts in every band; `first_run.sh` installs its
+  own torch into a fresh environment, so the image's torch is never used.
+- A fourth box, in any band, runs the RUNTIME image (`pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime`, no C compiler) and
+  only the `no-compiler` cell. That is the image a first-time user is likely to pull, so the matrix covers the named
+  refusal there and a regression of it fails T1.
+- **Design change, 2026-10-22, before any T1 reading:** the band boxes moved from the runtime image to the devel image,
+  and the runtime image became its own registered cell (`no-compiler`). The cause was two explore runs on a 560-driver
+  RTX 4090 (receipts `fux-below-7` and `fux-below-8`, not readings). The training kernels are Triton kernels, and
+  Triton builds a helper with a C compiler at first launch. On devel the matched cell trained in 217 s. On runtime it
+  was refused at the plan with "no working C compiler", before the download (loggetta#103; before that fix, the run
+  crashed after the download).
 - **below** runs `below-default below-matched cpu-torch`, **at** runs `at-default at-matched`, and **current** runs
   `current-default current-matched`.
-- Run ids are `fu-below-N`, `fu-at-N` and `fu-current-N`, with N = 1, plus spares 2 and 3.
+- Run ids are `fu-below-N`, `fu-at-N`, `fu-current-N` and `fu-nocc-N`, with N = 1, plus spares 2 and 3.
 - `no-gpu` runs at USD 0 on a Linux host with no NVIDIA GPU, never on a rented box (the runner refuses it).
-- Expected cost is about USD 1.5. The worst case is about USD 6 (a 2.5 h hard deadline at USD 0.70/h per box, plus
-  download fees), inside the USD 15 per release candidate.
+- Expected cost is about USD 1.6. The worst case is about USD 7.5: a 2.5 h hard deadline at USD 0.70/h for each band
+  box, plus a 1 h deadline for the `no-compiler` box (one cell that stops at the plan), plus download fees. That is
+  inside the USD 15 per release candidate.
 - A CELL_MISMATCH box may be re-run once on a spare id pinned to another machine.
 
 ## Alarm

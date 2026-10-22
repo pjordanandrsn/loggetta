@@ -86,6 +86,49 @@ def test_the_gate_admits_only_trained_exits_and_named_refusals(exit_code, refusa
     assert fu.named({"exit": exit_code, "refusal": refusal}) is named
 
 
+NOCC = ROOT / "tests" / "fixtures" / "first_use" / "no-compiler-runtime-image"
+
+
+def nocc():
+    """A REAL record: box fux-below-8 (explore), the runtime image on a 560-driver RTX 4090. first_run.json is unedited
+    (its summary predates the reasons[0] fix); plan.json has only its GPU UUID set to null."""
+    return json.loads((NOCC / "first_run.json").read_text()), json.loads((NOCC / "plan.json").read_text())
+
+
+def test_the_real_runtime_image_record_meets_the_no_compiler_cell():
+    rec, plan = nocc()
+    g = fu.grade("no-compiler", rec, plan_reasons=plan["refusal"]["reasons"])
+    assert g["verdict"] == "MET" and g["exit"] == 4 and g["torch_index"] == "cu126"
+    assert "execute" not in [s["step"] for s in rec["steps"]]                    # refused before the download
+
+
+@pytest.mark.parametrize("change, why", [
+    ({"plan_reasons": ["torch 2.14.1+cu130 cannot use GPU 0 (driver too old)"]}, "does not name"),   # another refusal
+    ({"steps_plus": "execute"}, "step ran"),                                       # it refused only after the download
+    ({"exit": 7, "refusal": "trained; the device check did not run"}, "expected exit"),   # it trained: no refusal
+])
+def test_the_no_compiler_cell_needs_the_named_refusal_before_the_download(change, why):
+    rec, plan = nocc()
+    reasons = change.get("plan_reasons", plan["refusal"]["reasons"])
+    if "steps_plus" in change:
+        rec = {**rec, "steps": rec["steps"] + [{"step": change["steps_plus"], "exit": 1, "seconds": 400}]}
+    rec = {**rec, **{k: v for k, v in change.items() if k in ("exit", "refusal")}}
+    if "plan_reasons" in change:
+        rec = {**rec, "refusal": "the plan was refused (exit 2): NOT FEASIBLE under the requested constraints."}
+    g = fu.grade("no-compiler", rec, plan_reasons=reasons)
+    assert g["verdict"] == "NOT_MET" and why in g["why"], g
+
+
+def test_reduce_reads_the_refused_plans_reasons_from_the_cell_dir(tmp_path):
+    rec, plan = nocc()
+    d = tmp_path / "cells" / "no-compiler"
+    (d / "run").mkdir(parents=True)
+    (d / "first_run.json").write_text(json.dumps(rec))
+    (d / "run" / "plan.json").write_text(json.dumps(plan))
+    v = fu.reduce(str(tmp_path / "cells"), "fu-nocc-1")
+    assert [(c["cell"], c["verdict"]) for c in v["cells"]] == [("no-compiler", "MET")] and v["gate"] == "PASS"
+
+
 def test_reduce_reads_only_the_cells_this_box_ran(tmp_path):
     d = tmp_path / "no-gpu"
     d.mkdir()

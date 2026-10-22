@@ -1,0 +1,108 @@
+{
+ "alternatives": [],
+ "budget": {
+  "device": 23678943232,
+  "device_source": "reported: free now",
+  "headroom": 1183947161,
+  "host": 31377960960,
+  "host_source": "reported: available now"
+ },
+ "constraints": {
+  "device": 0,
+  "expert_residency": null,
+  "fixed": {},
+  "headroom": null,
+  "objective": "speed",
+  "ram_budget": null,
+  "target_s_per_step": null,
+  "vram_budget": null
+ },
+ "hardware": {
+  "cpu": "13th Gen Intel(R) Core(TM) i5-13600K",
+  "cpus": 19.2,
+  "gpu": {
+   "compute_capability": [
+    8,
+    9
+   ],
+   "driver": "560.35.05",
+   "index": 0,
+   "memory_free": 23678943232,
+   "memory_free_source": "reported",
+   "memory_total": 24146608128,
+   "name": "NVIDIA GeForce RTX 4090",
+   "pcie": [
+    1,
+    16,
+    4,
+    16
+   ],
+   "uuid": null
+  },
+  "gpus": 1,
+  "platform": "Linux x86_64",
+  "ram_available": 31377960960,
+  "ram_available_source": "reported",
+  "ram_limit": 32067551232,
+  "torch": {
+   "available": true,
+   "cuda": "12.6",
+   "device_count": 1,
+   "note": "",
+   "version": "2.14.1+cu126",
+   "visible_devices": null
+  }
+ },
+ "model": {
+  "convention": "qwen2_moe",
+  "dense_params": 476710912,
+  "expert_params": 6442450944,
+  "loader_refusal": null,
+  "model": "allenai/OLMoE-1B-7B-0924-Instruct",
+  "model_type": "olmoe",
+  "moe_layers": 16,
+  "n_experts": 64,
+  "n_layers": 16,
+  "provenance": {
+   "config": "allenai/OLMoE-1B-7B-0924-Instruct",
+   "int4_attention_linears": "engines.int4_attn.attention_linears (the serving swap's rule) on the meta tree",
+   "kv": "serve_paged._kv_geometry + paged_runner.kv_layers over decoder_layers (the paged server's rules)",
+   "paged_state_refusal": "engines.paged_runner.paged_state_refusal (the runner's own rules) on the meta tree",
+   "structure": "module tree built on meta from the config (no weights read)",
+   "tied_embeddings": "config tie_word_embeddings (the loader's rule when no lm_head.weight ships)",
+   "top_k": "config: first of ROUTED_TOP_K_KEYS present",
+   "transformers": "5.20.2"
+  },
+  "revision": null,
+  "summary": "allenai/OLMoE-1B-7B-0924-Instruct (olmoe, qwen2_moe): 16/16 MoE layers, E=64 H=2048 I=1024, top-8; 6.44B expert + 0.48B dense params",
+  "top_k": 8
+ },
+ "performance": {},
+ "provenance": {},
+ "reasons": [],
+ "refusal": {
+  "reasons": [
+   "no working C compiler: no C compiler: CC is unset and neither gcc nor clang is on PATH. The training and serving kernels are Triton kernels, and Triton compiles a small helper against Python.h the first time it runs, so the run would fail after the download"
+  ],
+  "suggestions": [
+   "install a C compiler and this Python's headers, e.g. apt-get install build-essential python3-dev (or the python3.X-dev matching this interpreter), then plan again",
+   "or set CC to a compiler that can build a shared object against Python.h"
+  ]
+ },
+ "schema": "execution-plan/1",
+ "selected": null,
+ "status": "refused",
+ "warnings": [],
+ "workload": {
+  "concurrency": null,
+  "context_len": null,
+  "grad_accum": 1,
+  "kind": "train",
+  "lr_schedule": "cosine",
+  "micro_batch": 1,
+  "optimizer": "adamw",
+  "phase": null,
+  "seq_len": 512,
+  "steps": 10
+ }
+}

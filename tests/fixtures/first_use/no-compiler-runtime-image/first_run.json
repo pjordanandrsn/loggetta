@@ -1,0 +1,73 @@
+{
+ "exit": 4,
+ "gpu": "NVIDIA GeForce RTX 4090, 560.35.05",
+ "package_spec": "local: loggetta-0.6.2-py3-none-any.whl",
+ "platform": "Linux-6.8.0-138-generic-x86_64-with-glibc2.35",
+ "receipt": null,
+ "refusal": "the plan was refused (exit 2): NOT FEASIBLE under the requested constraints. ",
+ "schema": "first-run/1",
+ "seconds_to_trained": null,
+ "steps": [
+  {
+   "exit": 0,
+   "seconds": 1,
+   "step": "venv"
+  },
+  {
+   "exit": 0,
+   "seconds": 1,
+   "step": "pip_upgrade"
+  },
+  {
+   "exit": 0,
+   "seconds": 0,
+   "step": "inspect_driver_install"
+  },
+  {
+   "exit": 0,
+   "seconds": 0,
+   "step": "torch_index"
+  },
+  {
+   "exit": 0,
+   "seconds": 0,
+   "step": "inspect_driver_uninstall"
+  },
+  {
+   "exit": 0,
+   "seconds": 83,
+   "step": "torch"
+  },
+  {
+   "exit": 0,
+   "seconds": 12,
+   "step": "install"
+  },
+  {
+   "exit": 0,
+   "seconds": 1,
+   "step": "inspect"
+  },
+  {
+   "exit": 2,
+   "seconds": 4,
+   "step": "plan"
+  }
+ ],
+ "torch_index": "cu126",
+ "trained": false,
+ "versions": {
+  "bitsandbytes": "0.50.2",
+  "experts4bit-qlora": "0.56.1",
+  "grouped-nf4-gemm": "0.50.0",
+  "loggetta": "0.6.2",
+  "torch": "2.14.1+cu126",
+  "transformers": "5.20.2"
+ },
+ "workload": {
+  "model": "allenai/OLMoE-1B-7B-0924-Instruct",
+  "revision": "7f1c97f440f06ce36705e4f2b843edb5925f4498",
+  "seq": 512,
+  "steps": 10
+ }
+}
