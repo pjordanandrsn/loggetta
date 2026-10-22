@@ -52,10 +52,10 @@ INSAMPLE_EVIDENCE = "evidence/2026-10-21-insample-plans"
 def evidence_link(path: str) -> str:
     """``path`` under the package's source repository as a PERMALINK a pip user can open: the "Source" project URL in
     the installed metadata (so the code names no repository) at this release's tag (``v<version>``, immutable, and the
-    tree this code shipped in). A pre-release, development or local build (``rcN``/``aN``/``bN``, ``.dev``, ``+local``) has
-    no tag and links ``main``; a post-release (``.postN``) is tagged like any release. With no installed metadata, the
-    repository-relative path. A plain string check, not ``packaging``: that is not a declared dependency, and
-    ``first_run.sh`` bootstraps with ``--no-deps``."""
+    tree this code shipped in). An ALLOWLIST: only a release version (digits and dots, optionally ``.postN``) links its
+    tag; every other form (a pre-release, ``.dev``, ``+local``, or anything unforeseen) links ``main``, which always
+    exists, so the link never 404s. With no installed metadata, the repository-relative path. A plain string check, not
+    ``packaging``: that is not a declared dependency, and ``first_run.sh`` bootstraps with ``--no-deps``."""
     from importlib.metadata import PackageNotFoundError, metadata
 
     try:
@@ -67,7 +67,7 @@ def evidence_link(path: str) -> str:
     if not source:
         return path
     version = meta["Version"]
-    ref = "main" if re.search(r"(a|b|rc)\d+|\.dev|\+", version) else f"v{version}"
+    ref = f"v{version}" if re.fullmatch(r"\d+(?:\.\d+)*(?:\.post\d+)?", version) else "main"
     return f"{source.rstrip('/')}/tree/{ref}/{path}"
 #: the overhead terms the planner charges itself, each known from a receipt or a default (MemoryLine name prefixes)
 OVERHEAD_TERMS = (("CUDA context", "CUDA context"), ("allocator reserve", "allocator reserve"),
