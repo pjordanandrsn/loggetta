@@ -138,6 +138,9 @@ def main(argv=None) -> int:
                                         "--adapter, a saved adapter directory, verified")
     pi.add_argument("model", nargs="?")
     pi.add_argument("--json", action="store_true")
+    pi.add_argument("--torch-index", action="store_true",
+                    help="print only the PyTorch index tag (e.g. cu130) that matches this machine's NVIDIA driver, for "
+                         "installing torch before this package (scripts/first_run.sh); exit 3 when none fits")
     pi.add_argument("--adapter", metavar="DIR", help="verify a saved adapter directory and print what it records "
                                                      "(the base facts and fingerprints of a backend-adapter/2 manifest)")
     pp = sub.add_parser("plan", help="the ExecutionPlan: what should run here, why, and what lost; loads no weights")
@@ -168,6 +171,21 @@ def main(argv=None) -> int:
             print(f"adapter refused: {e}", file=sys.stderr)
             return 1
         print(json.dumps(manifest, indent=1, sort_keys=True) if a.json else "Adapter\n  " + "\n  ".join(lines))
+        return 0
+
+    if a.cmd == "inspect" and a.torch_index:
+        from .hardware import probe, torch_build_for_driver
+
+        hw = probe(torch=False)                      # before torch is installed: the driver alone decides
+        nv = next((g for g in hw.gpus if g.vendor == "nvidia"), None)
+        if nv is None:
+            print("no NVIDIA GPU discovered: training here needs CUDA. " + "; ".join(hw.notes), file=sys.stderr)
+            return 3
+        tag, why = torch_build_for_driver(nv.driver.value)
+        if tag is None:
+            print(f"no torch build fits GPU {nv.index} ({nv.name}): {why}", file=sys.stderr)
+            return 3
+        print(tag)
         return 0
 
     if a.cmd == "inspect":

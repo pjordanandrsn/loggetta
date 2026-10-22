@@ -304,6 +304,30 @@ print(json.dumps({"version": torch.__version__, "cuda": torch.version.cuda, "ava
 MIN_DRIVER_FOR_CUDA = {13: 580, 12: 525, 11: 450}
 
 
+#: The PyTorch CUDA builds a first install chooses between, newest first: (index tag, CUDA major). Each must publish a
+#: torch the backend stack accepts (grouped-nf4-gemm requires torch 2.8 or later). Read from download.pytorch.org on
+#: 2026-10-22: torch 2.14.1 is published for cu130 and cu126; the newest cu118 torch is 2.7.1, below that floor.
+#: ``first_run.sh`` checks the installed torch against the GPU afterwards, so a stale row fails loudly, never silently.
+TORCH_BUILDS = (("cu130", 13), ("cu126", 12))
+TORCH_INDEX_URL = "https://download.pytorch.org/whl/{tag}"
+
+
+def torch_build_for_driver(driver) -> tuple:
+    """``(tag, reason)``: the newest PyTorch CUDA build in :data:`TORCH_BUILDS` that this NVIDIA driver runs (per
+    :data:`MIN_DRIVER_FOR_CUDA`), or ``(None, reason)`` naming why none fits. Read before torch is installed, so it uses
+    only the driver version ``nvidia-smi`` reports."""
+    have = _driver_major(driver)
+    if have is None:
+        return None, f"the NVIDIA driver version could not be read ({driver!r})"
+    for tag, cuda_major in TORCH_BUILDS:
+        need = MIN_DRIVER_FOR_CUDA[cuda_major]
+        if have >= need:
+            return tag, f"driver {have} runs CUDA {cuda_major}.x builds (needs {need} or later)"
+    oldest = min(MIN_DRIVER_FOR_CUDA[c] for _, c in TORCH_BUILDS)
+    return None, (f"driver {have} is older than every supported torch build needs: the oldest, "
+                  f"{TORCH_BUILDS[-1][0]}, needs driver {oldest} or later; update the NVIDIA driver")
+
+
 def parse_torch_probe(text: str, version: str | None = None) -> TorchCuda:
     """The child's last line as :class:`TorchCuda`; ``version`` (from package metadata) stands in when it is unreadable."""
     for line in reversed((text or "").strip().splitlines()):
@@ -516,7 +540,13 @@ def describe(hw: HardwareProfile) -> str:
                          f"torch.cuda.is_available() {asked} [reported by torch, in a child process]")
         if t.note:
             lines.append(f"    torch says: {t.note}" if t.available is False else f"    note: {t.note}")
-        problem = torch_cuda_problem(t, next((g for g in hw.gpus if g.vendor == "nvidia"), None))
+        nv = next((g for g in hw.gpus if g.vendor == "nvidia"), None)
+        if nv is not None:
+            tag, why = torch_build_for_driver(nv.driver.value)
+            lines.append(f"    torch build for this driver: {tag} ({why}); install it first: pip install torch "
+                         f"--index-url {TORCH_INDEX_URL.format(tag=tag)}" if tag else
+                         f"    torch build for this driver: none ({why})")
+        problem = torch_cuda_problem(t, nv)
         if problem:
             lines.append("    a CUDA plan is refused here until torch can use the GPU:")
             lines += [f"      - {r}" for r in problem[1]]
