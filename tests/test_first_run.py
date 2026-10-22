@@ -160,3 +160,29 @@ def test_first_run_names_a_refused_plan(tmp_path):
     r, summary = stub_run(tmp_path, STUB_PLAN_RC="2")
     assert r.returncode == 4 and summary["trained"] is False
     assert summary["refusal"].startswith("the plan was refused (exit 2): NOT FEASIBLE")
+
+
+@pytest.mark.parametrize("spec, recorded", [
+    ("loggetta", "loggetta"),                                   # a PyPI spec is not a path: recorded as given
+    ("loggetta==0.7.0", "loggetta==0.7.0"),
+    ("/srv/wheels/loggetta-0.7.0-py3-none-any.whl", "local: loggetta-0.7.0-py3-none-any.whl"),
+])
+def test_first_run_never_records_a_local_path(tmp_path, spec, recorded):
+    """Users share first_run.json: an absolute PACKAGE_SPEC would carry their home directory and username with it."""
+    _r, summary = stub_run(tmp_path, PACKAGE_SPEC=spec)
+    assert summary["package_spec"] == recorded
+
+
+def test_first_run_records_an_existing_relative_path_by_name(tmp_path, monkeypatch):
+    wheel = tmp_path / "loggetta-0.7.0-py3-none-any.whl"
+    wheel.write_bytes(b"x")
+    monkeypatch.chdir(tmp_path)
+    _r, summary = stub_run(tmp_path, PACKAGE_SPEC="./loggetta-0.7.0-py3-none-any.whl")
+    assert summary["package_spec"] == "local: loggetta-0.7.0-py3-none-any.whl"
+
+
+def test_a_bare_name_is_a_requirement_even_beside_a_directory_of_that_name(tmp_path, monkeypatch):
+    (tmp_path / "loggetta").mkdir()
+    monkeypatch.chdir(tmp_path)
+    _r, summary = stub_run(tmp_path, PACKAGE_SPEC="loggetta")
+    assert summary["package_spec"] == "loggetta"

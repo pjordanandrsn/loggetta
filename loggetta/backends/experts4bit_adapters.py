@@ -168,7 +168,7 @@ def save_adapter(model, tokenizer, directory, plan, *, data: dict, report: dict,
         raise ValueError(f"unknown adapter schema {schema!r}; one of {SCHEMAS}")
     target = validate_target(directory)
     params = trainable_adapters(model)
-    asked, extra, refused = schema, {}, None
+    extra, refused = {}, None
     if schema == SCHEMA_V2:
         try:
             extra = v2_fields(model, dict(plan.selected.setup), report, run_id=run_id, preflight=preflight)
