@@ -102,10 +102,9 @@ def main():
         print("refused; receipt", out_path)
         return
 
-    import torch
-
     from experts4bit_qlora.serve_recipe import ServeSetup
-    from loggetta.measure import DriverMemorySampler, changed_since, proc_status
+    from loggetta.backends.experts4bit_serve import measure_serve
+    from loggetta.measure import changed_since
 
     cand = p.selected or (p.alternatives[0] if p.alternatives else None)
     if cand is None:
@@ -114,88 +113,24 @@ def main():
     extra = dict(kv.split("=", 1) for kv in a.env)
     env = {**setup.to_env(), **extra, "E4B_PAGED_MODEL": a.model, "E4B_PAGED_ARENA": a.arena,
            "E4B_PAGED_CALIB": a.calib}
-    os.environ.update(env)
-    torch.cuda.set_device(0)
-    torch.zeros(1, device="cuda")
-    meas = {"host_baseline_bytes": proc_status().get("VmRSS")}
-    from experts4bit_qlora.serve_paged import PagedServeConfig, build_engine
-
-    cfg = PagedServeConfig.from_env()
-    with DriverMemorySampler() as smi:
-        t0 = time.time()
-        parts = build_engine(cfg)
-        torch.cuda.synchronize()
-        meas.update(load_seconds=round(time.time() - t0, 1), load_device_peak_bytes=torch.cuda.max_memory_allocated(),
-                    load_reserved_peak_bytes=torch.cuda.max_memory_reserved(),
-                    host_anon_after_load_bytes=proc_status().get("RssAnon"))
-        smi.mark(meas["host_anon_after_load_bytes"] or 0)
-        tracer, trace_path = None, None
-        if a.concurrency == 1:              # the single-stream decode step, from the engine's own step trace
-            try:
-                from experts4bit_qlora.engines.step_trace import StepTrace
-            except ImportError:
-                StepTrace = None
-            if StepTrace is not None and hasattr(parts.scheduler, "tracer"):
-                trace_path = os.path.join(a.out, run_id + ".steps.jsonl")
-                tracer = StepTrace(trace_path, cuda=True)
-                parts.scheduler.tracer = tracer
-                if parts.runner is not None and hasattr(parts.runner, "tracer"):
-                    parts.runner.tracer = tracer
-        g = torch.Generator().manual_seed(0)
-        vocab = int(getattr(parts.tokenizer, "vocab_size", 0) or 32000)
-        n_prompt = min(a.prompt_tokens, a.context - a.new_tokens - 1)
-        for _ in range(a.concurrency):
-            ids = torch.randint(10, vocab - 10, (n_prompt,), generator=g).tolist()
-            parts.scheduler.add_request(ids, max_new_tokens=a.new_tokens)
-        t1 = time.time()
-        steps = parts.scheduler.run_until_idle()
-        torch.cuda.synchronize()
-        dt = time.time() - t1
-        if tracer is not None:
-            tracer.close()
-            from loggetta.measure import decode_step_b1
-
-            b1 = decode_step_b1([json.loads(ln) for ln in open(trace_path) if ln.strip()])
-            if b1:
-                meas.update(b1, step_trace=os.path.basename(trace_path))
-    alloc, reserved = torch.cuda.max_memory_allocated(), torch.cuda.max_memory_reserved()
-    meas.update(device_peak_bytes=alloc, device_reserved_peak_bytes=reserved, driver_process_peak_bytes=smi.peak or None,
-                driver_samples=smi.samples, cuda_context_bytes=(smi.peak - reserved) if smi.peak else None,
-                host_required_peak_bytes=smi.required_peak, scheduler_steps=steps, generate_seconds=round(dt, 2),
-                tokens_per_s=round(a.concurrency * a.new_tokens / dt, 1) if dt else None)
-    placement = None
-    if cfg.placement != "all-vram":
-        from experts4bit_qlora.engines.placement import solve_placement
-        from experts4bit_qlora.serve_paged import _bytes_per_expert
-
-        inf = parts.info or {}
-        man = solve_placement(n_layers=inf["moe_layers"], n_experts=inf["experts"],
-                              bytes_per_expert=_bytes_per_expert(cfg.arena), vram_budget_bytes=int(cfg.vram_gb * 2**30),
-                              dram_budget_bytes=int(cfg.dram_gb * 2**30), calibration=json.load(open(cfg.calib)),
-                              profile_path=None, batch=1, top_k=inf.get("top_k"))
-        placement = {"tiers": {k: len(v) for k, v in man["tiers"].items()}, "bytes_per_expert": _bytes_per_expert(cfg.arena),
-                     "vram_gb": cfg.vram_gb, "dram_gb": cfg.dram_gb, "hot_rows": cfg.hot_rows, "masses": man["masses"]}
-    meas.update(host_anon_peak_bytes=smi.anon_peak, host_shmem_peak_bytes=smi.shmem_peak, host_file_peak_bytes=smi.file_peak,
-                host_anon_serving_peak_bytes=smi.phase_anon_peak)
-    try:                                         # which expert-GEMM route each call took (eager calls and captures)
-        from experts4bit_qlora.engines.hot_residency import ROUTE_SEEN
-        meas["expert_routes_seen"] = dict(ROUTE_SEEN)
-    except ImportError:
-        pass
+    # the build, decode and measurement are the package's serve executor's (one place for both)
+    out = measure_serve(env, concurrency=a.concurrency, context_len=a.context, prompt_tokens=a.prompt_tokens,
+                        new_tokens=a.new_tokens, trace_path=os.path.join(a.out, run_id + ".steps.jsonl"))
+    meas, placement = out["measured"], out["placement"]
+    alloc, driver_peak = meas["device_peak_bytes"], meas["driver_process_peak_bytes"]
     gpu = hw.gpu(0)
     est = {ln.name: ln.bytes for ln in cand.lines if ln.where == "device"}
     backend_alloc = sum(b for n, b in est.items() if n not in ("allocator reserve (cached, unallocated blocks)",
                                                                "CUDA context + library workspaces"))
     receipt.update(
         status="OK", setup={**cand.setup, **{k[len("E4B_PAGED_"):].lower(): v for k, v in extra.items()}}, env=env,
-        planned=p.status == "feasible", placement=placement, info={k: v for k, v in (parts.info or {}).items()
-                                                             if isinstance(v, (int, float, str, bool, dict, list))},
+        planned=p.status == "feasible", placement=placement, info=out["info"],
         hardware={"gpu": {"name": gpu.name, "driver": gpu.driver.value, "memory_total": gpu.memory_total.value}},
         measured=meas,
         estimate={"device_lines": est, "allocator_estimate_bytes": backend_alloc, "device_total_bytes": cand.device_bytes},
         comparison={"allocator_peak_minus_estimate_gib": round((alloc - backend_alloc) / GiB, 3),
-                    "driver_peak_minus_plan_total_gib": round(((smi.peak or 0) - cand.device_bytes) / GiB, 3)
-                    if smi.peak else None},
+                    "driver_peak_minus_plan_total_gib": round((driver_peak - cand.device_bytes) / GiB, 3)
+                    if driver_peak else None},
     )
     receipt["provenance"]["changed_during_run"] = changed_since(PROV)
     json.dump(receipt, open(out_path, "w"), indent=1, default=str)

@@ -67,11 +67,13 @@ def check_here(plan: ExecutionPlan, hardware=None) -> None:
 
 def compare(plan: ExecutionPlan, measured: dict) -> dict:
     lines = plan.selected.lines
+    during = "serving" if plan.workload.kind == "serve" else "training"
     ctx = sum(ln.bytes for ln in lines if ln.where == "device"
               and ln.name.startswith(("CUDA context", "allocator reserve")))
     est_alloc = plan.selected.device_bytes - ctx
     out = {"device_allocator": {"estimated": est_alloc, "measured": measured.get("device_peak_bytes"),
-                                "what": "PyTorch allocator peak during training vs the estimate without the context and reserve lines"},
+                                "what": f"PyTorch allocator peak during {during} vs the estimate without the context and "
+                                        "reserve lines"},
            "device_driver": {"estimated": plan.selected.device_bytes, "measured": measured.get("driver_process_peak_bytes"),
                              "what": "driver-reported process peak vs the full device estimate"},
            "host": {"estimated": plan.selected.host_bytes,
@@ -139,12 +141,13 @@ def available_before_load(plan: ExecutionPlan, log=print) -> dict | None:
 
 
 def execute(plan: ExecutionPlan, *, out_dir: str | None = None, seed: int = 0, log=print,
-            prov: dict | None = None, hardware=None, adapter_dir: str | None = None) -> dict:
+            prov: dict | None = None, hardware=None, adapter_dir: str | None = None, inputs: dict | None = None) -> dict:
     """Run ``plan`` through its backend and return the receipt (written to ``out_dir`` when given).
 
     Raises ``PlanNotExecutable``, before anything is loaded, for a refused plan (with the refusal's reasons), a
     workload kind its backend only plans, or a plan made for another device (:func:`check_here`; ``hardware``
-    replaces probing this machine). ``prov`` is :func:`measure.provenance` taken at process start (the CLI does);
+    replaces probing this machine). ``inputs`` are the executor's run inputs beyond the plan (a serve run's arena,
+    calibration file and request shape). ``prov`` is :func:`measure.provenance` taken at process start (the CLI does);
     without it, provenance is taken here and is only as good as the claim that nothing changed on disk since the code
     was imported."""
     if plan.status != "feasible":
@@ -157,13 +160,15 @@ def execute(plan: ExecutionPlan, *, out_dir: str | None = None, seed: int = 0, l
     t0 = time.time()
     model_short = plan.model["model"].rstrip("/").split("/")[-1]
     s = plan.selected.setup
+    shape = (f"c{plan.workload.context_len}x{plan.workload.concurrency}" if plan.workload.kind == "serve"
+             else f"t{plan.workload.tokens_per_microbatch}")
     run_id = (f"{model_short}-{backend.run_tag(s)}"
-              f"-t{plan.workload.tokens_per_microbatch}-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{uuid.uuid4().hex[:8]}")
+              f"-{shape}-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{uuid.uuid4().hex[:8]}")
     target = str(Path(adapter_dir) if adapter_dir is not None else Path(out_dir or "runs") / run_id / "adapter")
     # every executor takes run_id explicitly (the experts4bit trainer writes it into a backend-adapter/2 manifest); a
     # signature check would silently drop it behind a wrapper that hides the parameter
     before = available_before_load(plan, log)
-    result = run(plan, seed=seed, log=log, adapter_dir=target, run_id=run_id)
+    result = run(plan, seed=seed, log=log, adapter_dir=target, run_id=run_id, **(inputs or {}))
     receipt = {
         "schema": RECEIPT_SCHEMA, "run_id": run_id, "status": result["status"], "backend": backend.NAME,
         "model": plan.model, "workload": {**plan.workload.__dict__,

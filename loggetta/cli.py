@@ -166,6 +166,10 @@ def main(argv=None) -> int:
     pe.add_argument("--adapter-out", help="fresh adapter directory (default: OUT/RUN_ID/adapter)")
     pe.add_argument("--allow-development-executor", action="store_true",
                     help="explicitly permit an executor still awaiting its registered GPU proof")
+    pe.add_argument("--arena", help="serve: the model's NF4 arena (bake it first; execute never bakes one)")
+    pe.add_argument("--calib", help="serve: the expert calibration file the placement reads")
+    pe.add_argument("--prompt-tokens", type=int, default=None, help="serve: prompt tokens per request (default 1024)")
+    pe.add_argument("--new-tokens", type=int, default=None, help="serve: tokens decoded per request (default 64)")
     pt = sub.add_parser("train", help="plan, then execute a feasible plan through its backend and write a receipt")
     _common(pt)
     pt.add_argument("--out", default="receipts", help="receipt directory")
@@ -242,7 +246,11 @@ def main(argv=None) -> int:
 
     print(f"\nExecuting the selected plan through backend {p.selected.backend}...")
     try:
-        receipt = execute(p, out_dir=a.out, adapter_dir=a.adapter_out, seed=a.seed, prov=prov)
+        inputs = None
+        if p.workload.kind == "serve":
+            inputs = {k: getattr(a, k) for k in ("arena", "calib", "prompt_tokens", "new_tokens")
+                      if getattr(a, k, None) is not None}
+        receipt = execute(p, out_dir=a.out, adapter_dir=a.adapter_out, seed=a.seed, prov=prov, inputs=inputs)
     except PlanNotExecutable as e:
         print(f"not executable: {e}", file=sys.stderr)
         return 2
