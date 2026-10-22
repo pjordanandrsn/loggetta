@@ -172,7 +172,7 @@ try:
     if p.get("status") == "refused" and (p.get("refusal") or {}).get("reasons"):
         why, home = p["refusal"]["reasons"][0], os.path.expanduser("~").rstrip("/")
         if home:                    # never a home directory: whole paths only (a home of "/" is skipped, not every slash)
-            why = re.sub(re.escape(home) + r"(?=/|$|\s|['\":,)])", "~", why)
+            why = re.sub(r"(?<![^\s'\"(=:,])" + re.escape(home) + r"(?=/|$|\s|['\":,)])", "~", why)
         print(why)
 except (OSError, ValueError, TypeError, AttributeError, IndexError):
     pass

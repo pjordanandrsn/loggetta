@@ -192,6 +192,11 @@ def _home(*parts):
     (os.sep, f"cannot read {_home('srv', 'x')}/y", f"cannot read {_home('srv', 'x')}/y"),
     # a home with a trailing slash keeps the separator
     (_home("root") + os.sep, f"cannot read {_home('root')}/x", "cannot read ~/x"),
+    # a home that is the TAIL of a longer path must not eat it either
+    (_home("home", "al"), f"cannot read {_home('mnt', 'home', 'al')}/x", f"cannot read {_home('mnt', 'home', 'al')}/x"),
+    # after a quote or "=", it is still a whole path
+    (_home("home", "al"), f"cannot read '{_home('home', 'al')}/x' (path={_home('home', 'al')})",
+     "cannot read '~/x' (path=~)"),
 ])
 def test_a_refusal_reason_never_carries_the_home_directory(tmp_path, home, why, want):
     r, summary = stub_run(tmp_path, STUB_PLAN_RC="2", STUB_PLAN_REASON=why, HOME=home)
