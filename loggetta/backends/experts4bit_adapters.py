@@ -39,6 +39,11 @@ TRAINING_FACTS = ("expert_absmax", "train_fused_qkv", "attn_quant", "versions")
 FINGERPRINT_SOURCE = {"device": "resident", "host": "offload_homes"}
 
 
+class V2Unavailable(ValueError):
+    """``backend-adapter/2`` cannot be recorded for this run (named reason). Distinct from a broken artifact: the
+    tensors are fine, only the base facts cannot be recorded."""
+
+
 def adapter_schema():
     """experts4bit-qlora's ``adapter_schema`` module, or None when the installed release predates ``backend-adapter/2``."""
     try:
@@ -51,7 +56,7 @@ def adapter_schema():
 def fingerprint_source(setup: dict) -> str:
     residency = setup.get("expert_residency")
     if residency not in FINGERPRINT_SOURCE:
-        raise ValueError(f"backend-adapter/2: the setup records expert_residency {residency!r}; the fingerprint source "
+        raise V2Unavailable(f"backend-adapter/2: the setup records expert_residency {residency!r}; the fingerprint source "
                          f"is chosen from it ({FINGERPRINT_SOURCE}), so an unrecorded residency is refused")
     return FINGERPRINT_SOURCE[residency]
 
@@ -65,30 +70,46 @@ def fingerprint_scopes(model) -> tuple:
     return ("experts", "attention") if attention_ids else ("experts",)
 
 
-def v2_fields(model, setup: dict, report: dict, *, run_id: str | None) -> dict:
-    """The fields ``backend-adapter/2`` adds to v1's, or ValueError naming what cannot be recorded. Each comes from
-    the runtime: the training facts from ``report`` (``prepare_qlora_training`` adds them after ``enable_fast_train``
-    has resolved them), the applied LoRA scale and the base fingerprints from the model as it is now."""
+def v2_preflight(model, setup: dict, report: dict, *, run_id: str | None) -> dict:
+    """Everything ``backend-adapter/2`` records except the time it is written, or ValueError naming what cannot be
+    recorded. The trainer calls it right after ``prepare_qlora_training``, BEFORE the first step, so a run that could
+    not save a ``/2`` manifest is refused before it trains, not after (a finished run would otherwise end SAVE_FAILED).
+    Every input is known by then: the training facts are in ``report`` (``prepare_qlora_training`` adds them after
+    ``enable_fast_train`` resolved them), the LoRA scale is a module constant, and the base is frozen for the whole
+    run (the trainer's frozen-digest check fails the run if expert bytes change), so its fingerprint taken here is the
+    fingerprint of the base the adapter trained on."""
     schema = adapter_schema()
     if schema is None:
-        raise ValueError("backend-adapter/2 needs experts4bit-qlora's adapter_schema; the installed release predates it")
+        raise V2Unavailable("backend-adapter/2 needs experts4bit-qlora's adapter_schema; the installed release predates it")
     if not (isinstance(run_id, str) and run_id):
         # a reader checks only that run_id is present, so a null would pass every verifier unnoticed
-        raise ValueError(f"backend-adapter/2 records the run that produced the adapter; run_id {run_id!r} is not one")
+        raise V2Unavailable(f"backend-adapter/2 records the run that produced the adapter; run_id {run_id!r} is not one")
     missing = [k for k in TRAINING_FACTS if k not in report]
     if missing:
-        raise ValueError(f"backend-adapter/2: the training report lacks {missing}. They come from "
+        raise V2Unavailable(f"backend-adapter/2: the training report lacks {missing}. They come from "
                          f"prepare_qlora_training's report, after enable_fast_train resolved them, never from defaults")
     source = fingerprint_source(setup)
     fields = {k: report[k] for k in TRAINING_FACTS}
     fields["lora_scale_applied"] = schema.lora_scale_applied(model)
-    fields["fingerprints"] = {scope: schema.quant_fingerprint(model, scope, source=source)
-                              for scope in fingerprint_scopes(model)}
+    try:
+        fields["fingerprints"] = {scope: schema.quant_fingerprint(model, scope, source=source)
+                                  for scope in fingerprint_scopes(model)}
+    except ValueError as e:                     # e.g. a device run whose stacks are evicted: the base cannot be read
+        raise V2Unavailable(f"backend-adapter/2: the base cannot be fingerprinted: {e}") from None
     fields["run_id"] = run_id
-    fields["created_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    unknown = sorted(set(schema.V2_FIELDS) - set(fields))
+    unknown = sorted(set(schema.V2_FIELDS) - set(fields) - {"created_at"})
     if unknown:                       # a field the schema added that this writer does not record yet: refuse, never omit
-        raise ValueError(f"backend-adapter/2 names fields this writer does not record: {unknown}")
+        raise V2Unavailable(f"backend-adapter/2 names fields this writer does not record: {unknown}")
+    return fields
+
+
+def v2_fields(model, setup: dict, report: dict, *, run_id: str | None, preflight: dict | None = None) -> dict:
+    """The fields ``backend-adapter/2`` adds to v1's: :func:`v2_preflight`'s (taken now unless the trainer already
+    took them before its first step) and ``created_at``, the time the manifest is written."""
+    fields = dict(preflight) if preflight is not None else v2_preflight(model, setup, report, run_id=run_id)
+    if fields.get("run_id") != run_id:
+        raise V2Unavailable(f"the preflight recorded run {fields.get('run_id')!r}, the save names {run_id!r}")
+    fields["created_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     return fields
 
 
@@ -118,22 +139,35 @@ def validate_target(directory) -> Path:
 
 
 def save_adapter(model, tokenizer, directory, plan, *, data: dict, report: dict, seed: int,
-                 schema: str | None = None, run_id: str | None = None) -> dict:
+                 schema: str | None = None, run_id: str | None = None, preflight: dict | None = None) -> dict:
     """Write a fresh artifact directory. Manifest-last prevents partial output looking complete.
 
     ``schema``: ``backend-adapter/1`` or ``/2``; None picks ``/2`` when the installed experts4bit-qlora defines it and
     ``/1`` otherwise. Everything ``/2`` records (the fingerprints included) is computed BEFORE the directory exists,
-    so a refusal leaves nothing behind."""
+    so a refusal leaves nothing behind. ``preflight`` is :func:`v2_preflight`'s result when the trainer took it before
+    its first step; a preflight given with ``/2`` resolved selects ``/2``. When ``/2`` was chosen automatically but
+    cannot be recorded, the adapter is written as ``/1`` (tensors are never discarded over manifest metadata) and
+    the result and the manifest name why (``v2_refused``); an explicit ``schema=/2`` raises instead."""
     import torch
     from safetensors.torch import save_file
 
+    explicit = schema is not None
     if schema is None:
-        schema = SCHEMA_V2 if adapter_schema() is not None else SCHEMA_V1
+        schema = SCHEMA_V2 if (preflight is not None or adapter_schema() is not None) else SCHEMA_V1
     if schema not in SCHEMAS:
         raise ValueError(f"unknown adapter schema {schema!r}; one of {SCHEMAS}")
     target = validate_target(directory)
     params = trainable_adapters(model)
-    extra = v2_fields(model, dict(plan.selected.setup), report, run_id=run_id) if schema == SCHEMA_V2 else {}
+    asked, extra, refused = schema, {}, None
+    if schema == SCHEMA_V2:
+        try:
+            extra = v2_fields(model, dict(plan.selected.setup), report, run_id=run_id, preflight=preflight)
+        except V2Unavailable as e:
+            if explicit:
+                raise
+            # trained tensors are never discarded over manifest metadata: write /1, and say why no /2 exists
+            schema, refused = SCHEMA_V1, str(e)
+            extra = {"v2_refused": refused}
     tensors = {}
     for name, param in params.items():
         tensor = param.detach().cpu().contiguous().clone()
@@ -162,9 +196,12 @@ def save_adapter(model, tokenizer, directory, plan, *, data: dict, report: dict,
             **extra,
         }
         (target / MANIFEST).write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        return {"path": str(target), "manifest": MANIFEST, "format": schema,
+        result = {"path": str(target), "manifest": MANIFEST, "format": schema,
                 "weights": WEIGHTS, "sha256": files[WEIGHTS]["sha256"],
                 "tensor_count": len(tensors), "trainable_numel": manifest["trainable_numel"]}
+        if refused is not None:
+            result["v2_refused"] = refused       # a /1 written where /2 was expected: always reported
+        return result
     except BaseException:
         shutil.rmtree(target)
         raise

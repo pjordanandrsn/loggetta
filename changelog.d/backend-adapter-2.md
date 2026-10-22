@@ -10,8 +10,12 @@ default. With an experts4bit-qlora that defines `backend-adapter/2`, the MoE exe
   training kept the stacks (`expert_residency`: device or host);
 - the run id and the time written.
 
-A fact that cannot be recorded refuses the save before the directory exists. A run recorded as device whose stacks
-turn out to be evicted is refused, never fingerprinted from a host copy nobody recorded. `load_adapter` fingerprints
-the rebuilt base and refuses a mismatch, and reading a `/2` directory goes through experts4bit-qlora's own verifier.
+Everything `/2` records is checked right after the model is prepared, BEFORE the first training step, so a run that
+could not record it is refused as not run instead of failing after training. The fingerprint is taken then too: the
+base is frozen for the run. A run recorded as device whose stacks are evicted is refused, never fingerprinted from a
+host copy nobody recorded. Trained tensors are never discarded over manifest metadata: if `/2` can only fail at save,
+the adapter is written as `/1`, its manifest and the receipt say why (`v2_refused`), and the run reads `SAVED_V1`
+(its measurements still count as planning evidence). `load_adapter` fingerprints the rebuilt base and refuses a
+mismatch, and reading a `/2` directory goes through experts4bit-qlora's own verifier.
 `loggetta inspect --adapter DIR` prints it all. With an older experts4bit-qlora the manifest stays `/1`, as before.
 The dense executor writes `/1`.

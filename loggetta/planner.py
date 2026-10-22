@@ -25,6 +25,10 @@ DEFAULT_HOST_BASELINE = 3 * GiB
 HEADROOM_MIN, HEADROOM_FRAC = 512 * MiB, 0.05
 OBJECTIVES = ("speed", "min_vram", "min_ram")
 
+#: receipt statuses whose measurements are evidence: SAVED_V1 trained and measured normally; only its adapter manifest
+#: is /1 instead of /2 (an absent status is an older receipt that predates the field)
+MEASURED_STATUSES = ("OK", "SAVED_V1", None)
+
 
 def headroom_policy(budget: int) -> int:
     """Device memory left unused for allocator fragmentation and transient spikes: max(512 MiB, 5% of the budget)."""
@@ -161,7 +165,7 @@ def reserve_fraction(gpu, setup, observations, default, model=None, kind="train"
         return json.dumps({k: v for k, v in (s or {}).items() if k not in drop}, sort_keys=True, default=list)
 
     whole, shape = sj(setup), sj(setup, budget_fields)
-    usable = [o for o in observations if o.get("status") in ("OK", None) and licensed(o, "reserve")
+    usable = [o for o in observations if o.get("status") in MEASURED_STATUSES and licensed(o, "reserve")
               and (o.get("licensed_for") is None or sj(o.get("setup")) == whole)
               and o.get("measured", {}).get("device_peak_bytes")
               and o.get("measured", {}).get("device_reserved_peak_bytes")
@@ -326,7 +330,7 @@ def _observed(observations, model, setup, workload, gpu):
         if (obs.get("model", {}).get("model") == model and obs.get("setup") == setup
                 and obs.get("workload", {}).get("tokens_per_microbatch") == workload.tokens_per_microbatch
                 and obs.get("hardware", {}).get("gpu", {}).get("name") == (gpu.name if gpu else None)
-                and obs.get("status") == "OK"):
+                and obs.get("status") in MEASURED_STATUSES and obs.get("status") is not None):
             return obs
     return None
 
