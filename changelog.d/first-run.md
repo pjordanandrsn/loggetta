@@ -12,3 +12,5 @@ A local wheel or directory given as `PACKAGE_SPEC` is recorded in `first_run.jso
 a shared summary carries no home directory.
 - A refused plan's summary in `first_run.json` is now the refusal's own first reason, verbatim, read from the refused
   `plan.json`. It was a grep of the printed banner, which kept only "NOT FEASIBLE under the requested constraints."
+- A local model directory given as `MODEL` is recorded in `first_run.json` by its name only, never its path, and a
+  refusal reason never carries the home directory (it reads `~`).

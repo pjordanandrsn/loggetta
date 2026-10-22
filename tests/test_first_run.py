@@ -4,6 +4,8 @@ import subprocess
 from dataclasses import replace
 from pathlib import Path
 
+import os
+
 import pytest
 
 from loggetta import cli, hardware as H
@@ -159,6 +161,46 @@ def test_first_run_reads_executes_exit_codes(tmp_path, env, code, trained, check
         assert "trained; the device check did not run (status UNMEASURED)" in r.stderr
         assert summary["receipt"]["driver_unmeasured"].startswith("nvidia-smi answered 3 time(s)")
         assert summary["seconds_to_trained"] is not None
+
+
+@pytest.mark.parametrize("model, recorded", [
+    ("allenai/OLMoE-1B-7B-0924-Instruct", "allenai/OLMoE-1B-7B-0924-Instruct"),   # a Hub id: recorded as given
+    ("/srv/models/olmoe-local", "local: olmoe-local"),                           # an absolute directory: its name
+    ("~/models/olmoe-local", "local: olmoe-local"),
+])
+def test_first_run_never_records_a_local_model_path(tmp_path, model, recorded):
+    _r, summary = stub_run(tmp_path, MODEL=model)
+    assert summary["workload"]["model"] == recorded
+
+
+def test_an_existing_relative_model_directory_is_recorded_by_name(tmp_path, monkeypatch):
+    (tmp_path / "mymodel").mkdir()
+    monkeypatch.chdir(tmp_path)
+    _r, summary = stub_run(tmp_path, MODEL="mymodel")
+    assert summary["workload"]["model"] == "local: mymodel"
+
+
+def _home(*parts):
+    return os.sep + os.path.join(*parts)                  # built at run time
+
+
+@pytest.mark.parametrize("home, why, want", [
+    (_home("home", "someone"), f"cannot read {_home('home', 'someone')}/.cache/thing", "cannot read ~/.cache/thing"),
+    # a home that is a prefix of a sibling's must not eat it
+    (_home("home", "al"), f"cannot read {_home('home', 'alice')}/x", f"cannot read {_home('home', 'alice')}/x"),
+    # a home of "/" (common for container service users) leaves the reason as it was
+    (os.sep, f"cannot read {_home('srv', 'x')}/y", f"cannot read {_home('srv', 'x')}/y"),
+    # a home with a trailing slash keeps the separator
+    (_home("root") + os.sep, f"cannot read {_home('root')}/x", "cannot read ~/x"),
+    # a home that is the TAIL of a longer path must not eat it either
+    (_home("home", "al"), f"cannot read {_home('mnt', 'home', 'al')}/x", f"cannot read {_home('mnt', 'home', 'al')}/x"),
+    # after a quote or "=", it is still a whole path
+    (_home("home", "al"), f"cannot read '{_home('home', 'al')}/x' (path={_home('home', 'al')})",
+     "cannot read '~/x' (path=~)"),
+])
+def test_a_refusal_reason_never_carries_the_home_directory(tmp_path, home, why, want):
+    r, summary = stub_run(tmp_path, STUB_PLAN_RC="2", STUB_PLAN_REASON=why, HOME=home)
+    assert summary["refusal"] == f"the plan was refused (exit 2): {want}"
 
 
 def test_a_refused_plan_is_summarized_by_its_first_reason_verbatim(tmp_path):

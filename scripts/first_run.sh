@@ -63,6 +63,10 @@ d, code, reason, t0, tag, model, rev, steps, seq, spec = sys.argv[1:]
 # file; a bare name ("loggetta") is a requirement even where a directory of that name exists
 if "/" in spec or spec.startswith(".") or os.path.isfile(spec):
     spec = "local: " + os.path.basename(spec.rstrip("/"))
+# a local model DIRECTORY likewise: an absolute, "."- or "~"-relative path, or an existing directory. A Hub id
+# ("org/name") has a separator too, so the separator alone does not make it local
+if os.path.isabs(model) or model.startswith((".", "~")) or os.path.isdir(model):
+    model = "local: " + os.path.basename(model.rstrip("/"))
 rows = []
 for line in open(os.path.join(d, "steps.tsv")):
     name, rc, secs = line.rstrip("\n").split("\t")
@@ -162,11 +166,14 @@ if [ "$rc" -ne 0 ]; then
   # is no refused plan.json (a crash, an older release) does the reason come from the plan's printed output, without
   # the step's own "== name: command" echo.
   why=$("$PYTHON" - "$DIR/plan.json" 2>/dev/null <<'REASON'
-import json, sys
+import json, os, re, sys
 try:
     p = json.load(open(sys.argv[1]))
     if p.get("status") == "refused" and (p.get("refusal") or {}).get("reasons"):
-        print(p["refusal"]["reasons"][0])
+        why, home = p["refusal"]["reasons"][0], os.path.expanduser("~").rstrip("/")
+        if home:                    # never a home directory: whole paths only (a home of "/" is skipped, not every slash)
+            why = re.sub(r"(?<![^\s'\"(=:,])" + re.escape(home) + r"(?=/|$|\s|['\":,)])", "~", why)
+        print(why)
 except (OSError, ValueError, TypeError, AttributeError, IndexError):
     pass
 REASON
