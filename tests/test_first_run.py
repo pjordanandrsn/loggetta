@@ -221,6 +221,17 @@ def test_first_run_names_a_refused_plan(tmp_path):
     ("loggetta", "loggetta"),                                   # a PyPI spec is not a path: recorded as given
     ("loggetta==0.7.0", "loggetta==0.7.0"),
     ("/srv/wheels/loggetta-0.7.0-py3-none-any.whl", "local: loggetta-0.7.0-py3-none-any.whl"),
+    # a URL or VCS spec is a URL, not "local", and never carries credentials, a query or a fragment
+    ("git+https://github.com/example/loggetta@v0.7.0", "git+https://github.com/example/loggetta@v0.7.0"),
+    ("https://alice:s3cret@wheels.example.com/loggetta-0.7.0-py3-none-any.whl?token=abc#sha256=00",
+     "https://wheels.example.com/loggetta-0.7.0-py3-none-any.whl"),
+    ("loggetta @ git+https://tok@github.com/example/loggetta@v0.7.0#egg=loggetta",
+     "loggetta @ git+https://github.com/example/loggetta@v0.7.0"),
+    ("https://[::1]:8080/loggetta.whl", "https://[::1]:8080/loggetta.whl"),
+    ("https://bob:pw@wheels.example.com:99999/x.whl", "https: (unparsed URL)"),   # a port out of range
+    # a file URL is a local path: its name only
+    ("file:///srv/wheels/loggetta-0.7.0-py3-none-any.whl", "local: loggetta-0.7.0-py3-none-any.whl"),
+    ("git+file:///srv/src/loggetta", "local: loggetta"),
 ])
 def test_first_run_never_records_a_local_path(tmp_path, spec, recorded):
     """Users share first_run.json: an absolute PACKAGE_SPEC would carry their home directory and username with it."""
