@@ -48,7 +48,8 @@ def test_a_streamed_plan_states_its_admission_margin_beside_the_total():
 
 @pytest.mark.parametrize("version, ref", [("0.6.3", "v0.6.3"), ("1.0.0", "v1.0.0"),
                                           ("0.6.3.dev2", "main"), ("0.6.3+local.abc", "main"),
-                                          ("0.6.3.dev0+g1a2b3c", "main"), ("0.7.0rc1", "main"), ("0.7.0b2", "main")])
+                                          ("0.6.3.dev0+g1a2b3c", "main"), ("0.7.0rc1", "main"), ("0.7.0b2", "main"),
+                                          ("0.7.0a1", "main"), ("0.6.2.post1", "v0.6.2.post1")])
 def test_the_link_pins_a_release_tag_and_a_dev_build_links_main(monkeypatch, version, ref):
     import importlib.metadata as md
 
@@ -116,3 +117,14 @@ def test_the_linked_evidence_is_in_the_tree_the_release_tag_will_hold():
 
     root = pathlib.Path(__file__).resolve().parent.parent
     assert (root / planner.INSAMPLE_EVIDENCE).is_dir()
+
+
+def test_the_cli_and_the_planner_import_without_packaging():
+    """packaging is not a declared dependency, and first_run.sh runs `inspect --torch-index` after a --no-deps install."""
+    import subprocess
+    import sys
+
+    code = ("import sys; sys.modules['packaging'] = None; sys.modules['packaging.version'] = None; "
+            "import loggetta.cli, loggetta.planner; print(loggetta.planner.evidence_link('evidence/x'))")
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
