@@ -92,3 +92,17 @@ def test_the_cli_executes_a_saved_plan_only_where_it_was_made(tmp_path, capsys):
     assert main(["execute", str(saved), "--out", str(tmp_path / "receipts")]) == 2   # made for "Test GPU", not here
     assert "not executable" in capsys.readouterr().err
     assert not (tmp_path / "receipts").exists()
+
+
+@pytest.mark.parametrize("value", ["expandable_segments:True", None])
+def test_provenance_records_the_allocator_setting(monkeypatch, value):
+    """The allocator setting a run starts under is recorded, and recorded as null when unset (not left out), so a
+    reader can tell "unset" from "not recorded"."""
+    from loggetta.measure import provenance
+
+    if value is None:
+        monkeypatch.delenv("PYTORCH_CUDA_ALLOC_CONF", raising=False)
+    else:
+        monkeypatch.setenv("PYTORCH_CUDA_ALLOC_CONF", value)
+    p = provenance(modules=())
+    assert "pytorch_cuda_alloc_conf" in p and p["pytorch_cuda_alloc_conf"] == value
