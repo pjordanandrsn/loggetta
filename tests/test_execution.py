@@ -43,7 +43,7 @@ def a_plan(status="feasible", kind="train", gpu="Test GPU", uuid=None):
         refusal=None if status == "feasible" else {"reasons": ["device 13.00 + headroom 0.50 GiB > budget 12.00 GiB"]})
 
 
-def _no_run(plan, *, seed, log):
+def _no_run(plan, *, seed, log, adapter_dir, run_id):
     raise AssertionError("the backend was called for a plan that must not run")
 
 
@@ -51,9 +51,10 @@ def test_execute_hands_the_selected_setup_to_its_backend_and_writes_the_receipt(
     p = a_plan()
     seen = {}
 
-    def run(pl, *, seed, log, adapter_dir):                                   # the backend: here, a stand-in that loads nothing
+    def run(pl, *, seed, log, adapter_dir, run_id):                           # the backend: here, a stand-in that loads nothing
         seen["setup"] = pl.selected.setup
         seen["adapter_dir"] = adapter_dir
+        seen["run_id"] = run_id
         return {"status": "OK", "measured": {"device_peak_bytes": 3 * GiB + GiB // 8}, "correctness": {},
                 "engaged": {}, "data": {}}
 
@@ -63,6 +64,7 @@ def test_execute_hands_the_selected_setup_to_its_backend_and_writes_the_receipt(
     assert seen["adapter_dir"].endswith("/adapter")
     assert r["schema"] == RECEIPT_SCHEMA and r["plan"] == p.to_dict() and r["setup"] == SETUP
     assert r["run_id"].startswith("Tiny-MoE-device-grouped_nf4-t512-")       # the backend names its setup
+    assert seen["run_id"] == r["run_id"]                                      # the executor is told its run id
     alloc = r["comparison"]["device_allocator"]                               # context and reserve lines excluded
     assert alloc["estimated"] == 3 * GiB and alloc["residual"] == GiB // 8
     assert [o["run_id"] for o in load_observations(str(tmp_path))] == [r["run_id"]]   # the next plan's evidence

@@ -13,7 +13,6 @@ Schema ``execution-receipt/1``; field names follow experts4bit-qlora's benchmark
 """
 from __future__ import annotations
 
-import inspect
 import json
 import os
 import time
@@ -133,10 +132,9 @@ def execute(plan: ExecutionPlan, *, out_dir: str | None = None, seed: int = 0, l
     run_id = (f"{model_short}-{backend.run_tag(s)}"
               f"-t{plan.workload.tokens_per_microbatch}-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}-{uuid.uuid4().hex[:8]}")
     target = str(Path(adapter_dir) if adapter_dir is not None else Path(out_dir or "runs") / run_id / "adapter")
-    # the run id reaches an executor that records it (the experts4bit trainer writes it into a backend-adapter/2
-    # manifest); executors that take no run_id are called as before
-    extra = {"run_id": run_id} if "run_id" in inspect.signature(run).parameters else {}
-    result = run(plan, seed=seed, log=log, adapter_dir=target, **extra)
+    # every executor takes run_id explicitly (the experts4bit trainer writes it into a backend-adapter/2 manifest); a
+    # signature check would silently drop it behind a wrapper that hides the parameter
+    result = run(plan, seed=seed, log=log, adapter_dir=target, run_id=run_id)
     receipt = {
         "schema": RECEIPT_SCHEMA, "run_id": run_id, "status": result["status"], "backend": backend.NAME,
         "model": plan.model, "workload": {**plan.workload.__dict__,

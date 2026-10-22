@@ -267,27 +267,16 @@ def test_inspect_adapter_verifies_then_prints_and_refuses_a_damaged_directory(tm
     assert "checksum mismatch" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("takes_run_id", [True, False])
-def test_execute_hands_the_run_id_only_to_an_executor_that_records_it(monkeypatch, tmp_path, takes_run_id):
-    from loggetta.backends import experts4bit
-    from loggetta.execution import execute
-    from test_execution import hw
+def test_every_real_executor_takes_the_run_id_execute_passes():
+    """execute() passes run_id to every executor, unconditionally: deciding by its signature would drop it silently
+    behind a wrapper that hides the parameter. So each executor must accept it."""
+    import inspect
 
-    seen = {}
-    result = {"status": "OK", "measured": {"device_peak_bytes": 1}, "correctness": {}, "engaged": {}, "data": {}}
+    from loggetta.backends import dense, experts4bit
 
-    def with_id(pl, *, seed, log, adapter_dir, run_id=None):
-        seen["run_id"] = run_id
-        return result
-
-    def without_id(pl, *, seed, log, adapter_dir):        # an executor that records no run id is called as before
-        seen["run_id"] = "not passed"
-        return result
-
-    run = with_id if takes_run_id else without_id
-    monkeypatch.setattr(experts4bit, "executor", lambda kind: run if kind == "train" else None)
-    r = execute(a_plan(), out_dir=str(tmp_path), hardware=hw(), prov={"sources": {}})
-    assert seen["run_id"] == (r["run_id"] if takes_run_id else "not passed")
+    for backend in (experts4bit, dense):
+        run = backend.executor("train")
+        assert "run_id" in inspect.signature(run).parameters, backend.__name__
 
 
 # ------------------------------------------------------------------------------------------------- end to end (real schema)
