@@ -55,7 +55,7 @@ def test_cli_rejects_dataset_on_serving_plan(monkeypatch, capsys):
 
 def test_receipt_records_save_failure_instead_of_false_success(monkeypatch, tmp_path):
     seen = {}
-    def run(plan, *, seed, log, adapter_dir):
+    def run(plan, *, seed, log, adapter_dir, run_id):
         seen["adapter_dir"] = adapter_dir
         return {"status": "SAVE_FAILED", "measured": {}, "correctness": {}, "engaged": {}, "data": {},
                 "artifacts": {}, "artifact_error": "disk full"}

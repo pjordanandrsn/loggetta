@@ -266,7 +266,8 @@ def run_tag(setup: dict) -> str:
 
 
 def executor(kind: str):
-    """What runs a feasible plan of this workload kind through experts4bit-qlora: ``run(plan, *, seed, log)``, or
+    """What runs a feasible plan of this workload kind through experts4bit-qlora:
+    ``run(plan, *, seed, log, adapter_dir, run_id)``, or
     None when the kind is planned only (serve: the plan's Why carries the server's environment)."""
     if kind == "train":
         from .experts4bit_train import run

@@ -40,4 +40,23 @@ def load_adapter(directory, *, device="cuda"):
     return load(directory, device=device)
 
 
+def read_adapter_manifest(directory):
+    """``(manifest, lines)``: the adapter directory verified by its backend's reader (every file's sha256, and for a
+    ``backend-adapter/2`` manifest experts4bit-qlora's own verifier), and the lines ``inspect --adapter`` prints."""
+    import json
+    from pathlib import Path
+
+    raw = json.loads((Path(directory).expanduser() / "adapter_manifest.json").read_text(encoding="utf-8"))
+    if raw.get("backend") == "dense":
+        from .backends.dense_adapters import read_manifest
+        from .backends.experts4bit_adapters import describe
+
+        manifest = read_manifest(directory)
+        return manifest, describe(manifest)
+    from .backends.experts4bit_adapters import describe, read_manifest
+
+    manifest = read_manifest(directory)
+    return manifest, describe(manifest)
+
+
 __all__ += ["TrainingData", "load_adapter"]

@@ -134,9 +134,12 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Turn a workload, this machine and constraints into an inspectable "
                                              "execution plan; execute it through its backend; keep the receipt.")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    pi = sub.add_parser("inspect", help="the hardware inventory, and a model's topology if one is given")
+    pi = sub.add_parser("inspect", help="the hardware inventory, and a model's topology if one is given; or, with "
+                                        "--adapter, a saved adapter directory, verified")
     pi.add_argument("model", nargs="?")
     pi.add_argument("--json", action="store_true")
+    pi.add_argument("--adapter", metavar="DIR", help="verify a saved adapter directory and print what it records "
+                                                     "(the base facts and fingerprints of a backend-adapter/2 manifest)")
     pp = sub.add_parser("plan", help="the ExecutionPlan: what should run here, why, and what lost; loads no weights")
     _common(pp)
     pp.add_argument("--json", action="store_true")
@@ -155,6 +158,17 @@ def main(argv=None) -> int:
     pt.add_argument("--seed", type=int, default=0)
     pt.add_argument("--adapter-out", help="fresh adapter directory (default: OUT/RUN_ID/adapter)")
     a = ap.parse_args(argv)
+
+    if a.cmd == "inspect" and a.adapter:
+        from . import read_adapter_manifest
+
+        try:
+            manifest, lines = read_adapter_manifest(a.adapter)
+        except (ValueError, OSError) as e:
+            print(f"adapter refused: {e}", file=sys.stderr)
+            return 1
+        print(json.dumps(manifest, indent=1, sort_keys=True) if a.json else "Adapter\n  " + "\n  ".join(lines))
+        return 0
 
     if a.cmd == "inspect":
         from .hardware import describe, probe

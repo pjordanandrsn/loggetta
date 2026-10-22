@@ -138,7 +138,7 @@ def frozen_digest(model):
     return out
 
 
-def run(plan, *, seed=0, warmup=2, log=print, adapter_dir=None):
+def run(plan, *, seed=0, warmup=2, log=print, adapter_dir=None, run_id=None):   # run_id: the dense manifest is /1
     from ..execution import PlanNotExecutable
     from . import dense
 
