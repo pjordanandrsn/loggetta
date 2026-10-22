@@ -5,6 +5,6 @@ build's index tag (`cu130` for driver 580 and later, `cu126` for 525 and later; 
 10.0 and up, gets only builds for CUDA 12.8 or later, so `cu129` below driver 580, and needs driver 570), reading
 `nvidia-smi` alone, so it works before torch is installed. A driver too old for every supported torch build, or a machine with no NVIDIA GPU, is a
 named refusal (exit 3). `scripts/first_run.sh` runs a first install end to end in a new directory: a fresh virtual
-environment, the matching torch FIRST, then the package, `inspect`, `plan`, and 10 training steps on OLMoE-1B-7B at a
-pinned revision. It writes each step's exit status and seconds to `first_run.json` and ends trained, or with a named
+environment, the matching torch FIRST, then the package, `inspect`, `plan`, and 10 training steps on OLMoE-1B-7B-0924-Instruct
+at a pinned revision. It writes each step's exit status and seconds to `first_run.json` and ends trained, or with a named
 refusal: no torch build fits (3), the plan was refused (4), an install step failed (5), or the run did not train (6).
