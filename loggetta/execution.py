@@ -110,6 +110,34 @@ def check_estimate_env(plan: ExecutionPlan, backend, log=print) -> dict | None:
     return {"planned": planned, "running": running, "differs": differs}
 
 
+def grade_load_bound(plan: ExecutionPlan, before: dict | None, measured: dict) -> dict | None:
+    """The plan's load-time host bound (``planner.load_bound``), what this machine had available right before the
+    executor started (``before``), and the run's measured peak RSS (VmHWM: the load included, mapped checkpoint pages
+    included). ``held`` is whether the measured peak stayed within the bound; None when either is missing."""
+    lb = (plan.provenance or {}).get("load_bound")
+    if not lb:
+        return None
+    peak = measured.get("host_peak_bytes")
+    return {**lb, **(before or {}), "measured_peak_bytes": peak,
+            "measured_peak_source": "VmHWM over the whole run, the load included",
+            "held": None if peak is None else peak <= lb["bound_bytes"]}
+
+
+def available_before_load(plan: ExecutionPlan, log=print) -> dict | None:
+    """What this process could still allocate right before the executor starts (cgroup-aware, as the plan read it),
+    logged against the plan's load-time bound. Only when the plan priced one."""
+    lb = (plan.provenance or {}).get("load_bound")
+    if not lb:
+        return None
+    from .hardware import _probe_host
+
+    avail = _probe_host().memory_available
+    if avail.value is not None and lb["bound_bytes"] > avail.value:
+        log(f"load-time host bound {lb['bound_bytes'] / (1 << 30):.2f} GiB exceeds the "
+            f"{avail.value / (1 << 30):.2f} GiB available now ({avail.note or avail.source}): the load may page or be OOM-killed")
+    return {"available_at_execute_bytes": avail.value, "available_at_execute_source": avail.note or avail.source}
+
+
 def execute(plan: ExecutionPlan, *, out_dir: str | None = None, seed: int = 0, log=print,
             prov: dict | None = None, hardware=None, adapter_dir: str | None = None) -> dict:
     """Run ``plan`` through its backend and return the receipt (written to ``out_dir`` when given).
@@ -134,6 +162,7 @@ def execute(plan: ExecutionPlan, *, out_dir: str | None = None, seed: int = 0, l
     target = str(Path(adapter_dir) if adapter_dir is not None else Path(out_dir or "runs") / run_id / "adapter")
     # every executor takes run_id explicitly (the experts4bit trainer writes it into a backend-adapter/2 manifest); a
     # signature check would silently drop it behind a wrapper that hides the parameter
+    before = available_before_load(plan, log)
     result = run(plan, seed=seed, log=log, adapter_dir=target, run_id=run_id)
     receipt = {
         "schema": RECEIPT_SCHEMA, "run_id": run_id, "status": result["status"], "backend": backend.NAME,
@@ -147,6 +176,9 @@ def execute(plan: ExecutionPlan, *, out_dir: str | None = None, seed: int = 0, l
     }
     if env_check is not None:
         receipt["provenance"]["estimate_env"] = env_check
+    graded = grade_load_bound(plan, before, result["measured"])
+    if graded is not None:
+        receipt["load_bound"] = graded
     if "artifacts" in result:
         receipt["artifacts"] = result["artifacts"]
     if "artifact_error" in result:
@@ -198,6 +230,11 @@ def summarize(receipt: dict) -> str:
         rows.append(f"  adapter   {adapter['path']} ({adapter['tensor_count']} tensors; {adapter.get('format', 'runtime format')})")
     if receipt.get("measured", {}).get("driver_unmeasured"):
         rows.append(f"  device check NOT RUN (status UNMEASURED): {receipt['measured']['driver_unmeasured']}")
+    lb = receipt.get("load_bound")
+    if lb:
+        verdict = {True: "held", False: "EXCEEDED", None: "not graded"}[lb.get("held")]
+        rows.append(f"  load bound {g(lb['bound_bytes'])} [inferred upper bound] vs peak RSS {g(lb.get('measured_peak_bytes'))} "
+                    f"[measured]: {verdict}; available before load {g(lb.get('available_at_execute_bytes'))}")
     if receipt.get("artifact_error"):
         saved = bool((receipt.get("artifacts") or {}).get("adapter"))       # a note about a saved adapter, not a failure
         rows.append(f"  adapter {'NOTE' if saved else 'save FAILED'}: {receipt['artifact_error']}")

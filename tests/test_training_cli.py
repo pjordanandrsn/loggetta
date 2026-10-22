@@ -19,8 +19,12 @@ def stub_planner(monkeypatch):
     monkeypatch.setattr(loggetta, "describe_model", describe)
     monkeypatch.setattr(loggetta, "probe", hw)
     monkeypatch.setattr(loggetta.data, "load_tokenizer", lambda *a, **k: Tokenizer())
-    def plan(topology, hardware, workload, constraints, *, observations, data_profile=None):
-        seen.update(workload=workload, data_profile=data_profile)
+    def checkpoint_size(model, *, revision=None):                 # the Hub is not asked from a unit test
+        seen["checkpoint_asked"] = (model, revision)
+        return {"bytes": 7, "files": 1, "source": "stub"}
+    monkeypatch.setattr(loggetta.model, "checkpoint_size", checkpoint_size)
+    def plan(topology, hardware, workload, constraints, *, observations, data_profile=None, checkpoint=None):
+        seen.update(workload=workload, data_profile=data_profile, checkpoint=checkpoint)
         return replace(a_plan(), workload=workload, constraints=constraints, data_profile=data_profile)
     monkeypatch.setattr(loggetta, "plan", plan)
     return seen
@@ -34,6 +38,8 @@ def test_cli_saves_dataset_and_hyperparameters(monkeypatch, tmp_path):
     assert main(["plan", "org/Model", "--dataset", str(data), "--format", "text", "--text-field", "body",
                  "--shuffle-data", "--repeat-data", "--learning-rate", "0.0001", "--out", str(output)]) == 0
     saved = ExecutionPlan.from_dict(json.loads(output.read_text()))
+    assert seen["checkpoint_asked"] == ("org/Model", None)            # the load-time bound's checkpoint size
+    assert seen["checkpoint"] == {"bytes": 7, "files": 1, "source": "stub"}
     assert saved.workload.data == seen["workload"].data
     assert saved.workload.data["source"] == str(data)
     assert saved.workload.data["repeat"] and saved.workload.data["shuffle"]

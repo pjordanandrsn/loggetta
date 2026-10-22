@@ -124,7 +124,10 @@ def _plan(a):
                     expert_residency=None if a.experts == "any" else (a.experts,), fixed=_parse_fixed(a.fix),
                     objective=a.objective, target_s_per_step=a.target_s_per_step,
                     allow_development_executor=a.allow_development_executor)
-    return plan(topo, hw, w, c, observations=load_observations(a.observations), data_profile=profile)
+    from .model import checkpoint_size
+
+    return plan(topo, hw, w, c, observations=load_observations(a.observations), data_profile=profile,
+                checkpoint=checkpoint_size(a.model, revision=a.revision))
 
 
 #: ``execute`` / ``train`` exit codes by the receipt's status; any status not listed exits 1
