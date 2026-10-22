@@ -1,0 +1,490 @@
+{
+ "schema": "estimate-validation/1",
+ "rows": [
+  {
+   "claim": "e4b.train.h2h.unsloth.olmoe.5090.2026-09-19.arm.e4b.fused_attn4",
+   "model": "allenai/OLMoE-1B-7B-0924",
+   "setup": {
+    "r": 16,
+    "alpha": 16,
+    "adapter_dtype": "fp32",
+    "attn_4bit": true,
+    "expert_kernel": "grouped_nf4",
+    "dgrad": true
+   },
+   "tokens_per_microbatch": 1110,
+   "optimizer": "adamw_8bit",
+   "note": "tp4 field recipe, RTX 5090, mb 2 (T assumed)",
+   "estimated_gb": 7.256,
+   "measured_gb": 6.419,
+   "residual_gb": -0.837,
+   "ratio": 0.8846,
+   "derived_gb": 5.21,
+   "heuristic_gb": 2.046,
+   "items": [
+    {
+     "name": "frozen expert stacks",
+     "gb": 3.323,
+     "basis": "derived"
+    },
+    {
+     "name": "attention projections (NF4)",
+     "gb": 0.138,
+     "basis": "derived"
+    },
+    {
+     "name": "dense weights (bf16)",
+     "gb": 0.417,
+     "basis": "derived"
+    },
+    {
+     "name": "expert LoRA adapters",
+     "gb": 0.47,
+     "basis": "derived"
+    },
+    {
+     "name": "attention LoRA adapters",
+     "gb": 0.017,
+     "basis": "derived"
+    },
+    {
+     "name": "adapter gradients",
+     "gb": 0.487,
+     "basis": "derived"
+    },
+    {
+     "name": "optimizer state (adamw_8bit)",
+     "gb": 0.247,
+     "basis": "derived"
+    },
+    {
+     "name": "small allocations",
+     "gb": 0.004,
+     "basis": "heuristic"
+    },
+    {
+     "name": "activations",
+     "gb": 2.042,
+     "basis": "heuristic"
+    },
+    {
+     "name": "logits held by the caller",
+     "gb": 0.112,
+     "basis": "derived"
+    },
+    {
+     "name": "held-out evaluation, above the training step",
+     "gb": 0.0,
+     "basis": "heuristic"
+    }
+   ]
+  },
+  {
+   "claim": "e4b.train.h2h.unsloth.olmoe.5090.2026-09-19.arm.e4b.reference_attn4",
+   "model": "allenai/OLMoE-1B-7B-0924",
+   "setup": {
+    "r": 16,
+    "alpha": 16,
+    "adapter_dtype": "fp32",
+    "attn_4bit": true,
+    "expert_kernel": "reference",
+    "dgrad": true
+   },
+   "tokens_per_microbatch": 1110,
+   "optimizer": "adamw_8bit",
+   "note": "tp4 field recipe, reference loop (T assumed)",
+   "estimated_gb": 6.258,
+   "measured_gb": 5.866,
+   "residual_gb": -0.392,
+   "ratio": 0.9374,
+   "derived_gb": 5.511,
+   "heuristic_gb": 0.747,
+   "items": [
+    {
+     "name": "frozen expert stacks",
+     "gb": 3.624,
+     "basis": "derived"
+    },
+    {
+     "name": "attention projections (NF4)",
+     "gb": 0.138,
+     "basis": "derived"
+    },
+    {
+     "name": "dense weights (bf16)",
+     "gb": 0.417,
+     "basis": "derived"
+    },
+    {
+     "name": "expert LoRA adapters",
+     "gb": 0.47,
+     "basis": "derived"
+    },
+    {
+     "name": "attention LoRA adapters",
+     "gb": 0.017,
+     "basis": "derived"
+    },
+    {
+     "name": "adapter gradients",
+     "gb": 0.487,
+     "basis": "derived"
+    },
+    {
+     "name": "optimizer state (adamw_8bit)",
+     "gb": 0.247,
+     "basis": "derived"
+    },
+    {
+     "name": "small allocations",
+     "gb": 0.004,
+     "basis": "heuristic"
+    },
+    {
+     "name": "activations",
+     "gb": 0.743,
+     "basis": "heuristic"
+    },
+    {
+     "name": "logits held by the caller",
+     "gb": 0.112,
+     "basis": "derived"
+    },
+    {
+     "name": "held-out evaluation, above the training step",
+     "gb": 0.0,
+     "basis": "heuristic"
+    }
+   ]
+  },
+  {
+   "claim": "e4b.train.h2h.unsloth.granite.5090.2026-09-19.arm.e4b.fused_attn4",
+   "model": "ibm-granite/granite-3.1-3b-a800m-instruct",
+   "setup": {
+    "r": 16,
+    "alpha": 16,
+    "adapter_dtype": "fp32",
+    "attn_4bit": true,
+    "expert_kernel": "grouped_nf4",
+    "dgrad": true
+   },
+   "tokens_per_microbatch": 1110,
+   "optimizer": "adamw_8bit",
+   "note": "tp4 field recipe, RTX 5090, mb 2 (T assumed)",
+   "estimated_gb": 3.823,
+   "measured_gb": 3.782,
+   "residual_gb": -0.041,
+   "ratio": 0.9894,
+   "derived_gb": 2.925,
+   "heuristic_gb": 0.897,
+   "items": [
+    {
+     "name": "frozen expert stacks",
+     "gb": 1.558,
+     "basis": "derived"
+    },
+    {
+     "name": "attention projections (NF4)",
+     "gb": 0.104,
+     "basis": "derived"
+    },
+    {
+     "name": "dense weights (bf16)",
+     "gb": 0.155,
+     "basis": "derived"
+    },
+    {
+     "name": "expert LoRA adapters",
+     "gb": 0.377,
+     "basis": "derived"
+    },
+    {
+     "name": "attention LoRA adapters",
+     "gb": 0.021,
+     "basis": "derived"
+    },
+    {
+     "name": "adapter gradients",
+     "gb": 0.398,
+     "basis": "derived"
+    },
+    {
+     "name": "optimizer state (adamw_8bit)",
+     "gb": 0.202,
+     "basis": "derived"
+    },
+    {
+     "name": "small allocations",
+     "gb": 0.004,
+     "basis": "heuristic"
+    },
+    {
+     "name": "activations",
+     "gb": 0.893,
+     "basis": "heuristic"
+    },
+    {
+     "name": "logits held by the caller",
+     "gb": 0.109,
+     "basis": "derived"
+    },
+    {
+     "name": "held-out evaluation, above the training step",
+     "gb": 0.0,
+     "basis": "heuristic"
+    }
+   ]
+  },
+  {
+   "claim": "e4b.train.h2h.unsloth.qwen3.5090.2026-09-19.arm.e4b.fused_attn4",
+   "model": "Qwen/Qwen3-30B-A3B",
+   "setup": {
+    "r": 16,
+    "alpha": 16,
+    "adapter_dtype": "fp32",
+    "attn_4bit": true,
+    "expert_kernel": "grouped_nf4",
+    "dgrad": true
+   },
+   "tokens_per_microbatch": 1110,
+   "optimizer": "adamw_8bit",
+   "note": "tp4 field recipe, RTX 5090, resident, mb 2 (T assumed)",
+   "estimated_gb": 26.8,
+   "measured_gb": 24.581,
+   "residual_gb": -2.219,
+   "ratio": 0.9172,
+   "derived_gb": 23.499,
+   "heuristic_gb": 3.3,
+   "items": [
+    {
+     "name": "frozen expert stacks",
+     "gb": 14.956,
+     "basis": "derived"
+    },
+    {
+     "name": "attention projections (NF4)",
+     "gb": 0.467,
+     "basis": "derived"
+    },
+    {
+     "name": "fused q/k/v training projection (fp32 absmax)",
+     "gb": 0.024,
+     "basis": "derived"
+    },
+    {
+     "name": "dense weights (bf16)",
+     "gb": 1.27,
+     "basis": "derived"
+    },
+    {
+     "name": "expert LoRA adapters",
+     "gb": 2.517,
+     "basis": "derived"
+    },
+    {
+     "name": "attention LoRA adapters",
+     "gb": 0.053,
+     "basis": "derived"
+    },
+    {
+     "name": "adapter gradients",
+     "gb": 2.57,
+     "basis": "derived"
+    },
+    {
+     "name": "optimizer state (adamw_8bit)",
+     "gb": 1.305,
+     "basis": "derived"
+    },
+    {
+     "name": "small allocations",
+     "gb": 0.004,
+     "basis": "heuristic"
+    },
+    {
+     "name": "activations",
+     "gb": 3.296,
+     "basis": "heuristic"
+    },
+    {
+     "name": "logits held by the caller",
+     "gb": 0.337,
+     "basis": "derived"
+    },
+    {
+     "name": "held-out evaluation, above the training step",
+     "gb": 0.0,
+     "basis": "heuristic"
+    }
+   ]
+  },
+  {
+   "claim": "e4b.train.frontier.qwen3.a2000-12gb.2026-10-02",
+   "model": "Qwen/Qwen3-30B-A3B",
+   "setup": {
+    "r": 16,
+    "alpha": 16,
+    "adapter_dtype": "fp32",
+    "attn_4bit": true,
+    "expert_kernel": "grouped_nf4",
+    "dgrad": true,
+    "expert_residency": "host"
+   },
+   "tokens_per_microbatch": 555,
+   "optimizer": "adamw_8bit",
+   "note": "TC3, RTX A2000 12 GB, offload, mb 1 (T from the receipt: max padded row 555)",
+   "estimated_gb": 10.367,
+   "measured_gb": 10.463,
+   "residual_gb": 0.096,
+   "ratio": 1.0093,
+   "derived_gb": 8.715,
+   "heuristic_gb": 1.652,
+   "items": [
+    {
+     "name": "frozen expert stacks, one layer staged",
+     "gb": 0.34,
+     "basis": "derived"
+    },
+    {
+     "name": "attention projections (NF4)",
+     "gb": 0.467,
+     "basis": "derived"
+    },
+    {
+     "name": "fused q/k/v training projection (fp32 absmax)",
+     "gb": 0.024,
+     "basis": "derived"
+    },
+    {
+     "name": "dense weights (bf16)",
+     "gb": 1.27,
+     "basis": "derived"
+    },
+    {
+     "name": "expert LoRA adapters",
+     "gb": 2.517,
+     "basis": "derived"
+    },
+    {
+     "name": "attention LoRA adapters",
+     "gb": 0.053,
+     "basis": "derived"
+    },
+    {
+     "name": "adapter gradients",
+     "gb": 2.57,
+     "basis": "derived"
+    },
+    {
+     "name": "optimizer state (adamw_8bit)",
+     "gb": 1.305,
+     "basis": "derived"
+    },
+    {
+     "name": "small allocations",
+     "gb": 0.004,
+     "basis": "heuristic"
+    },
+    {
+     "name": "activations",
+     "gb": 1.648,
+     "basis": "heuristic"
+    },
+    {
+     "name": "logits held by the caller",
+     "gb": 0.169,
+     "basis": "derived"
+    },
+    {
+     "name": "held-out evaluation, above the training step",
+     "gb": 0.0,
+     "basis": "heuristic"
+    }
+   ]
+  },
+  {
+   "claim": "e4b.train.frontier.qwen3.4090-24gb.2026-10-02",
+   "model": "Qwen/Qwen3-30B-A3B",
+   "setup": {
+    "r": 16,
+    "alpha": 16,
+    "adapter_dtype": "fp32",
+    "attn_4bit": true,
+    "expert_kernel": "grouped_nf4",
+    "dgrad": true,
+    "expert_residency": "host"
+   },
+   "tokens_per_microbatch": 1110,
+   "optimizer": "adamw_8bit",
+   "note": "TC3, RTX 4090 24 GB, offload, mb 2 (T from the receipt tc3-4090-8: 2 x 555)",
+   "estimated_gb": 12.184,
+   "measured_gb": 11.881,
+   "residual_gb": -0.303,
+   "ratio": 0.9752,
+   "derived_gb": 8.883,
+   "heuristic_gb": 3.3,
+   "items": [
+    {
+     "name": "frozen expert stacks, one layer staged",
+     "gb": 0.34,
+     "basis": "derived"
+    },
+    {
+     "name": "attention projections (NF4)",
+     "gb": 0.467,
+     "basis": "derived"
+    },
+    {
+     "name": "fused q/k/v training projection (fp32 absmax)",
+     "gb": 0.024,
+     "basis": "derived"
+    },
+    {
+     "name": "dense weights (bf16)",
+     "gb": 1.27,
+     "basis": "derived"
+    },
+    {
+     "name": "expert LoRA adapters",
+     "gb": 2.517,
+     "basis": "derived"
+    },
+    {
+     "name": "attention LoRA adapters",
+     "gb": 0.053,
+     "basis": "derived"
+    },
+    {
+     "name": "adapter gradients",
+     "gb": 2.57,
+     "basis": "derived"
+    },
+    {
+     "name": "optimizer state (adamw_8bit)",
+     "gb": 1.305,
+     "basis": "derived"
+    },
+    {
+     "name": "small allocations",
+     "gb": 0.004,
+     "basis": "heuristic"
+    },
+    {
+     "name": "activations",
+     "gb": 3.296,
+     "basis": "heuristic"
+    },
+    {
+     "name": "logits held by the caller",
+     "gb": 0.337,
+     "basis": "derived"
+    },
+    {
+     "name": "held-out evaluation, above the training step",
+     "gb": 0.0,
+     "basis": "heuristic"
+    }
+   ]
+  }
+ ]
+}
