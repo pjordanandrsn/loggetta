@@ -158,8 +158,20 @@ step plan "$VPY" -m loggetta plan "$MODEL" --revision "$REVISION" --seq "$SEQ" -
 rc=$?
 cat "$DIR/plan.txt" >&2
 if [ "$rc" -ne 0 ]; then
-  # the step's own "== name: command" echo is in the file too: the reason comes from the plan's output only
-  why=$(grep -v '^== ' "$DIR/plan.txt" | grep -m3 -iE 'refus|cannot|reason|not feasible' | tr '\n' ' ')
+  # A refused plan writes plan.json with the refusal's own reasons: the first is the summary, verbatim. Only when there
+  # is no refused plan.json (a crash, an older release) does the reason come from the plan's printed output, without
+  # the step's own "== name: command" echo.
+  why=$("$PYTHON" - "$DIR/plan.json" 2>/dev/null <<'REASON'
+import json, sys
+try:
+    p = json.load(open(sys.argv[1]))
+    if p.get("status") == "refused" and (p.get("refusal") or {}).get("reasons"):
+        print(p["refusal"]["reasons"][0])
+except (OSError, ValueError, TypeError, AttributeError, IndexError):
+    pass
+REASON
+)
+  [ -n "$why" ] || why=$(grep -v '^== ' "$DIR/plan.txt" | grep -m3 -iE 'refus|cannot|reason|not feasible' | tr '\n' ' ')
   [ -n "$why" ] || why=$(grep -v '^== ' "$DIR/plan.txt" | tail -3 | tr '\n' ' ')
   finish 4 "the plan was refused (exit $rc): $why"
 fi

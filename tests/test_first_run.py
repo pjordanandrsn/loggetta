@@ -106,7 +106,12 @@ if [ "${1:-}" = "-m" ]; then
       esac
       if [ "$1" = plan ]; then
         out=""; while [ $# -gt 0 ]; do [ "$1" = --out ] && out=$2; shift; done
-        echo '{}' > "$out"; [ "${STUB_PLAN_RC:-0}" = 0 ] || echo "NOT FEASIBLE under the requested constraints."
+        if [ "${STUB_PLAN_RC:-0}" != 0 ] && [ -n "${STUB_PLAN_REASON:-}" ]; then
+          "$REAL_PY" -c 'import json, sys; json.dump({"status": "refused", "refusal": {"reasons": [sys.argv[2], "a second reason"]}}, open(sys.argv[1], "w"))' "$out" "$STUB_PLAN_REASON"
+        else
+          echo '{}' > "$out"
+        fi
+        [ "${STUB_PLAN_RC:-0}" = 0 ] || echo "NOT FEASIBLE under the requested constraints."
         exit "${STUB_PLAN_RC:-0}"
       fi
       if [ "$1" = execute ]; then
@@ -154,6 +159,14 @@ def test_first_run_reads_executes_exit_codes(tmp_path, env, code, trained, check
         assert "trained; the device check did not run (status UNMEASURED)" in r.stderr
         assert summary["receipt"]["driver_unmeasured"].startswith("nvidia-smi answered 3 time(s)")
         assert summary["seconds_to_trained"] is not None
+
+
+def test_a_refused_plan_is_summarized_by_its_first_reason_verbatim(tmp_path):
+    """The printed banner says only NOT FEASIBLE; the refusal's own reason is in plan.json, and that is the summary."""
+    why = ("no working C compiler: no C compiler: CC is unset and neither gcc nor clang is on PATH. The training and "
+           "serving kernels are Triton kernels")
+    r, summary = stub_run(tmp_path, STUB_PLAN_RC="2", STUB_PLAN_REASON=why)
+    assert r.returncode == 4 and summary["refusal"] == f"the plan was refused (exit 2): {why}"
 
 
 def test_first_run_names_a_refused_plan(tmp_path):
