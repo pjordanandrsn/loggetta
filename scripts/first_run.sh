@@ -166,11 +166,14 @@ if [ "$rc" -ne 0 ]; then
   # is no refused plan.json (a crash, an older release) does the reason come from the plan's printed output, without
   # the step's own "== name: command" echo.
   why=$("$PYTHON" - "$DIR/plan.json" 2>/dev/null <<'REASON'
-import json, os, sys
+import json, os, re, sys
 try:
     p = json.load(open(sys.argv[1]))
     if p.get("status") == "refused" and (p.get("refusal") or {}).get("reasons"):
-        print(p["refusal"]["reasons"][0].replace(os.path.expanduser("~"), "~"))   # never a home directory
+        why, home = p["refusal"]["reasons"][0], os.path.expanduser("~").rstrip("/")
+        if home:                    # never a home directory: whole paths only (a home of "/" is skipped, not every slash)
+            why = re.sub(re.escape(home) + r"(?=/|$|\s|['\":,)])", "~", why)
+        print(why)
 except (OSError, ValueError, TypeError, AttributeError, IndexError):
     pass
 REASON

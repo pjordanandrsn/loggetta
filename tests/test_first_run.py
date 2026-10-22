@@ -180,11 +180,22 @@ def test_an_existing_relative_model_directory_is_recorded_by_name(tmp_path, monk
     assert summary["workload"]["model"] == "local: mymodel"
 
 
-def test_a_refusal_reason_never_carries_the_home_directory(tmp_path):
-    home = os.sep + os.path.join("home", "someone")
-    why = f"cannot read {home}/.cache/thing"
+def _home(*parts):
+    return os.sep + os.path.join(*parts)                  # built at run time
+
+
+@pytest.mark.parametrize("home, why, want", [
+    (_home("home", "someone"), f"cannot read {_home('home', 'someone')}/.cache/thing", "cannot read ~/.cache/thing"),
+    # a home that is a prefix of a sibling's must not eat it
+    (_home("home", "al"), f"cannot read {_home('home', 'alice')}/x", f"cannot read {_home('home', 'alice')}/x"),
+    # a home of "/" (common for container service users) leaves the reason as it was
+    (os.sep, f"cannot read {_home('srv', 'x')}/y", f"cannot read {_home('srv', 'x')}/y"),
+    # a home with a trailing slash keeps the separator
+    (_home("root") + os.sep, f"cannot read {_home('root')}/x", "cannot read ~/x"),
+])
+def test_a_refusal_reason_never_carries_the_home_directory(tmp_path, home, why, want):
     r, summary = stub_run(tmp_path, STUB_PLAN_RC="2", STUB_PLAN_REASON=why, HOME=home)
-    assert summary["refusal"] == "the plan was refused (exit 2): cannot read ~/.cache/thing"
+    assert summary["refusal"] == f"the plan was refused (exit 2): {want}"
 
 
 def test_a_refused_plan_is_summarized_by_its_first_reason_verbatim(tmp_path):
