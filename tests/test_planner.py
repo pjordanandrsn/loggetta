@@ -772,7 +772,8 @@ def test_an_amd_gpu_is_refused_in_words_not_as_no_gpu(topo):
 
 
 def test_the_allocator_setting_is_recorded_only_and_moves_no_plan(topo):
-    """measure.provenance records PYTORCH_CUDA_ALLOC_CONF in every receipt, and nothing reads it. Every committed
+    """measure.provenance records PYTORCH_CUDA_ALLOC_CONF and the E4B_* environment in every receipt, and nothing
+    reads either. Every committed
     execution receipt plans identically with the key added, for a train plan on the card the A2000 receipts measured
     (so they engage) and for a serve plan, and the receipts do move both plans, so the comparison is not empty."""
     import copy
@@ -789,6 +790,7 @@ def test_the_allocator_setting_is_recorded_only_and_moves_no_plan(topo):
     keyed = copy.deepcopy(obs)
     for r in keyed:
         r.setdefault("provenance", {})["pytorch_cuda_alloc_conf"] = "expandable_segments:True"
+        r["provenance"]["e4b_env"] = {"names": ["E4B_ABSMAX_DQ"], "sha256": "0" * 64, "values": {"E4B_ABSMAX_DQ": "0"}}
     card = next(r for r in obs if r["workload"].get("kind") == "train")["hardware"]["gpu"]
     h = hw()
     on_card = replace(h, gpus=(replace(h.gpus[0], name=card["name"], driver=Fact(card["driver"], "reported")),))
