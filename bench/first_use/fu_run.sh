@@ -23,7 +23,8 @@ for f in fu_reduce.py staged-first_use.sha256 first_run.sh "$FU_WHEEL"; do [ -s 
 [ "$(sha256 "$W/first_run.sh" | cut -d' ' -f1)" = "$FU_FIRST_RUN_SHA256" ] || { say "first_run.sh HASH MISMATCH"; finish 9; }
 python3 $W/fu_reduce.py --self-test | tee -a summary.txt; [ "${PIPESTATUS[0]}" = 0 ] || { say "REDUCER SELF-TEST FAILED"; finish 21; }
 # ---- the cells: each registered name, run in order, each in its own new directory (first_run.sh refuses an existing one)
-NEED_CELL=1500; RESERVE=300
+# each cell's hard alarm, priced against the WORST host the screen admits (PREREG, "Alarm"): >= 500 Mbps down, >= 8 cores
+NEED_CELL=2400; RESERVE=300
 nvidia-smi --query-gpu=name,driver_version,compute_cap,memory.total --format=csv,noheader > forensics.txt 2>&1 || true
 echo "BOX $(head -1 forensics.txt)" | tee -a summary.txt
 ran=0
