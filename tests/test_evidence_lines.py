@@ -50,9 +50,9 @@ def test_the_evidence_link_opens_for_a_pip_user():
     """From the installed metadata's Source URL, so the link works outside a checkout and the code names no repository."""
     from importlib.metadata import metadata
 
-    source = next(u.split(",", 1)[1].strip() for u in metadata("loggetta").get_all("Project-URL")
-                  if u.split(",", 1)[0].strip() == "Source")
-    assert planner.evidence_link("evidence/x") == f"{source}/tree/main/evidence/x"
+    meta = metadata("loggetta")
+    source = next(u.split(",", 1)[1].strip() for u in meta.get_all("Project-URL") if u.split(",", 1)[0].strip() == "Source")
+    assert planner.evidence_link("evidence/x") == f"{source}/tree/v{meta['Version']}/evidence/x"   # a tag, never main
     assert planner.evidence_reasons(Sel([]), 0) == []          # resident: no margin line, nothing invented
 
 
@@ -94,3 +94,11 @@ def test_with_no_receipts_a_plan_cites_no_run_id():
     text = p.render(verbose=True)
     assert re.findall(r"receipt (?!on |or |for )\S+", text) == []
     assert any(r.startswith("estimate evidence: no overhead term measured on this machine yet") for r in p.reasons)
+
+
+def test_the_linked_evidence_is_in_the_tree_the_release_tag_will_hold():
+    """The link points at this release's tag; the folder must be in the tree that tag is cut from."""
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+    assert (root / planner.INSAMPLE_EVIDENCE).is_dir()

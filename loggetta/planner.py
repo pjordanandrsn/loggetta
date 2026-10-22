@@ -49,16 +49,18 @@ INSAMPLE_EVIDENCE = "evidence/2026-10-21-insample-plans"
 
 
 def evidence_link(path: str) -> str:
-    """``path`` under the package's source repository as a link a pip user can open (the "Source" project URL in the
-    installed metadata, so the code names no repository), else the repository-relative path."""
+    """``path`` under the package's source repository as a PERMALINK a pip user can open: the "Source" project URL in
+    the installed metadata (so the code names no repository) at this release's tag (``v<version>``, immutable, and the
+    tree this code shipped in), else the repository-relative path."""
     from importlib.metadata import PackageNotFoundError, metadata
 
     try:
-        urls = metadata(__package__.split(".")[0]).get_all("Project-URL") or []
+        meta = metadata(__package__.split(".")[0])
     except PackageNotFoundError:
-        urls = []
+        return path
+    urls = meta.get_all("Project-URL") or []
     source = next((u.split(",", 1)[1].strip() for u in urls if u.split(",", 1)[0].strip().lower() == "source"), None)
-    return f"{source.rstrip('/')}/tree/main/{path}" if source else path
+    return f"{source.rstrip('/')}/tree/v{meta['Version']}/{path}" if source else path
 #: the overhead terms the planner charges itself, each known from a receipt or a default (MemoryLine name prefixes)
 OVERHEAD_TERMS = (("CUDA context", "CUDA context"), ("allocator reserve", "allocator reserve"),
                   ("process baseline", "host baseline"))
