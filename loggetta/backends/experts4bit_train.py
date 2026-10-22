@@ -97,6 +97,11 @@ def link_h2d(n_bytes: int = 256 << 20, reps: int = 5) -> dict:
     return {"link_h2d_gbps": st.median(rates), "link_h2d_probe": f"{n_bytes >> 20} MiB pinned x{reps}, median"}
 
 
+#: a run whose training passed its integrity checks: its adapter is saved. UNMEASURED trained normally; only the
+#: driver-side device check had no sample.
+TRAINED_STATUSES = ("OK", "UNMEASURED")
+
+
 def run(plan, *, seed: int = 0, warmup: int = 2, log=print, adapter_dir: str | None = None,
         run_id: str | None = None) -> dict:
     """Prepare user data, build the selected setup, train, then export reusable native adapters.
@@ -160,7 +165,7 @@ def run(plan, *, seed: int = 0, warmup: int = 2, log=print, adapter_dir: str | N
             out["engaged"]["chunked_lm_loss"] = loss_branch(prep.model, before, loss_branch_counters())
         if target is not None:
             out["artifacts"] = {}
-            if out["status"] != "OK":
+            if out["status"] not in TRAINED_STATUSES:
                 out["artifact_error"] = "integrity checks failed; no reusable adapter was exported"
             else:
                 save_start = time.perf_counter()
@@ -169,10 +174,12 @@ def run(plan, *, seed: int = 0, warmup: int = 2, log=print, adapter_dir: str | N
                                                                 report=prep.report, seed=seed, run_id=run_id,
                                                                 preflight=preflight)
                     if out["artifacts"]["adapter"].get("v2_refused"):
-                        # trained tensors were kept as /1; the run says so instead of reading as a plain OK
-                        out["status"] = "SAVED_V1"
+                        # trained tensors were kept as /1: always reported; the status says SAVED_V1 unless a status
+                        # that matters more (UNMEASURED) already stands
                         out["artifact_error"] = ("saved as backend-adapter/1, not /2: "
                                                  + out["artifacts"]["adapter"]["v2_refused"])
+                        if out["status"] == "OK":
+                            out["status"] = "SAVED_V1"
                 except (OSError, ValueError, RuntimeError) as exc:
                     out["status"] = "SAVE_FAILED"
                     out["artifact_error"] = f"{type(exc).__name__}: {exc}"
@@ -215,6 +222,20 @@ def loss_branch(model, before: dict, after: dict | None) -> dict:
     except Exception as exc:                          # noqa: BLE001 - metadata about a finished run, never its failure
         rec["error"] = f"{type(exc).__name__}: {exc}"
     return rec
+
+
+def driver_unmeasured(smi, is_cuda: bool) -> str | None:
+    """Why a CUDA run's driver-reported process peak is unknown, as the receipt states it, or None when it was sampled
+    (or the run was not on CUDA). Without that peak the plan's device estimate was never checked against the driver."""
+    why = smi.unmeasured_reason() if is_cuda else None
+    return (f"{why}: the driver-reported process peak was not sampled, so the plan's device estimate was not checked "
+            "against it (the allocator peaks are measured)") if why else None
+
+
+def run_status(ok: bool, meas: dict) -> str:
+    """ALARM when an integrity check failed; else UNMEASURED when the device check had no driver sample (a status must
+    never claim what was not measured); else OK."""
+    return "ALARM" if not ok else "UNMEASURED" if meas.get("driver_unmeasured") else "OK"
 
 
 def train_loop(model, trainable, model_id, w, smi, meas, *, revision=None, seed=0, warmup=2, log=print,
@@ -317,6 +338,9 @@ def train_loop(model, trainable, model_id, w, smi, meas, *, revision=None, seed=
     time.sleep(2 * smi.interval)                          # let the sampler see the end state
     meas["driver_process_peak_bytes"] = smi.peak or None
     meas["driver_samples"] = smi.samples
+    unmeasured = driver_unmeasured(smi, is_cuda)
+    if unmeasured:
+        meas["driver_unmeasured"] = unmeasured
     meas["driver_peak_before_training_bytes"] = smi_floor or None
     if smi.peak and is_cuda:
         meas["cuda_context_bytes"] = smi.peak - meas["device_reserved_peak_bytes"]
@@ -347,4 +371,5 @@ def train_loop(model, trainable, model_id, w, smi, meas, *, revision=None, seed=
         "steps_without_trained_tokens": skipped,
     }
     ok = correctness["all_finite"] and correctness[f"frozen_{frozen_kind}_bytes_unchanged"] and correctness["adapters_moved"]
-    return {"measured": meas, "correctness": correctness, "data": data_info, "status": "OK" if ok else "ALARM"}
+    status = run_status(ok, meas)
+    return {"measured": meas, "correctness": correctness, "data": data_info, "status": status}
