@@ -127,12 +127,20 @@ def _plan(a):
     return plan(topo, hw, w, c, observations=load_observations(a.observations), data_profile=profile)
 
 
+#: ``execute`` / ``train`` exit codes by the receipt's status; any status not listed exits 1
+EXIT_CODES = {"OK": 0, "UNMEASURED": 4}
+EXIT_HELP = ("exit codes (execute, train): 0 trained and checked; 4 trained, but the device check took no driver sample "
+             "(status UNMEASURED, e.g. under WSL2: see the receipt's measured.driver_unmeasured); 1 any other status "
+             "(ALARM, SAVE_FAILED, SAVED_V1, ...); 2 a refused or invalid plan. inspect --torch-index: 3 no torch build fits.")
+
+
 def main(argv=None) -> int:
     from .measure import provenance
 
     prov = {**provenance(), "taken": "at process start, before the measured code was imported"}
     ap = argparse.ArgumentParser(description="Turn a workload, this machine and constraints into an inspectable "
-                                             "execution plan; execute it through its backend; keep the receipt.")
+                                             "execution plan; execute it through its backend; keep the receipt.",
+                                 epilog=EXIT_HELP)
     sub = ap.add_subparsers(dest="cmd", required=True)
     pi = sub.add_parser("inspect", help="the hardware inventory, and a model's topology if one is given; or, with "
                                         "--adapter, a saved adapter directory, verified")
@@ -240,7 +248,7 @@ def main(argv=None) -> int:
         return 1
     print("\n" + summarize(receipt))
     print(f"\nreceipt: {a.out}/{receipt['run_id']}.json")
-    return 0 if receipt["status"] == "OK" else 1
+    return EXIT_CODES.get(receipt["status"], 1)
 
 
 if __name__ == "__main__":

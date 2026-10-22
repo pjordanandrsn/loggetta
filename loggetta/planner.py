@@ -26,9 +26,11 @@ DEFAULT_HOST_BASELINE = 3 * GiB
 HEADROOM_MIN, HEADROOM_FRAC = 512 * MiB, 0.05
 OBJECTIVES = ("speed", "min_vram", "min_ram")
 
-#: receipt statuses whose measurements are evidence: SAVED_V1 trained and measured normally; only its adapter manifest
-#: is /1 instead of /2 (an absent status is an older receipt that predates the field)
-MEASURED_STATUSES = ("OK", "SAVED_V1", None)
+#: receipt statuses whose measurements are evidence: SAVED_V1 trained and measured normally (only its adapter manifest
+#: is /1 instead of /2); UNMEASURED measured its allocator peaks but had no driver sample. reserve_fraction() learns
+#: its allocator slack from it; _overheads() skips it entirely (no CUDA-context term without a driver peak, so its host
+#: baseline and fallback reserve are not taken from it either). An absent status is an older receipt.
+MEASURED_STATUSES = ("OK", "SAVED_V1", "UNMEASURED", None)
 
 
 def cite(obs) -> str:
@@ -42,6 +44,8 @@ def cite(obs) -> str:
         notes.append(f"{branch} LM loss, counted")
     if obs.get("status") == "SAVED_V1":
         notes.append("SAVED_V1: its adapter was kept as backend-adapter/1")
+    elif obs.get("status") == "UNMEASURED":
+        notes.append("UNMEASURED: no driver sample, its allocator peaks only")
     return f"receipt {obs.get('run_id')}" + (f" ({'; '.join(notes)})" if notes else "")
 
 
@@ -156,8 +160,8 @@ def _overheads(hardware, gpu, observations, backends=()):
         m = obs.get("measured", {})
         g = obs.get("hardware", {}).get("gpu", {})
         if (g.get("name"), g.get("driver")) != key or m.get("cuda_context_bytes") is None \
-                or not licensed(obs, "context"):
-            continue
+                or not licensed(obs, "context") or m.get("driver_samples") == 0 or obs.get("status") == "UNMEASURED":
+            continue        # a run with no driver sample cannot teach the CUDA context, whatever field it carries
         src = cite(obs)
         alloc, reserved = m.get("device_peak_bytes"), m.get("device_reserved_peak_bytes")
         reserve_ok = bool(alloc and reserved and licensed(obs, "reserve"))

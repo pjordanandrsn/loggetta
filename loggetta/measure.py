@@ -25,6 +25,8 @@ class DriverMemorySampler:
 
     def __init__(self, interval: float = 0.25):
         self.interval, self.peak, self.samples = interval, 0, 0
+        #: nvidia-smi reads attempted and reads that failed: with no sample, they say why the driver peak is unknown
+        self.reads, self.read_errors = 0, 0
         self.anon_peak, self.file_peak, self.shmem_peak, self.required_peak = 0, 0, 0, 0
         #: the anonymous host peak since the last :meth:`mark` (a phase's own peak, e.g. serving after a load)
         self.phase_anon_peak = 0
@@ -44,10 +46,13 @@ class DriverMemorySampler:
 
     def _run(self):
         while not self._stop.is_set():
-            try:
-                v = self._read() if self._smi else None
-            except (subprocess.SubprocessError, OSError):
-                v = None
+            v = None
+            if self._smi:
+                self.reads += 1
+                try:
+                    v = self._read()
+                except (subprocess.SubprocessError, OSError):
+                    self.read_errors += 1
             if v is not None:
                 self.peak, self.samples = max(self.peak, v), self.samples + 1
             st = proc_status()
@@ -58,6 +63,17 @@ class DriverMemorySampler:
             # pinned host memory (cudaHostAlloc) is accounted as RssShmem; mapped checkpoint shards as RssFile
             self.required_peak = max(self.required_peak, st.get("RssAnon", 0) + st.get("RssShmem", 0))
             self._stop.wait(self.interval)
+
+    def unmeasured_reason(self) -> str | None:
+        """Why the driver-reported process peak is unknown (no sample was taken), or None when it was sampled."""
+        if self.samples:
+            return None
+        if not self._smi:
+            return "no nvidia-smi on PATH"
+        if self.reads and self.read_errors == self.reads:
+            return f"all {self.reads} nvidia-smi reads failed"
+        return (f"nvidia-smi answered {self.reads} time(s) but never listed this process's GPU memory (WSL2, and some "
+                "containers, do not report per-process memory)")
 
     def mark(self, anon_now: int = 0):
         """Start a new phase: :attr:`phase_anon_peak` restarts from ``anon_now``. A load can peak higher than the

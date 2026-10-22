@@ -88,3 +88,75 @@ def test_the_script_refuses_an_existing_directory_and_parses(tmp_path):
     r = subprocess.run(["bash", str(SCRIPT), str(tmp_path)], capture_output=True, text=True)
     assert r.returncode == 2 and "already exists; a first run starts from a new directory" in r.stderr
     assert list(tmp_path.iterdir()) == []          # nothing written into it
+
+
+STUB = r'''#!/usr/bin/env bash
+# A stand-in python for first_run.sh: real python for -c / - (the version check, the summary); a simulated venv, pip and
+# package CLI otherwise, driven by STUB_* variables. No network, no GPU.
+if [ "${1:-}" = "-c" ] || [ "${1:-}" = "-" ]; then exec "$REAL_PY" "$@"; fi
+if [ "${1:-}" = "-m" ]; then
+  mod=$2; shift 2
+  case "$mod" in
+    venv) mkdir -p "$1/bin" && ln -s "$STUB_SELF" "$1/bin/python"; exit 0;;
+    pip) [ "${1:-}" = "list" ] && echo "[]"; exit 0;;
+    loggetta)
+      case "${1:-} ${2:-}" in
+        "inspect --torch-index") echo cu126; exit 0;;
+        "inspect "*) echo Hardware; exit 0;;
+      esac
+      if [ "$1" = plan ]; then
+        out=""; while [ $# -gt 0 ]; do [ "$1" = --out ] && out=$2; shift; done
+        echo '{}' > "$out"; [ "${STUB_PLAN_RC:-0}" = 0 ] || echo "NOT FEASIBLE under the requested constraints."
+        exit "${STUB_PLAN_RC:-0}"
+      fi
+      if [ "$1" = execute ]; then
+        out=""; while [ $# -gt 0 ]; do [ "$1" = --out ] && out=$2; shift; done
+        mkdir -p "$out"
+        if [ "${STUB_STATUS:-OK}" = UNMEASURED ]; then
+          printf '%s' '{"run_id": "r1", "status": "UNMEASURED", "measured": {"driver_samples": 0, "driver_unmeasured": "nvidia-smi answered 3 time(s) but never listed this process"}}' > "$out/r1.json"
+          echo "device check NOT RUN (status UNMEASURED): nvidia-smi answered 3 time(s) but never listed this process"
+        else
+          printf '%s' "{\"run_id\": \"r1\", \"status\": \"${STUB_STATUS:-OK}\", \"measured\": {\"driver_samples\": 12}}" > "$out/r1.json"
+        fi
+        exit "${STUB_EXEC_RC:-0}"
+      fi;;
+  esac
+fi
+echo "stub python: unhandled $*" >&2; exit 99
+'''
+
+
+def stub_run(tmp_path, **env):
+    import json
+    import os
+    import sys
+
+    stub = tmp_path / "python"
+    stub.write_text(STUB)
+    stub.chmod(0o755)
+    out = tmp_path / "run"
+    e = {**os.environ, "PYTHON": str(stub), "REAL_PY": sys.executable, "STUB_SELF": str(stub), **env}
+    r = subprocess.run(["bash", str(SCRIPT), str(out)], capture_output=True, text=True, env=e)
+    return r, json.loads((out / "first_run.json").read_text())
+
+
+@pytest.mark.parametrize("env, code, trained, check", [
+    ({}, 0, True, "checked"),
+    ({"STUB_STATUS": "UNMEASURED", "STUB_EXEC_RC": "4"}, 7, True, "not run"),     # WSL2: trained, device check not run
+    ({"STUB_STATUS": "ALARM", "STUB_EXEC_RC": "1"}, 6, False, "checked"),
+])
+def test_first_run_reads_executes_exit_codes(tmp_path, env, code, trained, check):
+    r, summary = stub_run(tmp_path, **env)
+    assert r.returncode == code, r.stderr
+    assert summary["exit"] == code and summary["trained"] is trained and summary["torch_index"] == "cu126"
+    assert summary["receipt"]["device_check"] == check
+    if code == 7:
+        assert "trained; the device check did not run (status UNMEASURED)" in r.stderr
+        assert summary["receipt"]["driver_unmeasured"].startswith("nvidia-smi answered 3 time(s)")
+        assert summary["seconds_to_trained"] is not None
+
+
+def test_first_run_names_a_refused_plan(tmp_path):
+    r, summary = stub_run(tmp_path, STUB_PLAN_RC="2")
+    assert r.returncode == 4 and summary["trained"] is False
+    assert summary["refusal"].startswith("the plan was refused (exit 2): NOT FEASIBLE")

@@ -157,7 +157,7 @@ def run(plan, *, seed=0, warmup=2, log=print, adapter_dir=None, run_id=None):   
     from ..measure import DriverMemorySampler, proc_status
     from .dense_adapters import save_adapter
     from .experts4bit_adapters import validate_target
-    from .experts4bit_train import link_h2d, train_loop
+    from .experts4bit_train import TRAINED_STATUSES, link_h2d, train_loop
 
     target = validate_target(adapter_dir) if adapter_dir is not None else None
     tokenizer = AutoTokenizer.from_pretrained(plan.model["model"], revision=plan.model.get("revision"),
@@ -190,7 +190,7 @@ def run(plan, *, seed=0, warmup=2, log=print, adapter_dir=None, run_id=None):   
         if memory_policy is not None:
             result["engaged"]["memory_policy"] = memory_policy
         if target is not None:
-            if result["status"] != "OK":
+            if result["status"] not in TRAINED_STATUSES:
                 result["artifact_error"] = "integrity checks failed; no reusable adapter was exported"
             else:
                 start = time.perf_counter()
