@@ -72,6 +72,9 @@ def v2_fields(model, setup: dict, report: dict, *, run_id: str | None) -> dict:
     schema = adapter_schema()
     if schema is None:
         raise ValueError("backend-adapter/2 needs experts4bit-qlora's adapter_schema; the installed release predates it")
+    if not (isinstance(run_id, str) and run_id):
+        # a reader checks only that run_id is present, so a null would pass every verifier unnoticed
+        raise ValueError(f"backend-adapter/2 records the run that produced the adapter; run_id {run_id!r} is not one")
     missing = [k for k in TRAINING_FACTS if k not in report]
     if missing:
         raise ValueError(f"backend-adapter/2: the training report lacks {missing}. They come from "

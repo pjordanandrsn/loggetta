@@ -115,7 +115,7 @@ def test_v2_records_every_field_from_the_runtime_and_the_report(tmp_path, fake):
 @pytest.mark.parametrize("residency, source", [("device", "resident"), ("host", "offload_homes")])
 def test_the_fingerprint_source_is_the_recorded_residency(tmp_path, fake, residency, source):
     A.save_adapter(bf16_stack_model(attention=False), Tokenizer(), tmp_path / "a", plan_with(expert_residency=residency),
-                   data={}, report=FACTS, seed=0)
+                   data={}, report=FACTS, seed=0, run_id="r")
     assert fake.calls == [("experts", source)]                   # experts only: this adapter carries no attention LoRA
     assert sorted(json.loads((tmp_path / "a" / A.MANIFEST).read_text())["fingerprints"]) == ["experts"]
 
@@ -125,7 +125,7 @@ def test_a_device_run_whose_stacks_are_evicted_is_refused_and_writes_nothing(tmp
     monkeypatch.setattr(A, "adapter_schema", lambda: schema)
     with pytest.raises(ValueError, match="evicted"):
         A.save_adapter(bf16_stack_model(), Tokenizer(), tmp_path / "a", plan_with(expert_residency="device"),
-                       data={}, report=FACTS, seed=0)
+                       data={}, report=FACTS, seed=0, run_id="r")
     assert not (tmp_path / "a").exists()
 
 
@@ -138,16 +138,25 @@ def test_a_fact_that_cannot_be_recorded_refuses_before_the_directory_exists(tmp_
     plan = plan_with(expert_residency=bad.get("residency", "device"))
     with pytest.raises(ValueError, match=match):
         A.save_adapter(bf16_stack_model(), Tokenizer(), tmp_path / "a", plan, data={}, report=bad.get("report", FACTS),
-                       seed=0)
+                       seed=0, run_id="r")
     assert not (tmp_path / "a").exists()
     assert fake.calls == []                                      # refused before any fingerprint was taken
+
+
+@pytest.mark.parametrize("run_id", [None, ""])
+def test_v2_without_a_run_id_is_refused_before_the_directory_exists(tmp_path, fake, run_id):
+    """A reader checks only that run_id is PRESENT, so a null would pass every verifier: the writer refuses it."""
+    with pytest.raises(ValueError, match="records the run that produced the adapter"):
+        A.save_adapter(bf16_stack_model(), Tokenizer(), tmp_path / "a", plan_with(), data={}, report=FACTS, seed=0,
+                       run_id=run_id)
+    assert not (tmp_path / "a").exists() and fake.calls == []
 
 
 def test_a_schema_field_this_writer_does_not_record_is_refused_not_omitted(tmp_path, monkeypatch):
     schema = FakeSchema(extra_field="arena_index")
     monkeypatch.setattr(A, "adapter_schema", lambda: schema)
     with pytest.raises(ValueError, match=r"does not record: \['arena_index'\]"):
-        A.save_adapter(bf16_stack_model(), Tokenizer(), tmp_path / "a", plan_with(), data={}, report=FACTS, seed=0)
+        A.save_adapter(bf16_stack_model(), Tokenizer(), tmp_path / "a", plan_with(), data={}, report=FACTS, seed=0, run_id="r")
     assert not (tmp_path / "a").exists()
 
 
@@ -323,7 +332,7 @@ def test_end_to_end_the_rebuilt_base_matches_and_a_changed_recipe_does_not(tmp_p
 
     model = real_moe()
     report = {"commit": "0" * 40, **real.resolved_training_facts(model, None, fast_stats=None, qkv_stats=None)}
-    A.save_adapter(model, Tokenizer(), tmp_path / "a", plan_with(), data={}, report=report, seed=0)
+    A.save_adapter(model, Tokenizer(), tmp_path / "a", plan_with(), data={}, report=report, seed=0, run_id="r")
     manifest = A.read_manifest(tmp_path / "a")
     rebuilt = real_moe()                                          # the same base, built again
     assert all(r["match"] for r in A.verify_base(rebuilt, manifest).values())
@@ -344,10 +353,31 @@ def test_end_to_end_an_offload_run_fingerprints_from_the_host_homes(tmp_path, re
     report = {"commit": "0" * 40, **real.resolved_training_facts(model, None, fast_stats=None, qkv_stats=None)}
     with pytest.raises(ValueError, match="evicted"):              # recorded as device, but evicted: refused, nothing written
         A.save_adapter(model, Tokenizer(), tmp_path / "dev", plan_with(expert_residency="device"), data={},
-                       report=report, seed=0)
+                       report=report, seed=0, run_id="r")
     assert not (tmp_path / "dev").exists()
     A.save_adapter(model, Tokenizer(), tmp_path / "host", plan_with(expert_residency="host"), data={}, report=report,
-                   seed=0)
+                   seed=0, run_id="r")
     fp = A.read_manifest(tmp_path / "host")["fingerprints"]["experts"]
     assert fp["source"] == "offload_homes"
     assert fp["sha256"] == real.quant_fingerprint(real_moe(), "experts")["sha256"]   # same base, resident: same hash
+
+
+def test_end_to_end_one_base_written_in_both_absmax_forms_fingerprints_differently(tmp_path, real):
+    """The property the server-side check relies on: the same weights, written once with the fp32 absmax and once
+    after training's double quantization (ADAPTER_PORTABILITY F1), record different expert fingerprints and say so."""
+    from experts4bit_qlora.absmax_dq import compress_expert_absmax_
+
+    fp32 = real_moe()
+    report = {"commit": "0" * 40, **real.resolved_training_facts(fp32, None, fast_stats=None, qkv_stats=None)}
+    A.save_adapter(fp32, Tokenizer(), tmp_path / "fp32", plan_with(), data={}, report=report, seed=0, run_id="fp32")
+    dq = real_moe()
+    n = compress_expert_absmax_(dq)                                # returns how many stacks it compressed
+    assert n == 1
+    rec = {"compressed": n}                                       # FAST_TRAIN_STATS["absmax_dq"]'s shape
+    report = {"commit": "0" * 40,
+              **real.resolved_training_facts(dq, None, fast_stats={"absmax_dq": rec}, qkv_stats=None)}
+    A.save_adapter(dq, Tokenizer(), tmp_path / "dq", plan_with(), data={}, report=report, seed=0, run_id="dq")
+    a, b = A.read_manifest(tmp_path / "fp32"), A.read_manifest(tmp_path / "dq")
+    assert a["expert_absmax"]["form"] == "fp32" and b["expert_absmax"]["form"] == "double-quantized"
+    assert a["fingerprints"]["experts"]["sha256"] != b["fingerprints"]["experts"]["sha256"]
+    assert a["fingerprints"]["attention"]["sha256"] == b["fingerprints"]["attention"]["sha256"]   # attention untouched
