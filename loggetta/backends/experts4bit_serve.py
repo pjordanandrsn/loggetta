@@ -6,7 +6,8 @@ It checks the inputs a serve run needs and refuses by name before anything loads
 environment and shapes the result. ``bench/serve_validate.py`` uses the same ``measure_serve``.
 
 The NF4 arena is an input, never built here: baking it is an explicit, separate step (``bench/serve_validate.py --bake``).
-A receipt names the arena and calibration files by base name and sha256 only, so a shared receipt carries no path.
+A receipt names the arena by base name and the sha256 of its first MiB, and the calibration file by base name and
+sha256, so a shared receipt carries no path; the server environment it records leaves out every path-valued setting.
 """
 from __future__ import annotations
 
@@ -154,7 +155,9 @@ def run(plan, *, seed, log, adapter_dir, run_id, arena=None, calib=None, prompt_
                                     log=log)
     files = {"arena": os.path.basename(arena), "arena_head_sha256": _sha256(arena, 1 << 20),
              "calib": os.path.basename(calib), "calib_sha256": _sha256(calib)}
-    knobs = {k: v for k, v in env.items() if k not in ("E4B_PAGED_ARENA", "E4B_PAGED_CALIB")}
+    # the paths stay out: the arena and calibration file appear above by name, and the model (a local directory is a
+    # path) is the receipt's own model field
+    knobs = {k: v for k, v in env.items() if k not in ("E4B_PAGED_ARENA", "E4B_PAGED_CALIB", "E4B_PAGED_MODEL")}
     return {"status": "OK", "measured": out["measured"], "correctness": {},
             "engaged": {"placement": out.get("placement"), "info": out.get("info") or {}},
             "data": {**out.get("requests", {}), **files, "server_env": knobs}}

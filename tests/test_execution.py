@@ -172,12 +172,13 @@ def test_provenance_records_the_e4b_env(monkeypatch):
 SERVE_SETUP = {"placement": "all-vram", "graphs": False, "max_seqs": 1, "max_tokens_per_seq": 4096}
 
 
-def a_serve_plan(allow=True, concurrency=1):
+def a_serve_plan(allow=True, concurrency=1, model="org/Tiny-MoE"):
     from dataclasses import replace
 
     p = a_plan()
     sel = replace(p.selected, setup=SERVE_SETUP)
-    return replace(p, selected=sel, workload=Workload(kind="serve", context_len=4096, concurrency=concurrency),
+    return replace(p, selected=sel, model={"model": model},
+                   workload=Workload(kind="serve", context_len=4096, concurrency=concurrency),
                    constraints=Constraints(allow_development_executor=allow))
 
 
@@ -223,6 +224,18 @@ def test_a_serve_plan_runs_through_the_engine_and_its_receipt_carries_no_path(st
     assert str(tmp_path) not in json.dumps(r)                               # no path reaches a shared receipt
     assert "serving" in r["comparison"]["device_allocator"]["what"]
     assert r["comparison"]["device_driver"]["residual"] == 4 * GiB - (3 * GiB + GiB // 2 + GiB // 4)
+
+
+def test_a_serve_runs_data_carries_no_path_for_a_local_model_directory(stub_env, tmp_path):
+    """The server environment names the model; a local model directory is a path, so the receipt's data block drops
+    it (the receipt's own model field names the model). The arena and calibration file appear by name only."""
+    arena, calib = _serve_files(tmp_path)
+    local_model = str(tmp_path / "models" / "olmoe-local")
+    out = stub_env.run(a_serve_plan(model=local_model), seed=0, log=print, adapter_dir=str(tmp_path / "r" / "adapter"),
+                       run_id="x", arena=arena, calib=calib,
+                       engine=lambda env, **kw: {"measured": {}, "requests": {"count": 1}})
+    text = json.dumps(out["data"]) + json.dumps(out["engaged"])
+    assert str(tmp_path) not in text and "olmoe-local" not in json.dumps(out["data"]["server_env"])
 
 
 def test_a_batched_serve_run_is_not_traced(stub_env, tmp_path):
