@@ -199,6 +199,6 @@ def summarize(receipt: dict) -> str:
     if receipt.get("measured", {}).get("driver_unmeasured"):
         rows.append(f"  device check NOT RUN (status UNMEASURED): {receipt['measured']['driver_unmeasured']}")
     if receipt.get("artifact_error"):
-        rows.append(f"  adapter {'NOTE' if receipt['status'] == 'SAVED_V1' else 'save FAILED'}: "
-                    f"{receipt['artifact_error']}")
+        saved = bool((receipt.get("artifacts") or {}).get("adapter"))       # a note about a saved adapter, not a failure
+        rows.append(f"  adapter {'NOTE' if saved else 'save FAILED'}: {receipt['artifact_error']}")
     return "\n".join(rows)

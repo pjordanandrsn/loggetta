@@ -140,3 +140,23 @@ def test_an_unmeasured_run_that_fell_back_to_v1_still_reports_the_fallback(tmp_p
     assert out["status"] == "UNMEASURED"
     assert out["artifact_error"] == "saved as backend-adapter/1, not /2: save-time reason"
     assert out["artifacts"]["adapter"]["format"] == A.SCHEMA_V1
+
+
+@pytest.mark.parametrize("status, adapter, label", [
+    ("UNMEASURED", True, "adapter NOTE: saved as backend-adapter/1, not /2: x"),
+    ("SAVED_V1", True, "adapter NOTE: saved as backend-adapter/1, not /2: x"),
+    ("SAVE_FAILED", False, "adapter save FAILED: OSError: disk full"),
+])
+def test_the_summary_labels_a_note_on_a_saved_adapter_never_a_failure(status, adapter, label):
+    from loggetta.execution import summarize
+
+    err = "saved as backend-adapter/1, not /2: x" if adapter else "OSError: disk full"
+    receipt = {"run_id": "r", "status": status, "comparison": {}, "artifact_error": err,
+               "measured": {"s_per_step_median": 1.0, "timed_steps": 1, "tokens_per_s": 1.0},
+               "correctness": {"losses": [1.0, 0.5], "loss_first_third_mean": 1.0, "loss_last_third_mean": 0.5,
+                               "all_finite": True, "frozen_expert_bytes_unchanged": True, "adapters_moved": True}}
+    if adapter:
+        receipt["artifacts"] = {"adapter": {"path": "/x", "tensor_count": 50, "format": "backend-adapter/1"}}
+    text = summarize(receipt)
+    assert label in text
+    assert ("save FAILED" in text) is (not adapter)

@@ -7,6 +7,8 @@ still read `OK`, a status claiming a check that never happened. Such a run now r
   listed this process.
 - The summary prints "device check NOT RUN".
 - `execute` and `train` exit with code 4, which `--help` lists: trained, but the device check took no driver sample.
+  `scripts/first_run.sh` maps it to its own exit 7, "trained; the device check did not run", and records
+  `device_check` in `first_run.json`. Its exit 4 (the plan was refused) is a different interface.
 - The run trained normally, so its adapter is saved. A fallback to a `/1` manifest is still reported.
 - Its allocator slack still counts as planning evidence, but it never teaches the CUDA-context term, which needs a
   driver peak.

@@ -14,7 +14,9 @@
 #
 # Every step's exit status and seconds go to DIR/first_run.json. The script exits 0 when the run trained, or with a
 # NAMED refusal (its reason printed and recorded), never a bare traceback: 3 = no torch build fits this machine,
-# 4 = the plan was refused, 5 = an install step failed, 6 = the run did not train.
+# 4 = the plan was refused, 5 = an install step failed, 6 = the run did not train, 7 = it TRAINED but the device check
+# did not run (execute exited 4, status UNMEASURED, e.g. under WSL2; first_run.json's device_check says why). This
+# script's 4 (plan refused) and execute's 4 (UNMEASURED) are different interfaces.
 set -uo pipefail
 
 DIR=${1:-./first-run}
@@ -63,8 +65,10 @@ receipt = None
 if receipts:
     with open(os.path.join(d, "receipts", receipts[-1])) as f:
         r = json.load(f)
-    receipt = {"run_id": r.get("run_id"), "status": r.get("status"),
-               "s_per_step_median": (r.get("measured") or {}).get("s_per_step_median")}
+    m = r.get("measured") or {}
+    receipt = {"run_id": r.get("run_id"), "status": r.get("status"), "s_per_step_median": m.get("s_per_step_median"),
+               "device_check": "not run" if m.get("driver_unmeasured") else "checked" if m.get("driver_samples") else None,
+               "driver_unmeasured": m.get("driver_unmeasured")}
 pyexe = os.path.join(d, "venv", "bin", "python")
 versions = {}
 if os.path.exists(pyexe):
@@ -81,7 +85,8 @@ try:
 except (OSError, subprocess.SubprocessError):
     smi = ""
 summary = {"schema": "first-run/1", "exit": int(code), "refusal": reason or None,
-           "trained": int(code) == 0, "seconds_to_trained": int(time.time()) - int(t0) if int(code) == 0 else None,
+           "trained": int(code) in (0, 7),
+           "seconds_to_trained": int(time.time()) - int(t0) if int(code) in (0, 7) else None,
            "torch_index": tag or None, "gpu": smi or None, "platform": platform.platform(),
            "workload": {"model": model, "revision": rev, "steps": int(steps), "seq": int(seq)},
            "package_spec": spec, "versions": versions, "steps": rows, "receipt": receipt}
@@ -90,6 +95,9 @@ with open(os.path.join(d, "first_run.json"), "w") as f:
 PY
   if [ "$code" -eq 0 ]; then
     echo "first run: trained; summary in $DIR/first_run.json" >&2
+  elif [ "$code" -eq 7 ]; then
+    echo "first run: $reason" >&2
+    echo "summary in $DIR/first_run.json" >&2
   else
     echo "first run refused ($code): $reason" >&2
     echo "summary in $DIR/first_run.json" >&2
@@ -142,12 +150,18 @@ step plan "$VPY" -m loggetta plan "$MODEL" --revision "$REVISION" --seq "$SEQ" -
 rc=$?
 cat "$DIR/plan.txt" >&2
 if [ "$rc" -ne 0 ]; then
-  why=$(grep -m3 -iE 'refus|cannot|reason|not feasible' "$DIR/plan.txt" | tr '\n' ' ')
-  [ -n "$why" ] || why=$(tail -3 "$DIR/plan.txt" | tr '\n' ' ')
+  # the step's own "== name: command" echo is in the file too: the reason comes from the plan's output only
+  why=$(grep -v '^== ' "$DIR/plan.txt" | grep -m3 -iE 'refus|cannot|reason|not feasible' | tr '\n' ' ')
+  [ -n "$why" ] || why=$(grep -v '^== ' "$DIR/plan.txt" | tail -3 | tr '\n' ' ')
   finish 4 "the plan was refused (exit $rc): $why"
 fi
 step execute "$VPY" -m loggetta execute "$DIR/plan.json" --out "$DIR/receipts" > "$DIR/execute.txt" 2>&1
 rc=$?
 tail -25 "$DIR/execute.txt" >&2
-[ "$rc" -eq 0 ] || finish 6 "the run did not train (exit $rc): $(tail -3 "$DIR/execute.txt" | tr '\n' ' ')"
+# execute: 0 trained and checked; 4 trained, but the device check took no driver sample (UNMEASURED)
+if [ "$rc" -eq 4 ]; then
+  finish 7 "trained; the device check did not run (status UNMEASURED): $(grep -m1 'device check NOT RUN' "$DIR/execute.txt" | tr '\n' ' ')"
+elif [ "$rc" -ne 0 ]; then
+  finish 6 "the run did not train (exit $rc): $(grep -v '^== ' "$DIR/execute.txt" | tail -3 | tr '\n' ' ')"
+fi
 finish 0 ""
