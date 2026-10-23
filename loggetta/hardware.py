@@ -409,11 +409,11 @@ def torch_cuda_problem(t: TorchCuda | None, gpu: GPU | None):
     need, have = MIN_DRIVER_FOR_CUDA.get(cuda_major), _driver_major(driver)
     if _COMPAT_REFUSED.search(says):
         # Error 804 (cudaErrorCompatNotSupportedOnDevice): the process loaded NVIDIA's CUDA forward-compatibility
-        # library (cuda-compat), which NVIDIA supports on datacenter GPUs only, and this card refuses it. Neither GPU
+        # library (cuda-compat), which this GPU does not support (NVIDIA lists datacenter GPUs, select server RTX cards
+        # and Jetson boards). Neither GPU
         # visibility nor the torch build's driver minimum is the cause, so neither remedy below applies
         reason += ("; Error 804 means this process loaded NVIDIA's CUDA forward-compatibility library (cuda-compat), "
-                   "which NVIDIA supports on datacenter GPUs only, and this GPU refuses it: GPU visibility is not the "
-                   "cause")
+                   "which this GPU does not support: GPU visibility is not the cause")
         return reason, [
             f"run in an image or environment whose CUDA the installed driver ({driver}) supports natively, with no "
             "forward-compatibility library: nvidia-smi's \"CUDA Version\" names the newest it supports",

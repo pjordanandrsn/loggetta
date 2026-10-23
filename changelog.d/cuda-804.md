@@ -1,8 +1,8 @@
 ### The refusal names CUDA Error 804 correctly
 
 - When torch reports CUDA Error 804 ("forward compatibility was attempted on non supported HW"), the refusal now says
-  what happened. The process loaded NVIDIA's CUDA forward-compatibility library (cuda-compat), which NVIDIA supports
-  on datacenter GPUs only, and this GPU refuses it.
+  what happened. The process loaded NVIDIA's CUDA forward-compatibility library (cuda-compat), which this GPU does
+  not support. NVIDIA supports it on datacenter GPUs, select server RTX cards and Jetson boards.
 - It now gives the remedies that work:
   - an image or environment whose CUDA the driver supports natively;
   - the compat directory taken off `LD_LIBRARY_PATH`;
