@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -355,8 +356,13 @@ def parse_torch_probe(text: str, version: str | None = None) -> TorchCuda:
         except ValueError:
             continue
         if isinstance(d, dict) and "available" in d:
-            warned = [w for w in d.get("warnings") or () if w]
-            note = " ".join(warned[0].split())[:400] if warned and not d["available"] else ""
+            warned = [" ".join(w.split()) for w in d.get("warnings") or () if w]
+            note = ""
+            if warned and not d["available"]:
+                # the warning that names a cause the refusal knows (Error 804) wins over the first one, and the kept
+                # 400 characters start just before it, so a long warning cannot cut it off
+                hit = next(((w, m) for w in warned for m in [_COMPAT_REFUSED.search(w)] if m), None)
+                note = hit[0][max(0, hit[1].start() - 200):][:400] if hit else warned[0][:400]
             return TorchCuda(version=d.get("version"), cuda=d.get("cuda"), available=bool(d["available"]),
                              device_count=d.get("device_count"), note=note)
     return TorchCuda(version=version, cuda=None, available=None, device_count=None,
@@ -389,6 +395,10 @@ def _driver_major(driver) -> int | None:
     return int(head) if head.isdigit() else None
 
 
+#: torch's note when the process loaded the CUDA forward-compatibility library on a GPU that does not support it
+_COMPAT_REFUSED = re.compile(r"Error 804\b|forward compatibility was attempted on non supported HW", re.IGNORECASE)
+
+
 def torch_cuda_problem(t: TorchCuda | None, gpu: GPU | None):
     """``(reason, remedies)`` when torch is installed and an NVIDIA GPU is present but torch cannot use it, else None.
     Only a definite ``available is False`` counts: a torch that could not be asked is not proof of anything."""
@@ -402,6 +412,22 @@ def torch_cuda_problem(t: TorchCuda | None, gpu: GPU | None):
     remedies = []
     cuda_major = int(t.cuda.split(".")[0]) if t.cuda and t.cuda.split(".")[0].isdigit() else None
     need, have = MIN_DRIVER_FOR_CUDA.get(cuda_major), _driver_major(driver)
+    if _COMPAT_REFUSED.search(says):
+        # Error 804 (cudaErrorCompatNotSupportedOnDevice): the process loaded NVIDIA's CUDA forward-compatibility
+        # library (cuda-compat), which this GPU does not support (NVIDIA lists datacenter GPUs, select server RTX cards
+        # and Jetson boards). Neither GPU
+        # visibility nor the torch build's driver minimum is the cause, so neither remedy below applies
+        reason += ("; Error 804 means this process loaded NVIDIA's CUDA forward-compatibility library (cuda-compat), "
+                   "which this GPU does not support: GPU visibility is not the cause")
+        return reason, [
+            f"run in an image or environment whose CUDA the installed driver ({driver}) supports natively, with no "
+            "forward-compatibility library: nvidia-smi's \"CUDA Version\" names the newest it supports",
+            "or take the forward-compatibility directory (cuda-compat, often under /usr/local/cuda/compat) off "
+            "LD_LIBRARY_PATH, so the host driver's own libcuda is the one loaded",
+            f"or update the host NVIDIA driver to one that supports CUDA {t.cuda} natively" if t.cuda else
+            "or update the host NVIDIA driver",
+            "reinstalling torch in this environment will not change it while that library is loaded",
+        ]
     if t.cuda and need and have is not None and have >= need:     # the build fits the driver: the cause is elsewhere
         vis = "unset" if t.visible_devices is None else repr(t.visible_devices)
         reason += (f"; driver {have} meets CUDA {cuda_major}.x's minimum ({need}), so the build is not the cause; "
