@@ -11,5 +11,8 @@
   HTTP-server plumbing. A test scans the installed experts4bit-qlora and grouped-nf4-gemm sources and fails on any name
   in neither table. A backend release that adds a knob fails loggetta's CI until someone decides whether its value is
   recorded.
+- A name with a credential word in it (TOKEN, KEY, SECRET, PASSWORD, AUTH, CREDENTIAL, as a whole `_` word; `TOKENS`, a
+  count, is not one) never has its value recorded or hashed, even if it were listed. A test keeps such names off the
+  list too.
 - This is still recorded only: the planner reads none of it and matches no receipt by this hash. Receipts written before
   this change simply lack the new values.

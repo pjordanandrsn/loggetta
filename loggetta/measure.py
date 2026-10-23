@@ -184,6 +184,15 @@ E4B_VALUE_KNOBS = (
     "E4B_OFFLOAD_STATS", "E4B_INT4_ASSIGNMENT", "E4B_CALIB_SOURCE",
     "E4B_PAGED_ADAPTER_ACCEPT_UNVERIFIED_BASE", "E4B_PAGED_ADAPTER_ALLOW_UNVERIFIED_ARENA",
 )
+#: a name with one of these as a whole "_"-separated word names a credential: its value is NEVER recorded or hashed, even
+#: if it is ever added to E4B_VALUE_KNOBS by mistake (a test also keeps it off that list). "TOKENS" (a count) is not one
+SECRET_WORDS = frozenset({"TOKEN", "KEY", "APIKEY", "SECRET", "PASSWORD", "PASSWD", "AUTH", "CREDENTIAL", "CREDENTIALS"})
+
+
+def is_secret_name(name: str) -> bool:
+    return bool(SECRET_WORDS & set(name.split("_")))
+
+
 #: every other switch the backends read, recorded by NAME only, each with why its value stays out. Between them, this
 #: table and E4B_VALUE_KNOBS classify every E4B_/GNF4_ name in the installed backends' sources, and a test fails on a
 #: new one until someone decides whether its value is recorded (default: recorded, unless a path, an id or a secret)
@@ -230,7 +239,7 @@ def e4b_env(environ=None) -> dict:
 
     env = ({k: v for k, v in os.environ.items() if k.startswith(("E4B_", "GNF4_"))} if environ is None
            else {k: v for k, v in environ.items() if k.startswith(("E4B_", "GNF4_"))})
-    vals = {k: label(env[k]) for k in E4B_VALUE_KNOBS if k in env}
+    vals = {k: label(env[k]) for k in E4B_VALUE_KNOBS if k in env and not is_secret_name(k)}
     lines = sorted(f"{k}={vals[k]}" if k in vals else k for k in env)
     return {"names": sorted(env), "sha256": hashlib.sha256("\n".join(lines).encode()).hexdigest(), "values": vals}
 

@@ -516,7 +516,9 @@ def test_every_backend_switch_is_classified_value_or_name_only():
 
     from loggetta.measure import E4B_VALUE_KNOBS, NAME_ONLY
 
-    pat = re.compile(r'"((?:E4B|GNF4)_[A-Z0-9_]*[A-Z0-9])"')
+    pat = re.compile(r"""(["'])((?:E4B|GNF4)_[A-Z0-9_]*[A-Z0-9])\1""")          # either quote: e4b uses both
+    assert [m[1] for m in pat.findall("""env("E4B_A1") or os.environ.get('GNF4_B2') or "E4B_SERVE_" """)] == [
+        "E4B_A1", "GNF4_B2"]                                    # a prefix literal ("E4B_SERVE_") is not a name
     found = {}
     for dist in ("experts4bit-qlora", "grouped-nf4-gemm"):
         try:
@@ -528,10 +530,13 @@ def test_every_backend_switch_is_classified_value_or_name_only():
             if p.endswith(".py") and "/tests/" not in "/" + p and not os.path.basename(p).startswith(("test_", "conftest")):
                 with open(f.locate(), encoding="utf-8", errors="replace") as fh:
                     text = fh.read()
-                for name in pat.findall(text):
+                for _, name in pat.findall(text):
                     found.setdefault(name, p)
     assert found, "no backend switch found: the scan itself is broken"
     assert not set(E4B_VALUE_KNOBS) & set(NAME_ONLY)
+    from loggetta.measure import is_secret_name
+
+    assert not [n for n in E4B_VALUE_KNOBS if is_secret_name(n)]     # a credential's value is never recorded
     assert all(reason.strip() for reason in NAME_ONLY.values())
     unclassified = {n: where for n, where in found.items() if n not in E4B_VALUE_KNOBS and n not in NAME_ONLY}
     assert not unclassified, ("classify each new backend switch in loggetta.measure: E4B_VALUE_KNOBS if it can change a "
@@ -543,3 +548,28 @@ def test_a_newly_valued_switch_is_recorded_and_a_secret_never_is():
     assert rec["values"]["E4B_FUSE_SWIGLU"] == "0" and rec["values"]["E4B_PAGED_SPEC_HEAD"] == "local: eagle3"
     assert "tok-0123456789" not in json.dumps(rec)
     assert _e4b_env(E4B_FUSE_SWIGLU="1")["sha256"] != _e4b_env(E4B_FUSE_SWIGLU="0")["sha256"]
+
+
+
+@pytest.mark.parametrize("name, secret", [
+    ("E4B_TOKEN", True), ("E4B_API_KEY", True), ("GNF4_AUTH", True), ("E4B_DB_PASSWORD", True),
+    ("E4B_HF_CREDENTIALS", True), ("E4B_FOO_TOKEN", True), ("E4B_HF_AUTH_TOKEN", True),
+    ("E4B_MAX_NEW_TOKENS", False), ("E4B_K_SLOTS", False), ("E4B_KEYFRAME", False), ("E4B_INT4_KEEP_NF4", False),
+    ("E4B_CHUNKED_LM_LOSS", False),
+])
+def test_a_credential_name_is_told_by_whole_word(name, secret):
+    from loggetta.measure import is_secret_name
+
+    assert is_secret_name(name) is secret
+
+
+def test_a_credential_value_is_never_recorded_even_if_listed(monkeypatch):
+    """The runtime guard behind the test: were a credential name ever put on the value list, e4b_env still records and
+    hashes it by name only."""
+    from loggetta import measure
+
+    monkeypatch.setattr(measure, "E4B_VALUE_KNOBS", measure.E4B_VALUE_KNOBS + ("E4B_API_KEY",))
+    rec = _e4b_env(E4B_API_KEY="sk-0123456789abcdef")
+    assert "E4B_API_KEY" in rec["names"] and "E4B_API_KEY" not in rec["values"]
+    assert "sk-0123456789abcdef" not in json.dumps(rec)
+    assert rec["sha256"] == _e4b_env(E4B_API_KEY="other")["sha256"]
