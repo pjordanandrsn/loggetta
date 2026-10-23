@@ -99,7 +99,7 @@ def test_a_train_receipt_from_a_real_command_line_carries_no_path(machine, monke
     assert r["artifacts"]["adapter"]["path"] == "local: adapter" and "local: adapter" in r["artifact_error"]
     prov = r["provenance"]
     assert prov["argv"][2] == "local: plan.json" and prov["argv"][5].startswith("--calib=local: ")
-    assert len(prov["argv_files"]["plan.json"]) == 64                       # a file argument keeps its sha256
+    assert len(prov["argv_files"]["plan.json"]["sha256"]) == 64             # a file argument keeps its sha256
     for name, src in prov["sources"].items():                               # package-relative, versioned, hashed
         assert not os.path.isabs(src["file"]) and len(src["sha256"]) == 64, (name, src)
 
@@ -139,6 +139,9 @@ def test_label_names_a_local_path_by_its_name_only(value, want):
 
 @pytest.mark.parametrize("text, want", [
     ("profile loaded from /srv/hw/a.json, not probed", "profile loaded from local: a.json, not probed"),
+    ("/srv/hw/a.json", "local: a.json"),                              # a whole value
+    ("GET /health returned 200", "GET /health returned 200"),        # one segment names no machine
+    ("cache at C:\\Users\\someone\\m.bin", "cache at local: m.bin"),   # a Windows drive path
     ("51.2 GB/s at 1/2 load", "51.2 GB/s at 1/2 load"),               # units and fractions are not paths
     ("see https://example.com/a/b", "see https://example.com/a/b"),   # nor is a URL
     ("e4b/gnf4 pair", "e4b/gnf4 pair"),
@@ -147,18 +150,55 @@ def test_scrub_replaces_paths_inside_text_and_nothing_else(text, want):
     assert shareable.scrub({"note": text}) == {"note": want}
 
 
-def test_a_local_model_receipt_still_matches_a_plan_of_that_model(tmp_path):
-    """Receipts name a local model directory by name; the planner compares by the same label, so a run on a local model
-    still informs the next plan of it (and a Hub id compares exactly as before)."""
+def _model_dir(root, name, config, weights=None):
+    d = root / name
+    d.mkdir(parents=True)
+    (d / "config.json").write_text(json.dumps(config))
+    for f, n in (weights or {"model.safetensors": 16}).items():
+        (d / f).write_bytes(b"\0" * n)
+    return str(d)
+
+
+def test_a_local_model_receipt_matches_a_plan_of_that_model_and_no_other_named_alike(tmp_path):
+    """A receipt names a local model directory "local: <name>@<12 hex>" (its config, and its weight index or file
+    sizes), and the planner compares by the same label: the same directory matches across runs, while two directories
+    both called "model" with different configs NEVER lend each other measured numbers. Hub ids compare as before."""
     from loggetta.planner import _observed
 
-    model_dir = tmp_path / "olmoe-local"
-    model_dir.mkdir()
+    a = _model_dir(tmp_path / "a", "model", {"hidden_size": 1024})
+    b = _model_dir(tmp_path / "b", "model", {"hidden_size": 2048})
+    c = _model_dir(tmp_path / "c", "model", {"hidden_size": 1024}, {"model.safetensors": 32})   # same config, other weights
+    la, lb, lc = (shareable.model_label(x) for x in (a, b, c))
+    assert la.startswith("local: model@") and len(la.split("@")[1]) == 12 and str(tmp_path) not in la
+    assert la != lb and la != lc and la == shareable.model_label(a) == shareable.model_label(la)
     gpu = hw().gpus[0]
     w = Workload(seq_len=512)
     setup = {"expert_residency": "device"}
-    obs = {"model": {"model": "local: olmoe-local"}, "setup": setup, "status": "OK",
+    obs = {"model": {"model": la}, "setup": setup, "status": "OK",
            "workload": {"tokens_per_microbatch": w.tokens_per_microbatch}, "hardware": {"gpu": {"name": gpu.name}}}
-    assert _observed([obs], str(model_dir), setup, w, gpu) is obs
+    assert _observed([obs], a, setup, w, gpu) is obs                       # the same directory: its own receipt
+    assert _observed([obs], b, setup, w, gpu) is None and _observed([obs], c, setup, w, gpu) is None
     hub = {**obs, "model": {"model": "org/Model"}}
     assert _observed([hub], "org/Model", setup, w, gpu) is hub and _observed([hub], "org/Other", setup, w, gpu) is None
+
+
+
+def test_scrub_reaches_dict_keys():
+    assert shareable.scrub({"/srv/x/hw.json": 1}) == {"local: hw.json": 1}
+
+
+def test_a_large_file_argument_is_hashed_by_its_head_not_read_whole(tmp_path, monkeypatch):
+    """An NF4 arena is tens of GB: a receipt hashes a file argument whole only up to FULL_HASH_MAX, and above it records
+    the size and the sha256 of its first HEAD_BYTES."""
+    import hashlib
+
+    monkeypatch.setattr(shareable, "FULL_HASH_MAX", 1024)
+    monkeypatch.setattr(shareable, "HEAD_BYTES", 512)
+    small, big = tmp_path / "plan.json", tmp_path / "arena.nf4"
+    small.write_bytes(b"s" * 100)
+    big.write_bytes(bytes(range(256)) * 16)                         # 4096 bytes, over the patched cap
+    got = shareable.file_digest(str(small))
+    assert got == {"size": 100, "sha256": hashlib.sha256(b"s" * 100).hexdigest()}
+    got = shareable.file_digest(str(big))
+    assert got == {"size": 4096, "head_sha256": hashlib.sha256(big.read_bytes()[:512]).hexdigest(), "head_bytes": 512}
+    assert "sha256" not in got

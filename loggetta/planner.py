@@ -17,7 +17,7 @@ from dataclasses import replace
 
 from .backends import BACKENDS
 from .plan import Candidate, Constraints, ExecutionPlan, MemoryLine, Workload
-from .shareable import label as shared_label
+from .shareable import model_label as shared_label
 
 GiB, MiB = 1 << 30, 1 << 20
 

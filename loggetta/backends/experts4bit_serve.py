@@ -18,7 +18,7 @@ import os
 import time
 from pathlib import Path
 
-from ..shareable import label
+from ..shareable import model_label
 
 GiB = 1 << 30
 #: the request set ``run`` decodes when the caller names none: one prompt of this many tokens per sequence, each
@@ -229,7 +229,7 @@ def run(plan, *, seed, log, adapter_dir, run_id, arena=None, calib=None, prompt_
              "calib": os.path.basename(calib), "calib_sha256": _sha256(calib)}
     # the paths stay out: the arena and calibration file appear above by name, and a local model directory by its name
     knobs = {k: _name_only(v) for k, v in env.items() if k not in ("E4B_PAGED_ARENA", "E4B_PAGED_CALIB")}
-    knobs["E4B_PAGED_MODEL"] = label(env.get("E4B_PAGED_MODEL", ""))
+    knobs["E4B_PAGED_MODEL"] = model_label(env.get("E4B_PAGED_MODEL", ""))
     info = dict(out.get("info") or {})              # the engine's own report: its path-valued entries by name only
     if isinstance(info.get("adapter"), dict):
         info["adapter"] = {**info["adapter"], "path": _name_only(info["adapter"].get("path"))}

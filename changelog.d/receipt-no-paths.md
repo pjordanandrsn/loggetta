@@ -5,13 +5,16 @@ places: the command line, the source files, a local model's directory, an adapte
 execution receipt (train and serve), and `bench/serve_validate.py`'s, now passes through `loggetta.shareable.record`
 before it is written:
 - A path argument in `provenance.argv` is recorded by its name (`local: plan.json`). A file argument also gets its
-  sha256 under `provenance.argv_files`.
+  size and sha256 under `provenance.argv_files`. Above 64 MiB it gets its size and the sha256 of its first MiB instead,
+  so an NF4 arena of tens of GB is never read whole.
 - `provenance.sources.<module>.file` is the package-relative path, plus the version and the file's sha256.
-- A local model directory, in the receipt and in its embedded plan, is recorded as `local: <name>`, the rule
-  `first_run.json` already applies. A Hub id is kept as given.
-- Any absolute path left anywhere, as a value or inside a sentence, is recorded by its name. URLs, units such as
-  `GB/s`, and fractions are untouched.
+- A local model directory, in the receipt and in its embedded plan, is recorded as `local: <name>@<12 hex>`, where the
+  hex is the sha256 of its `config.json` plus its safetensors index, or its weight files' names and sizes. A Hub id is
+  kept as given.
+- Any path left anywhere with a directory in it, as a value, a key, or inside a sentence, is recorded by its name. That
+  covers home-relative and Windows drive paths too. URLs, units such as `GB/s`, fractions and one-segment routes such
+  as `/health` are untouched.
 
-The planner compares models by the same label on both sides, so a run on a local model directory still informs the
-next plan of that model. Two different local directories with the same name now compare equal; a Hub id compares
-exactly as before.
+The planner compares models by the same label on both sides. A run on a local model directory still informs the next
+plan of that same directory, while two directories with the same name and different configs or weights (say, two
+`checkpoint-500`s) never lend each other measured numbers. A Hub id compares exactly as before.
