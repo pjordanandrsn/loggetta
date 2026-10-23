@@ -11,6 +11,12 @@ path, and they record the backend switches and allocator setting they ran under.
 sees. A training run whose device check took no driver sample now reads `UNMEASURED` and exits 4, where it read `OK`
 and exited 0. And receipts name local files and model directories by name only. Floors unchanged.
 
+**External validation.** Thanks to [Thijs van Weezel](https://github.com/thijs-vanweezel) for independently
+running Loggetta on a 6 GB RTX 1000 Ada under WSL2. His run showed that a device-memory check could read
+`OK` without a single driver sample, and measured a 13.1 GiB load-time host RSS peak against a 6.38 GiB
+steady-state estimate. Those findings informed this release's `UNMEASURED` status and load-time host-memory
+bound. He also reported WSL2 installation friction for follow-up documentation.
+
 ### Install: the torch build for your driver, named before torch is installed, and a first-run script
 
 `inspect` now names the PyTorch CUDA build that matches the NVIDIA driver, and `inspect --torch-index` prints only that
