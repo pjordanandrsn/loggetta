@@ -19,7 +19,7 @@ from __future__ import annotations
 import itertools
 from dataclasses import dataclass, field
 
-from ..shareable import model_label as shared_label
+from ..shareable import match_key as shared_label
 
 NAME = "experts4bit"
 WORKLOADS = ("train", "serve")

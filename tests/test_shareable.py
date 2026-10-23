@@ -202,3 +202,21 @@ def test_a_large_file_argument_is_hashed_by_its_head_not_read_whole(tmp_path, mo
     got = shareable.file_digest(str(big))
     assert got == {"size": 4096, "head_sha256": hashlib.sha256(big.read_bytes()[:512]).hexdigest(), "head_bytes": 512}
     assert "sha256" not in got
+
+
+
+def test_a_local_model_without_a_fingerprint_matches_nothing(tmp_path):
+    """No readable config.json, so no fingerprint: the label is "local: <name>" and, since two such directories cannot
+    be told apart, it matches no stored observation at all (not even its own): the planner measures it as unseen."""
+    from loggetta.planner import _observed
+
+    d = tmp_path / "model"
+    d.mkdir()
+    assert shareable.model_label(str(d)) == "local: model"
+    gpu = hw().gpus[0]
+    w = Workload(seq_len=512)
+    setup = {"expert_residency": "device"}
+    obs = {"model": {"model": "local: model"}, "setup": setup, "status": "OK",
+           "workload": {"tokens_per_microbatch": w.tokens_per_microbatch}, "hardware": {"gpu": {"name": gpu.name}}}
+    assert _observed([obs], str(d), setup, w, gpu) is None
+    assert shareable.match_key("org/Model") == "org/Model"           # a Hub id: its own key

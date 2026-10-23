@@ -15,6 +15,12 @@ before it is written:
   covers home-relative and Windows drive paths too. URLs, units such as `GB/s`, fractions and one-segment routes such
   as `/health` are untouched.
 
-The planner compares models by the same label on both sides. A run on a local model directory still informs the next
-plan of that same directory, while two directories with the same name and different configs or weights (say, two
-`checkpoint-500`s) never lend each other measured numbers. A Hub id compares exactly as before.
+The planner compares models by the same label on both sides, so a run on a local model directory still informs the
+next plan of that same directory. The label hashes the architecture and sharding, not the weights:
+- two directories with the same name but a different config or sharding (two `checkpoint-500`s of different models)
+  never lend each other measured numbers;
+- two fine-tunes of one base sharded alike do compare equal. That suits shape-driven numbers such as memory and step
+  time, but not numbers that follow the weights, such as MoE routing;
+- a local model with no readable `config.json` gets no fingerprint and matches no stored observation, so it is measured
+  as unseen.
+A Hub id compares exactly as before.

@@ -68,14 +68,27 @@ def _model_fingerprint(d: str) -> str | None:
 @functools.lru_cache(maxsize=256)
 def model_label(value):
     """A MODEL as a shared record names it and the planner compares it: a Hub id as given, a local model directory as
-    ``local: <name>@<12 hex>`` (:func:`_model_fingerprint`), so two directories both called "model" or "checkpoint-500"
-    never compare equal and lend each other measured numbers. A local path without a readable config.json, or a label
-    already made, by :func:`label`."""
+    ``local: <name>@<12 hex>`` (:func:`_model_fingerprint`). Two directories both called "model" or "checkpoint-500"
+    compare equal only with the same architecture and sharding (config.json plus the weight index, or the weight files'
+    names and sizes); the weights themselves are not hashed, so two fine-tunes of one base sharded alike DO compare
+    equal, which suits shape-driven numbers (memory, step time) but not ones that follow the weights (MoE routing). A
+    local path without a readable config.json, or a label already made, by :func:`label` (and :func:`match_key`
+    matches it to nothing)."""
     if not isinstance(value, str) or value.startswith("local: ") or "://" in value or not is_local(value):
         return label(value)
     d = os.path.expanduser(value)
     fp = _model_fingerprint(d) if os.path.isdir(d) else None
     return label(value) + (f"@{fp}" if fp else "")
+
+
+def match_key(value):
+    """What the planner compares models by: :func:`model_label`, except that a local model WITHOUT a fingerprint (no
+    readable config.json) matches nothing, not even itself, so a run on it is treated as unseen and measured rather than
+    lent another same-named directory's numbers."""
+    lab = model_label(value)
+    if isinstance(lab, str) and lab.startswith("local: ") and "@" not in lab:
+        return object()
+    return lab
 
 
 def _sha256(path, limit=None) -> str | None:

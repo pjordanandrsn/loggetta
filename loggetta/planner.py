@@ -17,7 +17,8 @@ from dataclasses import replace
 
 from .backends import BACKENDS
 from .plan import Candidate, Constraints, ExecutionPlan, MemoryLine, Workload
-from .shareable import model_label as shared_label
+from .shareable import match_key as shared_label
+from .shareable import model_label
 
 GiB, MiB = 1 << 30, 1 << 20
 
@@ -275,11 +276,12 @@ def reserve_fraction(gpu, setup, observations, default, model=None, kind="train"
                 if anchor_there and frac(anchor_there) > 0:
                     f = frac(there) * frac(anchor_here) / frac(anchor_there)
                     return f, "heuristic", (f"transferred: {frac(there):.3f} measured for this model on {gname(there)} "
-                                            f"({cite(there)}) x anchor {mname(anchor_here)} "
+                                            f"({cite(there)}) x anchor {model_label(anchor_here.get('model', {}).get('model'))} "
                                             f"{frac(anchor_here):.3f} here / {frac(anchor_there):.3f} there = {f:.3f}")
     if here and kind == "serve":
         h = pick(here)
-        return frac(h), "measured", (f"{cite(h)} (this GPU and setup, model {mname(h)}) = {frac(h):.3f}")
+        return frac(h), "measured", (f"{cite(h)} (this GPU and setup, model "
+                                     f"{model_label(h.get('model', {}).get('model'))}) = {frac(h):.3f}")
     same_gpu = [o for o in usable if gname(o) == gpu.name]
     if same_gpu and kind != "serve":
         worst = max(same_gpu, key=frac)
