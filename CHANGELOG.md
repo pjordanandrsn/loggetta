@@ -1,5 +1,251 @@
 # Changelog
 
+## 0.7.0 — 2026-10-23
+
+**0.7.0.** A first install now ends trained or with a named refusal. `inspect --torch-index` names the torch build
+for the NVIDIA driver before torch is installed, and `scripts/first_run.sh` runs the whole first install. A machine
+without a working C compiler, or one loading CUDA's forward-compatibility library, is refused by name before any
+download. `execute` runs serve plans; one GPU smoke on an RTX 4090 proved the path. MoE adapters record the quantized
+base they were trained on (`backend-adapter/2`, with an experts4bit-qlora that defines it). Receipts carry no local
+path, and they record the backend switches and allocator setting they ran under. Two things can change what a script
+sees. A training run whose device check took no driver sample now reads `UNMEASURED` and exits 4, where it read `OK`
+and exited 0. And receipts name local files and model directories by name only. Floors unchanged.
+
+### Install: the torch build for your driver, named before torch is installed, and a first-run script
+
+`inspect` now names the PyTorch CUDA build that matches the NVIDIA driver, and `inspect --torch-index` prints only that
+build's index tag (`cu130` for driver 580 and later, `cu126` for 525 and later; a Blackwell GPU, compute capability
+10.0 and up, gets only builds for CUDA 12.8 or later, so `cu129` below driver 580, and needs driver 570), reading
+`nvidia-smi` alone, so it works before torch is installed. A driver too old for every supported torch build, or a machine with no NVIDIA GPU, is a
+named refusal (exit 3). `scripts/first_run.sh` runs a first install end to end in a new directory: a fresh virtual
+environment, the matching torch FIRST, then the package, `inspect`, `plan`, and 10 training steps on OLMoE-1B-7B-0924-Instruct
+at a pinned revision. It writes each step's exit status and seconds to `first_run.json` and ends trained (0, or 7 when the device check did
+not run), or with a named refusal: no torch build fits (3), the plan was refused (4), an install step failed (5), or the run did not train (6).
+A local wheel or directory given as `PACKAGE_SPEC` is recorded in `first_run.json` by its name only, never its path, so
+a shared summary carries no home directory.
+- A refused plan's summary in `first_run.json` is now the refusal's own first reason, verbatim, read from the refused
+  `plan.json`. It was a grep of the printed banner, which kept only "NOT FEASIBLE under the requested constraints."
+- A local model directory given as `MODEL` is recorded in `first_run.json` by its name only, never its path, and a
+  refusal reason never carries the home directory (it reads `~`).
+- A URL or VCS `PACKAGE_SPEC` (`git+https://...`, `name @ https://...`) is recorded as a URL, not as `local`, with any
+  user, password, query and fragment dropped, so a token in the URL never reaches `first_run.json`. The URL's path is
+  kept as given, since it names what was installed: a user or organization name in a remote path stays. A `file://` URL
+  is a local path, recorded by its name only. A URL that does not parse is recorded by its scheme alone.
+
+### Plans: a machine without a working C compiler is refused by name, before any download
+
+The training and serving kernels are Triton kernels. Triton compiles a small helper against `Python.h` the first time
+one runs. On a machine with no C compiler (the CUDA runtime images ship none), a first run installed torch, planned,
+downloaded the checkpoint, and then died in training with Triton's "Failed to find C compiler" traceback.
+- When an NVIDIA GPU is present, the hardware probe now finds the compiler Triton would use (`CC`, else gcc, else
+  clang), and tests it the way Triton does: it builds a shared object against this Python's headers. A name on PATH is
+  not enough, because a box can have gcc but no Python headers.
+- Nothing recorded carries a path: the compiler is recorded by name, and its diagnostics (shown in the refusal) keep
+  only the basenames of any absolute paths, such as the temporary file or a home directory in an include chain.
+- When no compiler can build, `plan` refuses with the reason and the fix (install a compiler and the Python headers, or
+  set `CC`). `inspect` reports it, and `scripts/first_run.sh` ends with its named exit 4.
+- A profile saved before this field reads "not probed" and is never refused for it.
+
+### The refusal names CUDA Error 804 correctly
+
+- When torch reports CUDA Error 804 ("forward compatibility was attempted on non supported HW"), the refusal now says
+  what happened. The process loaded NVIDIA's CUDA forward-compatibility library (cuda-compat), which this GPU does
+  not support. NVIDIA supports it on datacenter GPUs, select server RTX cards and Jetson boards.
+- It now gives the remedies that work:
+  - an image or environment whose CUDA the driver supports natively;
+  - the compat directory taken off `LD_LIBRARY_PATH`;
+  - a newer host driver.
+- Before, a driver that met the build's CUDA minimum sent the user to check GPU visibility (`CUDA_VISIBLE_DEVICES`,
+  `docker run --gpus`), which has nothing to do with this error. Seen on a GeForce RTX 3090 with driver 535 and a
+  CUDA 12.8 image.
+
+### `execute` runs a serve plan
+
+- A feasible serve plan now executes through experts4bit-qlora's paged engine, the same build-decode-measure path
+  `bench/serve_validate.py` has used for the committed serve receipts: `loggetta execute PLAN --arena ARENA --calib
+  CALIB`. The receipt carries the same measured fields: device and driver peaks, load and
+  generate seconds, tokens per second, and at one sequence the traced single-stream decode step.
+- It needs no development opt-in. A GPU smoke on an RTX 4090 ran the bench path, the plan and execute, and the
+  inherited-switch refusal at experts4bit-qlora 0.57.0 (`evidence/2026-10-23-serve-executor-rtx4090`). The dense
+  executor keeps its opt-in.
+- A receipt's provenance names the loggetta that wrote it: the installed distribution's version, and the module's own
+  `__version__` (as `module_version`), which is still there when it runs from a source tree with no installed
+  distribution. Before, `sources.loggetta.version` was always null.
+- It refuses by name, before anything loads, when the arena or the calibration file is missing, or when the request
+  shape does not fit the plan's context. It never bakes an arena; that stays an explicit step.
+- It also refuses by name when this environment sets any backend switch (`E4B_*`, `GNF4_*`) that the plan does not.
+  This is denied by default, because the backends route kernels on switches no list could keep up with. The plan's
+  settings are merged into the process environment, so such a switch would change the run while the receipt describes
+  the plan. Only plumbing the engine build never reads may be inherited: the HTTP server's `E4B_TOKEN`, `E4B_HOST` and
+  `E4B_PORT`, and the rental launcher's `E4B_RENT_*`. The refusal names the switch and never prints its value.
+- Path-valued entries in the engine's own report (an adapter's path, a lever's artifact directory) are recorded by name
+  only.
+- The receipt names the arena by base name and the sha256 of its first MiB, and the calibration file by base name and
+  sha256. Neither appears by path, and the recorded server environment names a local model directory by its name only
+  (`local: <name>`), as `first_run.json` does.
+- A serve receipt's run id names the context and concurrency (`...-serve-all-vram-c4096x1-...`).
+- `bench/serve_validate.py` keeps its command line and receipt format, and now calls the same measuring code.
+- The serve executor steps the engine as experts4bit-qlora's server loop does, opening and closing a trace row around
+  each step, so a one-sequence run's decode step is traced. `scheduler.run_until_idle()` steps without opening a row,
+  so the trace stayed empty. A missing or empty trace is now recorded as a note, never a crash. A GPU smoke on an RTX
+  4090 found this; the same gap was in `bench/serve_validate.py` before the executor moved into the package.
+
+### Adapters: the MoE manifest records the quantized base it was trained on (`backend-adapter/2`)
+
+A `backend-adapter/1` manifest records the setup and the base revision, but not what the base was quantized to. A
+server rebuilding the base therefore cannot tell an fp32 expert absmax from the double-quantized one training uses by
+default. With an experts4bit-qlora that defines `backend-adapter/2`, the MoE executor now writes it. It records:
+- the expert absmax form, the attention recipe, the fused q/k/v count and the versions, copied from
+  `prepare_qlora_training`'s report;
+- the LoRA scale the modules held;
+- a `qfp-v1` fingerprint of the quantized base (experts always; attention when the adapter trains it), read where
+  training kept the stacks (`expert_residency`: device or host);
+- the run id and the time written.
+
+Everything `/2` records is checked right after the model is prepared, BEFORE the first training step, so a run that
+could not record it is refused as not run instead of failing after training. The base is fingerprinted then too, and
+again at save: if any scope differs, the base changed during training and the manifest is not `/2`. A run recorded as device whose stacks are evicted is refused, never fingerprinted from a
+host copy nobody recorded. Trained tensors are never discarded over manifest metadata: if `/2` can only fail at save,
+the adapter is written as `/1`, its manifest and the receipt say why (`v2_refused`), and the run reads `SAVED_V1`
+(its measurements still count as planning evidence). `load_adapter` fingerprints the rebuilt base and refuses a
+mismatch, and reading a `/2` directory goes through experts4bit-qlora's own verifier.
+`loggetta inspect --adapter DIR` prints it all. With an older experts4bit-qlora the manifest stays `/1`, as before.
+The dense executor writes `/1`.
+
+### Plans: a bound on the load's host memory, warned and graded, never a refusal
+
+The plan's host estimate prices the steady state. Loading also maps the checkpoint's weight files, and their pages count
+in the process's RSS: under WSL2 and in containers they count against the memory cap even when the kernel calls them
+reclaimable. On one WSL2 run the host estimate was 6.38 GiB and the measured peak RSS 13.1 GiB, against 14.5 GiB
+available.
+- `plan` reads the checkpoint's weight-file sizes without downloading them: from the Hub API's file metadata, a local
+  directory, or the local Hub cache, recording only the repository id or the directory's name, never a home path. When
+  none answers, nothing is priced and the plan is unchanged.
+- The load-time bound is the host estimate plus those bytes, labelled an inferred bound, not a measurement: the
+  quantize transients are not priced, so each receipt grades whether it held. It is recorded in the plan's `provenance.load_bound`. When it exceeds what this machine had available at plan time, a
+  named warning gives both numbers and where the available figure came from. It never refuses a plan.
+- `execute` reads what is available again right before the backend loads, and logs the same comparison.
+- The receipt's `load_bound` grades the bound against the run's measured peak RSS (VmHWM, the load included): `held`
+  is true, false, or null when no peak was measured. The summary prints it with each number's basis.
+
+### Plans: what the total rests on, said beside it
+
+The plan's Why section now says what its memory total rests on:
+- **Overhead sources:** which overhead terms (the CUDA context, the allocator reserve, the host baseline) were measured
+  from receipts on this machine and which are defaults. Each line above it already named its receipt or default.
+- **Streamed margin:** a streamed plan prints its admission margin beside the total, `max(2.4 GB, 20% of the plan)`.
+  On the planner's own rows, streamed peaks have run above the plan total, and this margin is what covers them, so the
+  total alone is not what the process will use (#90).
+- **Cited receipts:** a receipt the plan cites names the loss branch its training forwards took, when the receipt
+  counted it (a chunked and a stock loss peak differently), and a `SAVED_V1` status.
+
+With no receipts on file, a plan cites no run id at all.
+
+### Evidence: the planner's held-out split
+
+- `evidence/planner-split/`: the planner's frozen derivation / held-out split. Every plan/measured pair on file is tagged SEEN (a
+  planner constant was set or tuned after it) or UNSEEN. The held-out side has one row, the resident Qwen3-14B row at 4,096 tokens, so every
+  family × card is unmeasured and no band is printed yet. The band reads only this file.
+- `evidence/planner-split/SPLIT-v2.json`: the planner split's version 2 (`SPLIT.json` stays frozen and unchanged). It adds eight more
+  held-out rows: LFM2-8B-A1B and ERNIE-4.5-21B-A3B, each at 1,024 and 2,048 tokens, on an RTX 5090 and an RTX 4090 (experts4bit-qlora
+  `bench/ho2/`, pjordanandrsn/experts4bit-qlora#1969 and pjordanandrsn/experts4bit-qlora#1987), all UNSEEN and all COVERED. Four family × card cohorts now hold the 2 rows a band needs; the band itself
+  comes in a later change. Every row cites its public receipt copy by sha256 beside the private original. These are device-placement rows only, and
+  each row's loss branch is inferred, not counted.
+
+### Receipts: a run whose device check had no driver sample reads UNMEASURED, not OK
+
+A training run's device peak is checked against the plan through `nvidia-smi`'s per-process memory. Under WSL2, and in
+some containers, `nvidia-smi` lists no per-process memory, so the check took no sample (`driver_samples` 0). The run
+still read `OK`, a status claiming a check that never happened. Such a run now reads `UNMEASURED`:
+- The receipt's `measured.driver_unmeasured` says why: no `nvidia-smi` on PATH, every read failed, or reads that never
+  listed this process.
+- The summary prints "device check NOT RUN".
+- `execute` and `train` exit with code 4, which `--help` lists: trained, but the device check took no driver sample.
+  `scripts/first_run.sh` maps it to its own exit 7, "trained; the device check did not run", and records
+  `device_check` in `first_run.json`. Its exit 4 (the plan was refused) is a different interface.
+- The run trained normally, so its adapter is saved. A fallback to a `/1` manifest is still reported.
+- Its allocator slack still counts as planning evidence, but it never teaches the CUDA-context term, which needs a
+  driver peak.
+
+An integrity failure (`ALARM`) still takes precedence.
+
+### Receipts carry no local path
+
+A receipt is meant to be shared, and it used to carry the machine's layout, home directory and username in several
+places: the command line, the source files, a local model's directory, an adapter's directory, and notes. Every
+execution receipt (train and serve), and `bench/serve_validate.py`'s, now passes through `loggetta.shareable.record`
+before it is written:
+- A path argument in `provenance.argv` is recorded by its name (`local: plan.json`). A file argument also gets its
+  size and sha256 under `provenance.argv_files`. Above 64 MiB it gets its size and the sha256 of its first MiB instead,
+  so an NF4 arena of tens of GB is never read whole.
+- `provenance.sources.<module>.file` is the package-relative path, written with forward slashes on every OS, plus the
+  version and the file's sha256.
+- A local model directory, in the receipt and in its embedded plan, is recorded as `local: <name>@<12 hex>`, where the
+  hex is the sha256 of its `config.json` plus its safetensors index, or its weight files' names and sizes. A Hub id is
+  kept as given.
+- Any path left anywhere with a directory in it, as a value, a key, or inside a sentence, is recorded by its name. That
+  covers home-relative and Windows drive paths too. URLs, units such as `GB/s`, fractions and one-segment routes such
+  as `/health` are untouched.
+
+The planner compares models by the same label on both sides, so a run on a local model directory still informs the
+next plan of that same directory. The label hashes the architecture and sharding, not the weights:
+- two directories with the same name but a different config or sharding (two `checkpoint-500`s of different models)
+  never lend each other measured numbers;
+- two fine-tunes of one base sharded alike do compare equal. That suits shape-driven numbers such as memory and step
+  time, but not numbers that follow the weights, such as MoE routing;
+- a local model with no readable `config.json` gets no fingerprint and matches no stored observation, so it is measured
+  as unseen.
+A Hub id compares exactly as before.
+
+### Receipts record the experts4bit-qlora environment
+
+- An execution receipt's `provenance.e4b_env` records the experts4bit-qlora environment the run started under:
+  - the sorted names of every set `E4B_*` variable;
+  - the sha256 of the sorted `name=value` lines, so two receipts compare without their values;
+  - the values of the switches that change numerics or speed (`measure.E4B_VALUE_KNOBS`, for example
+    `E4B_ABSMAX_DQ` and the `E4B_PAGED_*` and `E4B_SERVE_*` levers).
+- Every other variable is recorded by its name only, in the record and in the hash alike. Only the listed switches
+  contribute a value, so a receipt never carries a host name, a path, a private model id or a secret, nor a hash that
+  could guess one. It is an allowlist, not a name pattern.
+- Two committed receipts ran different `E4B_ABSMAX_DQ` settings under an identical setup and command line, and differed
+  by 39% in seconds per step. Nothing recorded the difference until now.
+- It is recorded only: every committed receipt plans identically with the key added.
+
+### Receipts record the route and kernel switches by value
+
+- `provenance.e4b_env` now covers grouped-nf4-gemm's `GNF4_*` switches beside experts4bit-qlora's `E4B_*`: their names,
+  the shared hash, and their values.
+- The value list (`measure.E4B_VALUE_KNOBS`) gains the route and kernel switches. These include `E4B_K25_PLAN` and
+  `E4B_K25_LUT`, the `E4B_NF4_*` and `E4B_INT4_*` routes, the dense and head GEMVs, the fused glue, and every `GNF4_*`
+  switch except the build-cache directory `GNF4_NATIVE_CACHE`. Before, a receipt could not tell `E4B_K25_PLAN=c1` from
+  `today`, or a `GNF4_*` switch on from off.
+- A listed switch whose value is nonetheless a path is recorded, and hashed, by its name only.
+- Every other switch the backends read is in `measure.NAME_ONLY` with its reason: a path, an id, a secret, or
+  HTTP-server plumbing. A test scans the installed experts4bit-qlora and grouped-nf4-gemm sources and fails on any name
+  in neither table. A backend release that adds a knob fails loggetta's CI until someone decides whether its value is
+  recorded.
+- A name with a credential word in it (TOKEN, KEY, SECRET, PASSWORD, AUTH, CREDENTIAL, as a whole `_` word; `TOKENS`, a
+  count, is not one) never has its value recorded or hashed, even if it were listed. A test keeps such names off the
+  list too.
+- This is still recorded only: the planner reads none of it and matches no receipt by this hash. Receipts written before
+  this change simply lack the new values.
+
+### Receipts record the allocator setting
+
+- An execution receipt's `provenance` records `pytorch_cuda_alloc_conf`, the `PYTORCH_CUDA_ALLOC_CONF` the run started
+  under (null when unset). It moves the allocator's reserved-but-unallocated bytes, which the planner learns its
+  reserve from, so a reader can now see which setting a measured reserve came from. It is recorded only: every
+  committed receipt plans identically with the key added.
+
+### Receipts: which loss branch the training forwards took, counted
+
+A receipt now records, in `engaged.chunked_lm_loss`, which loss branch the run's training forwards took. experts4bit-qlora
+chooses the chunked LM loss or the stock one per forward under a size gate, and the receipt counts each, as the change
+in its counters over this run's training loop: chunked, under the gate (stock), stock otherwise. It also records the
+gate's threshold, the chunk size and the head width the gate read. `branch` reads `chunked`, `stock` or `mixed`, so a
+row near the gate states its branch from its own counters instead of having it inferred from its peak. Recording never
+fails a run that trained: an error is written into the record instead.
+
 ## 0.6.2 — 2026-10-22
 
 **0.6.2.** Two fixes that make first runs work. When the default torch from PyPI is built for a newer CUDA than

@@ -24,6 +24,18 @@ loggetta plan Qwen/Qwen3-30B-A3B --seq 2048
 The plan shows where weights will live, estimated memory use, and why alternatives were rejected. It checks the budget
 before downloading model weights. Estimates can miss; they are not an out-of-memory guarantee.
 
+## New in 0.7.0
+
+- **A first install ends trained or with a named refusal.** `loggetta inspect --torch-index` names the torch build for
+  your driver before torch is installed, and `scripts/first_run.sh` runs the whole first install. A machine with no
+  working C compiler is refused before any download.
+- **`execute` runs serve plans** through experts4bit-qlora's paged engine and writes a receipt with the measured peaks
+  and, at one sequence, the decode step.
+- **MoE adapters record the quantized base they were trained on** (`backend-adapter/2`, with an experts4bit-qlora that
+  defines it), and `load_adapter` refuses a base that differs.
+- **Receipts carry no local path** and record the backend switches they ran under. A run whose device check took no
+  driver sample reads `UNMEASURED` and exits 4, not `OK`.
+
 ## New in 0.6.2
 
 - **A CUDA plan the installed torch cannot run is refused, with the fix.** When the torch build needs a newer
