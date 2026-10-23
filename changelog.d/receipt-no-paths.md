@@ -7,7 +7,8 @@ before it is written:
 - A path argument in `provenance.argv` is recorded by its name (`local: plan.json`). A file argument also gets its
   size and sha256 under `provenance.argv_files`. Above 64 MiB it gets its size and the sha256 of its first MiB instead,
   so an NF4 arena of tens of GB is never read whole.
-- `provenance.sources.<module>.file` is the package-relative path, plus the version and the file's sha256.
+- `provenance.sources.<module>.file` is the package-relative path, written with forward slashes on every OS, plus the
+  version and the file's sha256.
 - A local model directory, in the receipt and in its embedded plan, is recorded as `local: <name>@<12 hex>`, where the
   hex is the sha256 of its `config.json` plus its safetensors index, or its weight files' names and sizes. A Hub id is
   kept as given.

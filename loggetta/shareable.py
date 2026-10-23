@@ -129,12 +129,13 @@ def _argv(argv) -> tuple:
 
 
 def _source(name: str, src: dict, versions: dict) -> dict:
-    """A source module's record with its file named relative to the directory it was imported from."""
+    """A source module's record with its file named relative to the directory it was imported from, with forward
+    slashes on every OS, so the same source reads the same in a receipt written on Windows."""
     f = src.get("file")
     if not f:
         return src
     root = os.path.dirname(os.path.dirname(f)) if os.path.basename(f) == "__init__.py" else os.path.dirname(f)
-    return {**{k: v for k, v in src.items() if k != "file"}, "file": os.path.relpath(f, root),
+    return {**{k: v for k, v in src.items() if k != "file"}, "file": os.path.relpath(f, root).replace(os.sep, "/"),
             "sha256": _sha256(f), "version": versions.get(_DISTS.get(name, name))}
 
 
