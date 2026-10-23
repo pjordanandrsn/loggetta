@@ -146,7 +146,7 @@ def test_e4b_env_hash_tells_two_compute_environments_apart():
 
 
 @pytest.mark.parametrize("name", ["E4B_SSH_HOSTNAME", "E4B_ENDPOINT", "E4B_SERVER_URL", "E4B_APIKEY", "E4B_PASSWD",
-                                  "E4B_CREDENTIALS", "E4B_RECEIPTS_PATH", "E4B_MODEL_ID", "E4B_K25_PLAN"])
+                                  "E4B_CREDENTIALS", "E4B_RECEIPTS_PATH", "E4B_MODEL_ID", "E4B_EXPERT_PROFILE"])
 def test_e4b_env_takes_a_value_only_from_the_list(name):
     """An allowlist, not a denylist: a variable off the list moves neither the record nor the hash by its VALUE, whatever
     its name looks like, so no naming pattern can let a host, path, model id or secret through."""
@@ -470,3 +470,106 @@ def test_the_cli_executes_a_serve_plan_end_to_end_through_its_summary(stub_env, 
     text = capsys.readouterr().out
     assert rc == 0 and len(list(out.glob("*.json"))) == 1
     assert "decode step median 4.36 ms over 63 steps" in text and "receipt:" in text
+
+
+
+@pytest.mark.parametrize("name, a, b", [
+    ("E4B_K25_PLAN", "c1", "today"),                       # a route switch: two plans of the same kernel
+    ("E4B_NF4_T1_DEVICE_GROUPING", "0", "1"),
+    ("GNF4_GEMV_BW", "0", "1"),                            # grouped-nf4-gemm's own switches too
+    ("GNF4_PDL", "0", "1"),
+])
+def test_a_route_switch_is_recorded_by_value_and_separates_the_hash(name, a, b):
+    """Receipts could not tell E4B_K25_PLAN=c1 from =today, or a GNF4_* switch on from off: their VALUES are recorded
+    now, and two runs differing only there hash differently."""
+    ra, rb = _e4b_env(**{name: a}), _e4b_env(**{name: b})
+    assert ra["values"] == {name: a} and rb["values"] == {name: b} and ra["sha256"] != rb["sha256"]
+
+
+def test_a_gnf4_path_switch_and_a_path_valued_knob_stay_names_only():
+    rec = _e4b_env(GNF4_NATIVE_CACHE="/srv/cache/gnf4", E4B_K25_PLAN="/srv/plans/x.json")
+    assert rec["names"] == ["E4B_K25_PLAN", "GNF4_NATIVE_CACHE"]
+    assert "GNF4_NATIVE_CACHE" not in rec["values"] and rec["values"]["E4B_K25_PLAN"] == "local: x.json"
+    assert "/srv" not in json.dumps(rec)
+    other = _e4b_env(GNF4_NATIVE_CACHE="/elsewhere/c", E4B_K25_PLAN="/other/dir/x.json")
+    assert other["sha256"] == rec["sha256"]               # neither path moves the hash
+
+
+def test_provenance_records_a_gnf4_switch_from_the_process_environment(monkeypatch):
+    from loggetta.measure import provenance
+
+    monkeypatch.setenv("GNF4_PDL", "1")
+    monkeypatch.setenv("GNF4_NATIVE_CACHE", "/srv/cache/gnf4")
+    rec = provenance(modules=())["e4b_env"]
+    assert rec["values"].get("GNF4_PDL") == "1" and "GNF4_NATIVE_CACHE" in rec["names"]
+    assert "GNF4_NATIVE_CACHE" not in rec["values"]
+
+
+
+def test_every_backend_switch_is_classified_value_or_name_only():
+    """Every E4B_/GNF4_ name the INSTALLED backends read (their package sources, tests and conftest aside) is either
+    recorded by value (E4B_VALUE_KNOBS) or by name with a reason (NAME_ONLY), never both. A backend release that adds a
+    knob fails this until someone decides whether its value is recorded."""
+    import importlib.metadata as md
+    import os
+    import re
+
+    from loggetta.measure import E4B_VALUE_KNOBS, NAME_ONLY
+
+    pat = re.compile(r"""(["'])((?:E4B|GNF4)_[A-Z0-9_]*[A-Z0-9])\1""")          # either quote: e4b uses both
+    assert [m[1] for m in pat.findall("""env("E4B_A1") or os.environ.get('GNF4_B2') or "E4B_SERVE_" """)] == [
+        "E4B_A1", "GNF4_B2"]                                    # a prefix literal ("E4B_SERVE_") is not a name
+    found = {}
+    for dist in ("experts4bit-qlora", "grouped-nf4-gemm"):
+        try:
+            files = md.files(dist) or ()
+        except md.PackageNotFoundError:
+            pytest.skip(f"{dist} is not installed")
+        for f in files:
+            p = str(f)
+            if p.endswith(".py") and "/tests/" not in "/" + p and not os.path.basename(p).startswith(("test_", "conftest")):
+                with open(f.locate(), encoding="utf-8", errors="replace") as fh:
+                    text = fh.read()
+                for _, name in pat.findall(text):
+                    found.setdefault(name, p)
+    assert found, "no backend switch found: the scan itself is broken"
+    assert not set(E4B_VALUE_KNOBS) & set(NAME_ONLY)
+    from loggetta.measure import is_secret_name
+
+    assert not [n for n in E4B_VALUE_KNOBS if is_secret_name(n)]     # a credential's value is never recorded
+    assert all(reason.strip() for reason in NAME_ONLY.values())
+    unclassified = {n: where for n, where in found.items() if n not in E4B_VALUE_KNOBS and n not in NAME_ONLY}
+    assert not unclassified, ("classify each new backend switch in loggetta.measure: E4B_VALUE_KNOBS if it can change a "
+                              "route, a kernel or a number, else NAME_ONLY with a reason", unclassified)
+
+
+def test_a_newly_valued_switch_is_recorded_and_a_secret_never_is():
+    rec = _e4b_env(E4B_FUSE_SWIGLU="0", E4B_TOKEN="tok-0123456789", E4B_PAGED_SPEC_HEAD="/srv/heads/eagle3")
+    assert rec["values"]["E4B_FUSE_SWIGLU"] == "0" and rec["values"]["E4B_PAGED_SPEC_HEAD"] == "local: eagle3"
+    assert "tok-0123456789" not in json.dumps(rec)
+    assert _e4b_env(E4B_FUSE_SWIGLU="1")["sha256"] != _e4b_env(E4B_FUSE_SWIGLU="0")["sha256"]
+
+
+
+@pytest.mark.parametrize("name, secret", [
+    ("E4B_TOKEN", True), ("E4B_API_KEY", True), ("GNF4_AUTH", True), ("E4B_DB_PASSWORD", True),
+    ("E4B_HF_CREDENTIALS", True), ("E4B_FOO_TOKEN", True), ("E4B_HF_AUTH_TOKEN", True),
+    ("E4B_MAX_NEW_TOKENS", False), ("E4B_K_SLOTS", False), ("E4B_KEYFRAME", False), ("E4B_INT4_KEEP_NF4", False),
+    ("E4B_CHUNKED_LM_LOSS", False),
+])
+def test_a_credential_name_is_told_by_whole_word(name, secret):
+    from loggetta.measure import is_secret_name
+
+    assert is_secret_name(name) is secret
+
+
+def test_a_credential_value_is_never_recorded_even_if_listed(monkeypatch):
+    """The runtime guard behind the test: were a credential name ever put on the value list, e4b_env still records and
+    hashes it by name only."""
+    from loggetta import measure
+
+    monkeypatch.setattr(measure, "E4B_VALUE_KNOBS", measure.E4B_VALUE_KNOBS + ("E4B_API_KEY",))
+    rec = _e4b_env(E4B_API_KEY="sk-0123456789abcdef")
+    assert "E4B_API_KEY" in rec["names"] and "E4B_API_KEY" not in rec["values"]
+    assert "sk-0123456789abcdef" not in json.dumps(rec)
+    assert rec["sha256"] == _e4b_env(E4B_API_KEY="other")["sha256"]

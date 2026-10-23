@@ -154,18 +154,94 @@ E4B_VALUE_KNOBS = (
     "E4B_PAGED_MAX_TOKENS_PER_SEQ", "E4B_PAGED_PLACEMENT", "E4B_PAGED_PREFILL_ATTN", "E4B_PAGED_PREFILL_GRAPH",
     "E4B_PAGED_SPEC", "E4B_PAGED_SPEC_K", "E4B_PAGED_TORCH_THREADS", "E4B_PAGED_VRAM_GB",
     "E4B_SERVE_ATTN_INT4", "E4B_SERVE_ATTN_INT8", "E4B_SERVE_EXP_INT4",
+    # route and kernel switches: each picks a different function for the same shape (K25 plan and LUT, the small-M
+    # routes, int4 tiles, the dense and head GEMVs, the fused glue), so two runs differing only here measure differently
+    "E4B_K25_PLAN", "E4B_K25_LUT", "E4B_K_SLOTS", "E4B_NF4_GROUPED_SMALLM", "E4B_NF4_T1_DEVICE_GROUPING", "E4B_NF4_SMALLM_BW",
+    "E4B_INT4_DECODE_A16", "E4B_INT4_GROUPED_SMALLM", "E4B_INT4_LEAN_GLUE", "E4B_INT4_PREFILL", "E4B_INT4_TILE_PROGRAMS",
+    "E4B_INT4_WIDE_TILES", "E4B_INT4_KEEP_NF4", "E4B_INT4_GPTQ_DAMP", "E4B_ATTN_INT4_SMALLM", "E4B_ATTN_INT4_WIDE",
+    "E4B_ATTN_SPLIT_CAP", "E4B_INT8_HEAD_BW", "E4B_DENSE_GEMV_BW", "E4B_INFER_GEMV", "E4B_MXFP4_GEMV",
+    "E4B_MXFP4_GROUPED_SMALLM", "E4B_DECODE_FASTPATH", "E4B_FUSED_RMSNORM", "E4B_FUSED_ROPE", "E4B_FUSED_KV_APPEND",
+    "E4B_KV_STEP_SELECT", "E4B_BATCHED_KV_WRITE", "E4B_BATCHED_PAD_WASTE_LIMIT", "E4B_COMBINE_CHUNK", "E4B_GROUPING",
+    "E4B_K19_PREFILL_BIG_M", "E4B_PREFILL_LEAN_DISPATCH", "E4B_ROUTER_EPI_CAST", "E4B_PIPELINED_TRAFFIC",
+    "E4B_TRITON_PREBIND", "E4B_DENSE_MLP_LORA_FUSE", "E4B_CKPT_OFFLOAD", "E4B_EMPTY_CACHE", "E4B_MOE_KEEP_LAYERS",
+    "E4B_HOT_PER_LAYER", "E4B_VRAM_FRACTION", "E4B_RESIDENCY", "E4B_OFFLOAD_PIN_SLAB", "E4B_REFERENCE_EXPERT_ORDER",
+    # grouped-nf4-gemm's own switches (all but GNF4_NATIVE_CACHE, a build-cache directory: by name only)
+    "GNF4_ALLOW_UNVERIFIED_V5", "GNF4_ATTN_COMPUTE", "GNF4_ATTN_F32_PRECISION", "GNF4_DECODED_MAX_BYTES",
+    "GNF4_DECODE_PLAN", "GNF4_F32_FUSE_COMBINE", "GNF4_GEMV_BW", "GNF4_GEMV_BW_DECODE", "GNF4_GEMV_BW_PLAN",
+    "GNF4_GEMV_DOTPAD", "GNF4_GEMV_FUSED_REDUCE", "GNF4_GEMV_SPLITK", "GNF4_GEMV_VEC_LOADS", "GNF4_GEMV_WIDE_LOADS",
+    "GNF4_HOST_REUSE", "GNF4_PDL", "GNF4_PDL_MAX_ROWS", "GNF4_PINNED_RING", "GNF4_PINNED_RING_SLOTS",
+    "GNF4_PINNED_RING_SLOT_INTS", "GNF4_PIN_ARENA_INTS", "GNF4_PREFILL_TILE_D", "GNF4_PREFILL_TILE_RULE",
+    "GNF4_TRAIN_GEMM", "GNF4_TRITON_PREBIND",
+    # more switches that change the route, the numbers or the run's shape: the fused SwiGLU / combine / prefill glue
+    # (0 swaps the kernel), the speculative head, gpt-oss's expert-LoRA route, the arena poison (debug), remote code,
+    # the stop ids, the int4 calibration and GPTQ settings, a safety bypass, the device, the serving token limits and
+    # warmup, and the timing-affecting debug flags. A path-valued one (the spec head, the int4 assignment, the
+    # calibration source) is still recorded by its name only (see e4b_env)
+    "E4B_FUSE_SWIGLU", "E4B_FUSE_COMBINE", "E4B_FUSE_PREFILL_GLUE", "E4B_PAGED_SPEC_HEAD", "E4B_GPTOSS_EXPERT_LORA",
+    "E4B_ARENA_POISON", "E4B_TRUST_REMOTE_CODE", "E4B_PAGED_EOS_IDS", "E4B_CALIB_NSEQ", "E4B_CALIB_LAYERS_PER_PASS",
+    "E4B_INT4_GPTQ_DEVICE", "E4B_INT4_HESSIAN_BUDGET_GB", "E4B_INT4_DUMP_ALLOW_UNKNOWN_REVISION", "E4B_PAGED_DEVICE",
+    "E4B_MAX_NEW_TOKENS", "E4B_MAX_INPUT_TOKENS", "E4B_WARMUP_TOKENS", "E4B_LOAD_SYNC_DEBUG", "E4B_PROFILE_PHASE",
+    "E4B_OFFLOAD_STATS", "E4B_INT4_ASSIGNMENT", "E4B_CALIB_SOURCE",
+    "E4B_PAGED_ADAPTER_ACCEPT_UNVERIFIED_BASE", "E4B_PAGED_ADAPTER_ALLOW_UNVERIFIED_ARENA",
 )
+#: a name with one of these as a whole "_"-separated word names a credential: its value is NEVER recorded or hashed, even
+#: if it is ever added to E4B_VALUE_KNOBS by mistake (a test also keeps it off that list). "TOKENS" (a count) is not one
+SECRET_WORDS = frozenset({"TOKEN", "KEY", "APIKEY", "SECRET", "PASSWORD", "PASSWD", "AUTH", "CREDENTIAL", "CREDENTIALS"})
+
+
+def is_secret_name(name: str) -> bool:
+    return bool(SECRET_WORDS & set(name.split("_")))
+
+
+#: every other switch the backends read, recorded by NAME only, each with why its value stays out. Between them, this
+#: table and E4B_VALUE_KNOBS classify every E4B_/GNF4_ name in the installed backends' sources, and a test fails on a
+#: new one until someone decides whether its value is recorded (default: recorded, unless a path, an id or a secret)
+NAME_ONLY = {
+    "E4B_TOKEN": "a secret: the HTTP server's bearer token",
+    "E4B_HOST": "the HTTP server's bind address",
+    "E4B_PORT": "the HTTP server's port",
+    "E4B_QUEUE_MAX": "the HTTP server's queue limit (serving plumbing, not the engine)",
+    "E4B_REQUEST_TIMEOUT_S": "the HTTP server's request timeout (serving plumbing, not the engine)",
+    "E4B_RECEIPTS_PATH": "a path: where the server writes its receipts",
+    "E4B_ADAPTERS": "paths: the server's adapter directories",
+    "E4B_MODEL_ID": "an id: the served model, recorded in the receipt's model field by its label",
+    "E4B_PAGED_MODEL": "an id or path: the served model, recorded in the receipt's model field by its label",
+    "E4B_PAGED_REVISION": "an id: the served revision, recorded in the receipt's model field",
+    "E4B_PAGED_SERVED_NAME": "an id: the name the server answers to",
+    "E4B_PAGED_ARENA": "a path: the NF4 arena (a serve receipt names it with its sha256)",
+    "E4B_PAGED_CALIB": "a path: the calibration file (a serve receipt names it with its sha256)",
+    "E4B_PAGED_ADAPTER": "a path: the served adapter directory",
+    "E4B_PAGED_STEP_TRACE": "a path: the step-trace sink",
+    "E4B_PAGED_TRACE": "a path: the request-trace sink",
+    "E4B_OFFLOAD_ARENA": "a path: the offload arena",
+    "E4B_EXPERT_PROFILE": "a path: the routing profile",
+    "E4B_HOT_PROFILE": "a path: the hot-expert profile",
+    "E4B_INT4_ARTIFACT_DIR": "a path: the int4 artifact directory",
+    "E4B_INT4_DUMP_ARTIFACT_DIR": "a path: where int4 artifacts are dumped",
+    "E4B_INT4_EXPECTED_FINGERPRINT": "an id: the expected int4 artifact fingerprint (the artifact is checked against it)",
+    "E4B_SERVE_ATTN_INT4_ARTIFACT": "a path: the int4 attention artifact",
+    "E4B_SERVE_ATTN_INT4_CALIB": "a path: the int4 attention calibration",
+    "E4B_SERVE_ATTN_INT4_DUMP": "a path: where the int4 attention calibration is dumped",
+    "E4B_SERVE_ATTN_INT4_FINGERPRINT": "an id: the expected int4 attention fingerprint",
+    "E4B_SERVE_DENSE_INT4_CALIB": "a path: the dense int4 calibration",
+    "E4B_SERVE_EXP_INT4_CALIB": "a path: the expert int4 calibration",
+    "E4B_SERVE_LMHEAD_INT4_CALIB": "a path: the LM-head int4 calibration",
+    "GNF4_NATIVE_CACHE": "a path: the native build cache",
+}
 
 
 def e4b_env(environ=None) -> dict:
-    """The experts4bit-qlora environment a run starts under, comparable across receipts without carrying identifiers:
-    the sorted NAMES of every set E4B_* variable, the sha256 of its sorted lines (``name=value`` for a switch in
-    ``E4B_VALUE_KNOBS``, the bare name for any other), and the VALUES of those switches."""
-    env = ({k: v for k, v in os.environ.items() if k.startswith("E4B_")} if environ is None
-           else {k: v for k, v in environ.items() if k.startswith("E4B_")})
-    lines = sorted(f"{k}={v}" if k in E4B_VALUE_KNOBS else k for k, v in env.items())
-    return {"names": sorted(env), "sha256": hashlib.sha256("\n".join(lines).encode()).hexdigest(),
-            "values": {k: env[k] for k in E4B_VALUE_KNOBS if k in env}}
+    """The backends' environment a run starts under (experts4bit-qlora's E4B_* and grouped-nf4-gemm's GNF4_*),
+    comparable across receipts without carrying identifiers: the sorted NAMES of every set variable, the sha256 of its
+    sorted lines (``name=value`` for a switch in ``E4B_VALUE_KNOBS``, the bare name for any other), and the VALUES of
+    those switches. A listed switch whose value is nonetheless a path is recorded and hashed by its name only."""
+    from .shareable import label
+
+    env = ({k: v for k, v in os.environ.items() if k.startswith(("E4B_", "GNF4_"))} if environ is None
+           else {k: v for k, v in environ.items() if k.startswith(("E4B_", "GNF4_"))})
+    vals = {k: label(env[k]) for k in E4B_VALUE_KNOBS if k in env and not is_secret_name(k)}
+    lines = sorted(f"{k}={vals[k]}" if k in vals else k for k in env)
+    return {"names": sorted(env), "sha256": hashlib.sha256("\n".join(lines).encode()).hexdigest(), "values": vals}
 
 
 def backend_env_names() -> list:
