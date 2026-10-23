@@ -19,6 +19,8 @@ from __future__ import annotations
 import itertools
 from dataclasses import dataclass, field
 
+from ..shareable import match_key as shared_label
+
 NAME = "experts4bit"
 WORKLOADS = ("train", "serve")
 #: setup fields that separate allocator-slack regimes, per workload (measured: training offload vs resident; serving
@@ -175,7 +177,9 @@ def probe(gpu) -> BackendStatus:
     try:
         import fp8_kv  # noqa: F401
         import fp8_paged_attn  # noqa: F401
-        from experts4bit_qlora.serve_recipe import estimate_serve_footprint  # noqa: F401
+        from experts4bit_qlora.serve_recipe import (
+            estimate_serve_footprint,  # noqa: F401
+        )
         from nf4_route import MIN_CAPABILITY
     except ImportError as e:
         kernels["paged_fp8"] = (False, f"the paged server's estimate or grouped-nf4-gemm's paged FP8 kernels are not "
@@ -185,7 +189,9 @@ def probe(gpu) -> BackendStatus:
             kernels["paged_fp8"] = (False, f"grouped-nf4-gemm's floor is sm_{MIN_CAPABILITY[0]}{MIN_CAPABILITY[1]}")
         else:
             try:
-                from experts4bit_qlora.engines.fp8_paged_kv import fused_append_unsupported
+                from experts4bit_qlora.engines.fp8_paged_kv import (
+                    fused_append_unsupported,
+                )
             except ImportError:
                 kernels["paged_graphs"] = (False, "this experts4bit-qlora cannot say whether its decode graphs run "
                                                   "here (no fp8_paged_kv.fused_append_unsupported): eager decode only")
@@ -333,7 +339,8 @@ def performance(topology, setup: dict, workload, gpu, observations, status) -> d
         got = ((obs.get("provenance") or {}).get("versions") or {})
         if (obs.get("status") == "OK" and (obs.get("workload") or {}).get("kind") == "serve"
                 and (obs.get("workload") or {}).get("concurrency") == 1
-                and (obs.get("model") or {}).get("model") == topology.model and obs.get("setup") == setup
+                and shared_label((obs.get("model") or {}).get("model")) == shared_label(topology.model)
+                and obs.get("setup") == setup
                 and g.get("name") == gname and g.get("driver") == gdrv
                 and all(got.get(d) == v for d, v in want.items())
                 and isinstance(m.get("decode_step_ms_b1"), (int, float)) and m["decode_step_ms_b1"] > 0):

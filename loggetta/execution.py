@@ -19,6 +19,7 @@ import time
 import uuid
 from pathlib import Path
 
+from . import shareable
 from .measure import changed_since, provenance
 from .plan import ExecutionPlan
 
@@ -188,6 +189,7 @@ def execute(plan: ExecutionPlan, *, out_dir: str | None = None, seed: int = 0, l
         receipt["artifacts"] = result["artifacts"]
     if "artifact_error" in result:
         receipt["artifact_error"] = result["artifact_error"]
+    receipt = shareable.record(receipt)         # no local path in a shared record (provenance, model, adapter, notes)
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
         with open(os.path.join(out_dir, f"{run_id}.json"), "w") as f:

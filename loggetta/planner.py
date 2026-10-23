@@ -17,6 +17,8 @@ from dataclasses import replace
 
 from .backends import BACKENDS
 from .plan import Candidate, Constraints, ExecutionPlan, MemoryLine, Workload
+from .shareable import match_key as shared_label
+from .shareable import model_label
 
 GiB, MiB = 1 << 30, 1 << 20
 
@@ -229,8 +231,10 @@ def reserve_fraction(gpu, setup, observations, default, model=None, kind="train"
     def gname(o):
         return o.get("hardware", {}).get("gpu", {}).get("name")
 
-    def mname(o):
-        return o.get("model", {}).get("model")
+    def mname(o):                                    # by label: a receipt names a local model directory by name only
+        return shared_label(o.get("model", {}).get("model"))
+
+    model = shared_label(model) if model else model
 
     def sj(s, drop=()):
         return json.dumps({k: v for k, v in (s or {}).items() if k not in drop}, sort_keys=True, default=list)
@@ -272,11 +276,12 @@ def reserve_fraction(gpu, setup, observations, default, model=None, kind="train"
                 if anchor_there and frac(anchor_there) > 0:
                     f = frac(there) * frac(anchor_here) / frac(anchor_there)
                     return f, "heuristic", (f"transferred: {frac(there):.3f} measured for this model on {gname(there)} "
-                                            f"({cite(there)}) x anchor {mname(anchor_here)} "
+                                            f"({cite(there)}) x anchor {model_label(anchor_here.get('model', {}).get('model'))} "
                                             f"{frac(anchor_here):.3f} here / {frac(anchor_there):.3f} there = {f:.3f}")
     if here and kind == "serve":
         h = pick(here)
-        return frac(h), "measured", (f"{cite(h)} (this GPU and setup, model {mname(h)}) = {frac(h):.3f}")
+        return frac(h), "measured", (f"{cite(h)} (this GPU and setup, model "
+                                     f"{model_label(h.get('model', {}).get('model'))}) = {frac(h):.3f}")
     same_gpu = [o for o in usable if gname(o) == gpu.name]
     if same_gpu and kind != "serve":
         worst = max(same_gpu, key=frac)
@@ -339,7 +344,7 @@ def learned_serve_overheads(backend, topology, setup, observations, key):
     out, best, best_key, grow = [], None, None, None
     for o in observations:
         if o.get("workload", {}).get("kind") != "serve" or o.get("status") not in ("OK", "OOM") \
-                or o.get("model", {}).get("model") != topology.model:
+                or shared_label(o.get("model", {}).get("model")) != shared_label(topology.model):
             continue
         m, rs = o.get("measured", {}), dict(o.get("setup", {}))
         if o.get("status") == "OOM":
@@ -398,7 +403,7 @@ def link_bandwidth(gpu, observations):
 
 def _observed(observations, model, setup, workload, gpu):
     for obs in observations:
-        if (obs.get("model", {}).get("model") == model and obs.get("setup") == setup
+        if (shared_label(obs.get("model", {}).get("model")) == shared_label(model) and obs.get("setup") == setup
                 and obs.get("workload", {}).get("tokens_per_microbatch") == workload.tokens_per_microbatch
                 and obs.get("hardware", {}).get("gpu", {}).get("name") == (gpu.name if gpu else None)
                 and obs.get("status") in MEASURED_STATUSES and obs.get("status") is not None):

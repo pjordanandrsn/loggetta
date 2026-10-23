@@ -20,6 +20,7 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from loggetta import shareable  # noqa: E402
 from loggetta.measure import provenance  # noqa: E402
 
 PROV = provenance()                                  # at process start, before anything below is imported
@@ -71,8 +72,8 @@ def main():
 
     from loggetta import Constraints, Workload, describe_model, plan
     from loggetta.cli import _parse_fixed
-    from loggetta.hardware import HardwareProfile, probe
     from loggetta.execution import load_observations
+    from loggetta.hardware import HardwareProfile, probe
 
     baked = None
     if not os.path.exists(a.arena):
@@ -98,7 +99,7 @@ def main():
     out_path = os.path.join(a.out, run_id + ".json")
     if p.status != "feasible" and not a.measure_refused:
         receipt.update(status="REFUSED", refusal=p.refusal)
-        json.dump(receipt, open(out_path, "w"), indent=1)
+        json.dump(shareable.record(receipt), open(out_path, "w"), indent=1)
         print("refused; receipt", out_path)
         return
 
@@ -133,7 +134,7 @@ def main():
                     if driver_peak else None},
     )
     receipt["provenance"]["changed_during_run"] = changed_since(PROV)
-    json.dump(receipt, open(out_path, "w"), indent=1, default=str)
+    json.dump(shareable.record(receipt), open(out_path, "w"), indent=1, default=str)
     print(json.dumps({"measured": meas, "comparison": receipt["comparison"]}, indent=1, default=str))
     print("receipt", out_path)
 

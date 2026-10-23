@@ -18,6 +18,8 @@ import os
 import time
 from pathlib import Path
 
+from ..shareable import model_label
+
 GiB = 1 << 30
 #: the request set ``run`` decodes when the caller names none: one prompt of this many tokens per sequence, each
 #: decoding this many new tokens (bench/serve_validate.py's defaults, so its receipts and these compare)
@@ -153,14 +155,6 @@ def measure_serve(env: dict, *, concurrency: int, context_len: int, prompt_token
     info = {k: v for k, v in (parts.info or {}).items() if isinstance(v, (int, float, str, bool, dict, list))}
     return {"measured": meas, "info": info, "placement": placement,
             "requests": {"count": concurrency, "prompt_tokens": n_prompt, "new_tokens": new_tokens}}
-
-
-def model_label(model: str) -> str:
-    """A model id as a shared record may carry it: a Hub id (``org/name``) as given, a local model directory (an
-    absolute, "."- or "~"-relative path, or an existing directory) by its name only, as ``local: <name>``."""
-    if os.path.isabs(model) or model.startswith((".", "~")) or os.path.isdir(model):
-        return "local: " + os.path.basename(model.rstrip("/"))
-    return model
 
 
 def _name_only(value):
