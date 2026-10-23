@@ -249,3 +249,16 @@ def test_error_804_names_the_forward_compatibility_library_not_gpu_visibility():
     assert "CUDA_VISIBLE_DEVICES" not in text and "docker run --gpus" not in text
     other = replace(t, note="CUDA initialization: CUDA driver initialization failed.")   # not 804: unchanged
     assert "make GPU 0 visible" in torch_cuda_problem(other, _gpu(driver="535.113.01"))[1][0]
+
+
+
+@pytest.mark.parametrize("warnings", [
+    ["Something unrelated happened first.", COMPAT_804],               # 804 as the SECOND warning
+    ["x" * 600 + " " + COMPAT_804],                                     # 804 past the 400 characters kept
+])
+def test_error_804_is_found_in_any_warning_and_past_the_note_limit(warnings):
+    t = replace(parse_torch_probe(json.dumps({"version": "2.8.0+cu128", "cuda": "12.8", "available": False,
+                                              "device_count": 0, "warnings": warnings})), visible_devices=None)
+    assert "Error 804" in t.note and len(t.note) <= 400
+    reason, remedies = torch_cuda_problem(t, _gpu(driver="535.113.01"))
+    assert "forward-compatibility library" in reason and "LD_LIBRARY_PATH" in " ".join(remedies)

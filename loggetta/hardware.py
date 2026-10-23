@@ -356,8 +356,13 @@ def parse_torch_probe(text: str, version: str | None = None) -> TorchCuda:
         except ValueError:
             continue
         if isinstance(d, dict) and "available" in d:
-            warned = [w for w in d.get("warnings") or () if w]
-            note = " ".join(warned[0].split())[:400] if warned and not d["available"] else ""
+            warned = [" ".join(w.split()) for w in d.get("warnings") or () if w]
+            note = ""
+            if warned and not d["available"]:
+                # the warning that names a cause the refusal knows (Error 804) wins over the first one, and the kept
+                # 400 characters start just before it, so a long warning cannot cut it off
+                hit = next(((w, m) for w in warned for m in [_COMPAT_REFUSED.search(w)] if m), None)
+                note = hit[0][max(0, hit[1].start() - 200):][:400] if hit else warned[0][:400]
             return TorchCuda(version=d.get("version"), cuda=d.get("cuda"), available=bool(d["available"]),
                              device_count=d.get("device_count"), note=note)
     return TorchCuda(version=version, cuda=None, available=None, device_count=None,
