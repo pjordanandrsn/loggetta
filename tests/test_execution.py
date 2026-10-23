@@ -134,6 +134,20 @@ def test_a_receipt_names_the_loggetta_that_wrote_it(monkeypatch, installed):
     assert len(src["sha256"]) == 64 and src["file"] == "loggetta/__init__.py"
 
 
+def test_a_receipts_source_file_uses_forward_slashes_on_every_os(monkeypatch):
+    """On Windows ``relpath`` joins with backslashes; the shareable record names the file the same way everywhere."""
+    import os
+
+    import loggetta
+    from loggetta import shareable
+
+    f = loggetta.__file__
+    monkeypatch.setattr(os, "sep", "\\")
+    monkeypatch.setattr(os.path, "relpath", lambda path, start: "pkg\\__init__.py")
+    src = shareable._source("pkg", {"file": f}, {})
+    assert src["file"] == "pkg/__init__.py" and len(src["sha256"]) == 64
+
+
 def _e4b_env(**set_):
     from loggetta.measure import e4b_env
 
