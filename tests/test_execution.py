@@ -146,7 +146,7 @@ def test_e4b_env_hash_tells_two_compute_environments_apart():
 
 
 @pytest.mark.parametrize("name", ["E4B_SSH_HOSTNAME", "E4B_ENDPOINT", "E4B_SERVER_URL", "E4B_APIKEY", "E4B_PASSWD",
-                                  "E4B_CREDENTIALS", "E4B_RECEIPTS_PATH", "E4B_MODEL_ID", "E4B_K25_PLAN"])
+                                  "E4B_CREDENTIALS", "E4B_RECEIPTS_PATH", "E4B_MODEL_ID", "E4B_EXPERT_PROFILE"])
 def test_e4b_env_takes_a_value_only_from_the_list(name):
     """An allowlist, not a denylist: a variable off the list moves neither the record nor the hash by its VALUE, whatever
     its name looks like, so no naming pattern can let a host, path, model id or secret through."""
@@ -470,3 +470,36 @@ def test_the_cli_executes_a_serve_plan_end_to_end_through_its_summary(stub_env, 
     text = capsys.readouterr().out
     assert rc == 0 and len(list(out.glob("*.json"))) == 1
     assert "decode step median 4.36 ms over 63 steps" in text and "receipt:" in text
+
+
+
+@pytest.mark.parametrize("name, a, b", [
+    ("E4B_K25_PLAN", "c1", "today"),                       # a route switch: two plans of the same kernel
+    ("E4B_NF4_T1_DEVICE_GROUPING", "0", "1"),
+    ("GNF4_GEMV_BW", "0", "1"),                            # grouped-nf4-gemm's own switches too
+    ("GNF4_PDL", "0", "1"),
+])
+def test_a_route_switch_is_recorded_by_value_and_separates_the_hash(name, a, b):
+    """Receipts could not tell E4B_K25_PLAN=c1 from =today, or a GNF4_* switch on from off: their VALUES are recorded
+    now, and two runs differing only there hash differently."""
+    ra, rb = _e4b_env(**{name: a}), _e4b_env(**{name: b})
+    assert ra["values"] == {name: a} and rb["values"] == {name: b} and ra["sha256"] != rb["sha256"]
+
+
+def test_a_gnf4_path_switch_and_a_path_valued_knob_stay_names_only():
+    rec = _e4b_env(GNF4_NATIVE_CACHE="/srv/cache/gnf4", E4B_K25_PLAN="/srv/plans/x.json")
+    assert rec["names"] == ["E4B_K25_PLAN", "GNF4_NATIVE_CACHE"]
+    assert "GNF4_NATIVE_CACHE" not in rec["values"] and rec["values"]["E4B_K25_PLAN"] == "local: x.json"
+    assert "/srv" not in json.dumps(rec)
+    other = _e4b_env(GNF4_NATIVE_CACHE="/elsewhere/c", E4B_K25_PLAN="/other/dir/x.json")
+    assert other["sha256"] == rec["sha256"]               # neither path moves the hash
+
+
+def test_provenance_records_a_gnf4_switch_from_the_process_environment(monkeypatch):
+    from loggetta.measure import provenance
+
+    monkeypatch.setenv("GNF4_PDL", "1")
+    monkeypatch.setenv("GNF4_NATIVE_CACHE", "/srv/cache/gnf4")
+    rec = provenance(modules=())["e4b_env"]
+    assert rec["values"].get("GNF4_PDL") == "1" and "GNF4_NATIVE_CACHE" in rec["names"]
+    assert "GNF4_NATIVE_CACHE" not in rec["values"]

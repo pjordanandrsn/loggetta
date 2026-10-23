@@ -154,18 +154,39 @@ E4B_VALUE_KNOBS = (
     "E4B_PAGED_MAX_TOKENS_PER_SEQ", "E4B_PAGED_PLACEMENT", "E4B_PAGED_PREFILL_ATTN", "E4B_PAGED_PREFILL_GRAPH",
     "E4B_PAGED_SPEC", "E4B_PAGED_SPEC_K", "E4B_PAGED_TORCH_THREADS", "E4B_PAGED_VRAM_GB",
     "E4B_SERVE_ATTN_INT4", "E4B_SERVE_ATTN_INT8", "E4B_SERVE_EXP_INT4",
+    # route and kernel switches: each picks a different function for the same shape (K25 plan and LUT, the small-M
+    # routes, int4 tiles, the dense and head GEMVs, the fused glue), so two runs differing only here measure differently
+    "E4B_K25_PLAN", "E4B_K25_LUT", "E4B_K_SLOTS", "E4B_NF4_GROUPED_SMALLM", "E4B_NF4_T1_DEVICE_GROUPING", "E4B_NF4_SMALLM_BW",
+    "E4B_INT4_DECODE_A16", "E4B_INT4_GROUPED_SMALLM", "E4B_INT4_LEAN_GLUE", "E4B_INT4_PREFILL", "E4B_INT4_TILE_PROGRAMS",
+    "E4B_INT4_WIDE_TILES", "E4B_INT4_KEEP_NF4", "E4B_INT4_GPTQ_DAMP", "E4B_ATTN_INT4_SMALLM", "E4B_ATTN_INT4_WIDE",
+    "E4B_ATTN_SPLIT_CAP", "E4B_INT8_HEAD_BW", "E4B_DENSE_GEMV_BW", "E4B_INFER_GEMV", "E4B_MXFP4_GEMV",
+    "E4B_MXFP4_GROUPED_SMALLM", "E4B_DECODE_FASTPATH", "E4B_FUSED_RMSNORM", "E4B_FUSED_ROPE", "E4B_FUSED_KV_APPEND",
+    "E4B_KV_STEP_SELECT", "E4B_BATCHED_KV_WRITE", "E4B_BATCHED_PAD_WASTE_LIMIT", "E4B_COMBINE_CHUNK", "E4B_GROUPING",
+    "E4B_K19_PREFILL_BIG_M", "E4B_PREFILL_LEAN_DISPATCH", "E4B_ROUTER_EPI_CAST", "E4B_PIPELINED_TRAFFIC",
+    "E4B_TRITON_PREBIND", "E4B_DENSE_MLP_LORA_FUSE", "E4B_CKPT_OFFLOAD", "E4B_EMPTY_CACHE", "E4B_MOE_KEEP_LAYERS",
+    "E4B_HOT_PER_LAYER", "E4B_VRAM_FRACTION", "E4B_RESIDENCY", "E4B_OFFLOAD_PIN_SLAB", "E4B_REFERENCE_EXPERT_ORDER",
+    # grouped-nf4-gemm's own switches (all but GNF4_NATIVE_CACHE, a build-cache directory: by name only)
+    "GNF4_ALLOW_UNVERIFIED_V5", "GNF4_ATTN_COMPUTE", "GNF4_ATTN_F32_PRECISION", "GNF4_DECODED_MAX_BYTES",
+    "GNF4_DECODE_PLAN", "GNF4_F32_FUSE_COMBINE", "GNF4_GEMV_BW", "GNF4_GEMV_BW_DECODE", "GNF4_GEMV_BW_PLAN",
+    "GNF4_GEMV_DOTPAD", "GNF4_GEMV_FUSED_REDUCE", "GNF4_GEMV_SPLITK", "GNF4_GEMV_VEC_LOADS", "GNF4_GEMV_WIDE_LOADS",
+    "GNF4_HOST_REUSE", "GNF4_PDL", "GNF4_PDL_MAX_ROWS", "GNF4_PINNED_RING", "GNF4_PINNED_RING_SLOTS",
+    "GNF4_PINNED_RING_SLOT_INTS", "GNF4_PIN_ARENA_INTS", "GNF4_PREFILL_TILE_D", "GNF4_PREFILL_TILE_RULE",
+    "GNF4_TRAIN_GEMM", "GNF4_TRITON_PREBIND",
 )
 
 
 def e4b_env(environ=None) -> dict:
-    """The experts4bit-qlora environment a run starts under, comparable across receipts without carrying identifiers:
-    the sorted NAMES of every set E4B_* variable, the sha256 of its sorted lines (``name=value`` for a switch in
-    ``E4B_VALUE_KNOBS``, the bare name for any other), and the VALUES of those switches."""
-    env = ({k: v for k, v in os.environ.items() if k.startswith("E4B_")} if environ is None
-           else {k: v for k, v in environ.items() if k.startswith("E4B_")})
-    lines = sorted(f"{k}={v}" if k in E4B_VALUE_KNOBS else k for k, v in env.items())
-    return {"names": sorted(env), "sha256": hashlib.sha256("\n".join(lines).encode()).hexdigest(),
-            "values": {k: env[k] for k in E4B_VALUE_KNOBS if k in env}}
+    """The backends' environment a run starts under (experts4bit-qlora's E4B_* and grouped-nf4-gemm's GNF4_*),
+    comparable across receipts without carrying identifiers: the sorted NAMES of every set variable, the sha256 of its
+    sorted lines (``name=value`` for a switch in ``E4B_VALUE_KNOBS``, the bare name for any other), and the VALUES of
+    those switches. A listed switch whose value is nonetheless a path is recorded and hashed by its name only."""
+    from .shareable import label
+
+    env = ({k: v for k, v in os.environ.items() if k.startswith(("E4B_", "GNF4_"))} if environ is None
+           else {k: v for k, v in environ.items() if k.startswith(("E4B_", "GNF4_"))})
+    vals = {k: label(env[k]) for k in E4B_VALUE_KNOBS if k in env}
+    lines = sorted(f"{k}={vals[k]}" if k in vals else k for k in env)
+    return {"names": sorted(env), "sha256": hashlib.sha256("\n".join(lines).encode()).hexdigest(), "values": vals}
 
 
 def backend_env_names() -> list:
