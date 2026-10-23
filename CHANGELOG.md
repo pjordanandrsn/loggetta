@@ -19,8 +19,8 @@ build's index tag (`cu130` for driver 580 and later, `cu126` for 525 and later; 
 `nvidia-smi` alone, so it works before torch is installed. A driver too old for every supported torch build, or a machine with no NVIDIA GPU, is a
 named refusal (exit 3). `scripts/first_run.sh` runs a first install end to end in a new directory: a fresh virtual
 environment, the matching torch FIRST, then the package, `inspect`, `plan`, and 10 training steps on OLMoE-1B-7B-0924-Instruct
-at a pinned revision. It writes each step's exit status and seconds to `first_run.json` and ends trained, or with a named
-refusal: no torch build fits (3), the plan was refused (4), an install step failed (5), or the run did not train (6).
+at a pinned revision. It writes each step's exit status and seconds to `first_run.json` and ends trained (0, or 7 when the device check did
+not run), or with a named refusal: no torch build fits (3), the plan was refused (4), an install step failed (5), or the run did not train (6).
 A local wheel or directory given as `PACKAGE_SPEC` is recorded in `first_run.json` by its name only, never its path, so
 a shared summary carries no home directory.
 - A refused plan's summary in `first_run.json` is now the refusal's own first reason, verbatim, read from the refused
@@ -143,12 +143,12 @@ With no receipts on file, a plan cites no run id at all.
 
 ### Evidence: the planner's held-out split
 
-- `evidence/planner-split/`: the planner's frozen derivation / held-out split (T2). Every plan/measured pair on file is tagged SEEN (a
-  planner constant was set or tuned after it) or UNSEEN. The held-out side has one row, DQ7's resident Qwen3-14B at 4096 tokens, so every
+- `evidence/planner-split/`: the planner's frozen derivation / held-out split. Every plan/measured pair on file is tagged SEEN (a
+  planner constant was set or tuned after it) or UNSEEN. The held-out side has one row, the resident Qwen3-14B row at 4,096 tokens, so every
   family × card is unmeasured and no band is printed yet. The band reads only this file.
-- `evidence/planner-split/SPLIT-v2.json`: the planner split's version 2 (`SPLIT.json` stays frozen and unchanged). It adds HO2's eight
+- `evidence/planner-split/SPLIT-v2.json`: the planner split's version 2 (`SPLIT.json` stays frozen and unchanged). It adds eight more
   held-out rows: LFM2-8B-A1B and ERNIE-4.5-21B-A3B, each at 1,024 and 2,048 tokens, on an RTX 5090 and an RTX 4090 (experts4bit-qlora
-  `bench/ho2/`, #1969 and #1987), all UNSEEN and all COVERED. Four family × card cohorts now hold the 2 rows a band needs; the band itself
+  `bench/ho2/`, pjordanandrsn/experts4bit-qlora#1969 and pjordanandrsn/experts4bit-qlora#1987), all UNSEEN and all COVERED. Four family × card cohorts now hold the 2 rows a band needs; the band itself
   comes in a later change. Every row cites its public receipt copy by sha256 beside the private original. These are device-placement rows only, and
   each row's loss branch is inferred, not counted.
 
