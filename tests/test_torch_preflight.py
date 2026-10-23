@@ -226,3 +226,26 @@ def test_the_normal_path_is_unchanged(topo):
     unknown = plan(topo, _hw(parse_torch_probe("garbage", "2.14.1+cu130")), Workload())
     assert unknown.status == "feasible"
     assert any("could not ask torch 2.14.1+cu130" in w for w in unknown.warnings)
+
+
+
+#: torch's own note from a GeForce RTX 3090 on driver 535.113.01 with torch 2.8.0+cu128 (a rented box's log)
+COMPAT_804 = ("CUDA initialization: Unexpected error from cudaGetDeviceCount(). Did you run some cuda functions before "
+              "calling NumCudaDevices() that might have already set an error? Error 804: forward compatibility was "
+              "attempted on non supported HW (Triggered internally at /pytorch/c10/cuda/CUDAFunctions.cpp:109.)")
+
+
+def test_error_804_names_the_forward_compatibility_library_not_gpu_visibility():
+    """Driver 535 meets CUDA 12.x's minimum, so the old branch blamed GPU visibility. Error 804 is the CUDA
+    forward-compatibility library refused by a non-datacenter GPU: the refusal says so, and gives the remedies that
+    work (a natively supported CUDA, the compat directory off LD_LIBRARY_PATH, a newer driver), not the visibility ones."""
+    t = replace(parse_torch_probe(json.dumps({"version": "2.8.0+cu128", "cuda": "12.8", "available": False,
+                                              "device_count": 0, "warnings": [COMPAT_804]})), visible_devices=None)
+    reason, remedies = torch_cuda_problem(t, _gpu(driver="535.113.01"))
+    assert "Error 804 means this process loaded NVIDIA's CUDA forward-compatibility library" in reason
+    assert "GPU visibility is not the cause" in reason and "so the build is not the cause" not in reason
+    text = " ".join(remedies)
+    assert "natively" in text and "LD_LIBRARY_PATH" in text and "update the host NVIDIA driver" in text
+    assert "CUDA_VISIBLE_DEVICES" not in text and "docker run --gpus" not in text
+    other = replace(t, note="CUDA initialization: CUDA driver initialization failed.")   # not 804: unchanged
+    assert "make GPU 0 visible" in torch_cuda_problem(other, _gpu(driver="535.113.01"))[1][0]
