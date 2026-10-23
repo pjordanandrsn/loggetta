@@ -39,7 +39,7 @@ It checks the budget before downloading model weights. Estimates can miss; they 
 
 **GPU training needs Linux, a supported NVIDIA CUDA GPU, and compatible PyTorch.**
 The released training path is single-GPU MoE training. Dense execution still requires `--allow-development-executor`:
-its memory estimate has not yet passed a capacity reading. See [Dense training](docs/DENSE.md). Serving placement can be planned; server launch uses the runtime separately.
+its memory estimate has not yet passed a capacity reading. See [Dense training](docs/DENSE.md). A serve plan can be planned and measured with `execute`; server launch uses the runtime separately.
 
 **The driver and the torch build must match.** A torch wheel is built for one CUDA version, and that version sets the
 oldest NVIDIA driver it runs on: CUDA 13.x needs driver 580 or later, CUDA 12.x 525 or later (Linux). `pip install
@@ -133,6 +133,7 @@ optimizer-resume checkpoints. Save/reload passes real-adapter CPU tests; the ful
 | Run that plan | `loggetta execute plan.json --out runs/` |
 | Reuse measurements | `loggetta plan MODEL --observations runs/` |
 | Plan serving placement | `loggetta plan MODEL --workload serve --context 4096 --concurrency 1` |
+| Measure a serve plan | `loggetta execute plan.json --arena ARENA --calib CALIB` |
 
 `train` combines planning and execution. Dense training can be planned and executed with the development opt-in.
 Multi-GPU execution, server launch and throughput prediction remain outside the current command surface.

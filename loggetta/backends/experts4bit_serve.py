@@ -190,10 +190,6 @@ def check_inputs(plan, arena, calib, prompt_tokens: int, new_tokens: int) -> Non
     """Refuse by name, before anything loads, a serve run that cannot start or would not mean what its plan says."""
     from ..execution import PlanNotExecutable
 
-    if plan.constraints.allow_development_executor is not True:
-        from .experts4bit import planned_only_reason
-
-        raise PlanNotExecutable(planned_only_reason("serve"))
     if not arena:
         raise PlanNotExecutable("a serve run needs the model's NF4 arena (--arena): bake it first, as a separate step "
                                 "(bench/serve_validate.py --bake); execute never bakes one")

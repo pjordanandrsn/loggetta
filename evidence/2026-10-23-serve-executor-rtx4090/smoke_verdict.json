@@ -1,0 +1,32 @@
+{
+ "pass": true,
+ "checks": {
+  "A_bench_path_rc0": true,
+  "B_plan_feasible_rc0": true,
+  "B_execute_rc0": true,
+  "B_status_OK": true,
+  "B_decode_step_ms_b1": true,
+  "B_device_peak": true,
+  "B_driver_peak_or_unsampled": true,
+  "B_no_box_path_in_receipt": true,
+  "e4b_is_expected_release": true,
+  "B_run_id_names_shape": true,
+  "C_refused_rc2": true,
+  "C_names_the_switch_not_its_value": true,
+  "C_no_receipt": true
+ },
+ "report": {
+  "provenance_has_box_paths": false,
+  "driver_samples": 0,
+  "e4b_expected": "0.57.0"
+ },
+ "receipt": "OLMoE-1B-7B-0924-serve-all-vram-graphs-c4096x1-20261023T071709Z-fed1e766.json",
+ "measured": {
+  "decode_step_ms_b1": 4.422,
+  "tokens_per_s": 144.2,
+  "device_peak_bytes": 5255581184,
+  "driver_process_peak_bytes": null,
+  "load_seconds": 6.2,
+  "generate_seconds": 0.44
+ }
+}

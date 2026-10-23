@@ -72,7 +72,7 @@ def test_execute_hands_the_selected_setup_to_its_backend_and_writes_the_receipt(
 
 @pytest.mark.parametrize("plan_kw, here, match", [
     ({"status": "refused"}, hw(), "refused plan"),
-    ({"kind": "serve"}, hw(), "serve execution is a development executor"),   # no executor: the backend says why
+    ({"kind": "serve"}, hw(), "does not execute 'serve' workloads"),   # no executor: the backend says why
     ({}, hw(name="Other GPU"), "plan again on this machine"),          # its receipt would name the wrong card
     ({"uuid": "GPU-aaa"}, hw(uuid="GPU-bbb"), "plan again on this machine"),  # same model of card, another card
     ({}, hw(gpus=0), "no GPU"),
@@ -106,6 +106,32 @@ def test_provenance_records_the_allocator_setting(monkeypatch, value):
         monkeypatch.setenv("PYTORCH_CUDA_ALLOC_CONF", value)
     p = provenance(modules=())
     assert "pytorch_cuda_alloc_conf" in p and p["pytorch_cuda_alloc_conf"] == value
+
+
+@pytest.mark.parametrize("installed", [True, False])
+def test_a_receipt_names_the_loggetta_that_wrote_it(monkeypatch, installed):
+    """Both with an installed distribution and from a source tree without one (the dist lookup then fails), the
+    shareable provenance names loggetta by version, not only by one file's hash."""
+    from importlib import metadata
+
+    import loggetta
+    from loggetta import shareable
+    from loggetta.measure import provenance
+
+    real = metadata.version
+
+    def version(dist):
+        if dist == "loggetta":
+            if not installed:
+                raise metadata.PackageNotFoundError(dist)
+            return "9.9.9"
+        return real(dist)
+
+    monkeypatch.setattr(metadata, "version", version)
+    src = shareable.provenance(provenance(modules=("loggetta",)))["sources"]["loggetta"]
+    assert src["module_version"] == loggetta.__version__
+    assert src["version"] == ("9.9.9" if installed else None)       # the installed distribution's, when there is one
+    assert len(src["sha256"]) == 64 and src["file"] == "loggetta/__init__.py"
 
 
 def _e4b_env(**set_):
@@ -172,7 +198,7 @@ def test_provenance_records_the_e4b_env(monkeypatch):
 SERVE_SETUP = {"placement": "all-vram", "graphs": False, "max_seqs": 1, "max_tokens_per_seq": 4096}
 
 
-def a_serve_plan(allow=True, concurrency=1, model="org/Tiny-MoE"):
+def a_serve_plan(allow=False, concurrency=1, model="org/Tiny-MoE"):
     from dataclasses import replace
 
     p = a_plan()
@@ -254,19 +280,30 @@ def _never(env, **kw):
     raise AssertionError("the engine was started for a serve run that must be refused first")
 
 
-@pytest.mark.parametrize("allow, files, inputs, match", [
-    (False, True, {}, "development executor pending its GPU proof"),          # not without the explicit permission
-    (True, False, {"arena": None}, "needs the model's NF4 arena"),             # never baked implicitly
-    (True, False, {"arena": "missing.nf4"}, "no NF4 arena at 'missing.nf4'"),
-    (True, True, {"calib": None}, "calibration file"),
-    (True, True, {"prompt_tokens": 4090, "new_tokens": 64}, "must fit inside the plan's context"),
+@pytest.mark.parametrize("files, inputs, match", [
+    (False, {"arena": None}, "needs the model's NF4 arena"),             # never baked implicitly
+    (False, {"arena": "missing.nf4"}, "no NF4 arena at 'missing.nf4'"),
+    (True, {"calib": None}, "calibration file"),
+    (True, {"prompt_tokens": 4090, "new_tokens": 64}, "must fit inside the plan's context"),
 ])
-def test_a_serve_run_is_refused_by_name_before_anything_loads(stub_env, tmp_path, allow, files, inputs, match):
+def test_a_serve_run_is_refused_by_name_before_anything_loads(stub_env, tmp_path, files, inputs, match):
     arena, calib = _serve_files(tmp_path) if files else (None, str(tmp_path / "calib.json"))
     kw = {"arena": arena, "calib": calib, **inputs}
     with pytest.raises(PlanNotExecutable, match=match):
-        stub_env.run(a_serve_plan(allow=allow), seed=0, log=print, adapter_dir=str(tmp_path / "r" / "adapter"),
+        stub_env.run(a_serve_plan(), seed=0, log=print, adapter_dir=str(tmp_path / "r" / "adapter"),
                      run_id="x", engine=_never, **kw)
+
+
+@pytest.mark.parametrize("allow", [False, True])
+def test_a_serve_run_needs_no_development_opt_in(stub_env, tmp_path, allow):
+    """The serve executor passed its GPU proof (evidence/2026-10-23-serve-executor-rtx4090), so a plan runs with or
+    without the development opt-in, which still gates the dense executor."""
+    arena, calib = _serve_files(tmp_path)
+    ran = []
+    stub_env.run(a_serve_plan(allow=allow), seed=0, log=print, adapter_dir=str(tmp_path / "r" / "adapter"),
+                 run_id="x", arena=arena, calib=calib,
+                 engine=lambda env, **kw: ran.append(1) or {"measured": {}, "requests": {"count": 1}})
+    assert ran == [1]
 
 
 def test_the_cli_hands_a_serve_plans_inputs_to_execute(monkeypatch, tmp_path):
@@ -283,8 +320,8 @@ def test_the_cli_hands_a_serve_plans_inputs_to_execute(monkeypatch, tmp_path):
 
     monkeypatch.setattr(execution, "execute", fake_execute)
     assert main(["execute", str(saved), "--arena", "a.nf4", "--calib", "c.json", "--new-tokens", "32",
-                 "--allow-development-executor", "--out", str(tmp_path / "receipts")]) == 2
-    assert got["inputs"] == {"arena": "a.nf4", "calib": "c.json", "new_tokens": 32} and got["allow"] is True
+                 "--out", str(tmp_path / "receipts")]) == 2
+    assert got["inputs"] == {"arena": "a.nf4", "calib": "c.json", "new_tokens": 32} and got["allow"] is False
 
 
 
@@ -465,8 +502,7 @@ def test_the_cli_executes_a_serve_plan_end_to_end_through_its_summary(stub_env, 
                                                   "decode_steps_b1": 63, "tokens_per_s": 151.8},
                                      "requests": {"count": 1, "prompt_tokens": 1024, "new_tokens": 64}}, **kw)))
     out = tmp_path / "receipts"
-    rc = main(["execute", str(saved), "--arena", arena, "--calib", calib, "--allow-development-executor",
-               "--out", str(out)])
+    rc = main(["execute", str(saved), "--arena", arena, "--calib", calib, "--out", str(out)])
     text = capsys.readouterr().out
     assert rc == 0 and len(list(out.glob("*.json"))) == 1
     assert "decode step median 4.36 ms over 63 steps" in text and "receipt:" in text

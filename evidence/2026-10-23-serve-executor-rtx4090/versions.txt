@@ -1,0 +1,7 @@
+bitsandbytes==0.50.2
+experts4bit-qlora==0.57.0
+grouped-nf4-gemm==0.50.0
+loggetta (from the source tree at 1be0c2f651fbde120a00b8b8cbb880f2dcadce54)
+torch==2.14.1+cu126
+transformers==5.20.2
+triton==3.8.0
