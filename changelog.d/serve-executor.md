@@ -1,10 +1,15 @@
-### `execute` runs a serve plan (development executor)
+### `execute` runs a serve plan
 
 - A feasible serve plan now executes through experts4bit-qlora's paged engine, the same build-decode-measure path
-  `bench/serve_validate.py` has used for the committed serve receipts: `loggetta execute PLAN --arena ARENA --calib CALIB
-  --allow-development-executor`. The receipt carries the same measured fields: device and driver peaks, load and
+  `bench/serve_validate.py` has used for the committed serve receipts: `loggetta execute PLAN --arena ARENA --calib
+  CALIB`. The receipt carries the same measured fields: device and driver peaks, load and
   generate seconds, tokens per second, and at one sequence the traced single-stream decode step.
-- It is a development executor until one GPU smoke proves it, so it runs only with `--allow-development-executor`.
+- It needs no development opt-in. A GPU smoke on an RTX 4090 ran the bench path, the plan and execute, and the
+  inherited-switch refusal at experts4bit-qlora 0.57.0 (`evidence/2026-10-23-serve-executor-rtx4090`). The dense
+  executor keeps its opt-in.
+- A receipt's provenance names the loggetta that wrote it: the installed distribution's version, and the module's own
+  `__version__` (as `module_version`), which is still there when it runs from a source tree with no installed
+  distribution. Before, `sources.loggetta.version` was always null.
 - It refuses by name, before anything loads, when the arena or the calibration file is missing, or when the request
   shape does not fit the plan's context. It never bakes an arena; that stays an explicit step.
 - It also refuses by name when this environment sets any backend switch (`E4B_*`, `GNF4_*`) that the plan does not.

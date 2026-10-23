@@ -259,12 +259,19 @@ def provenance(modules=("experts4bit_qlora", "nf4_grouped", __package__.split(".
             out["sources"][name] = {"file": f, **git_commit(f)}
     from importlib.metadata import PackageNotFoundError, version
 
+    me = __package__.split(".")[0]
     for dist in ("torch", "triton", "transformers", "bitsandbytes", "accelerate", "experts4bit-qlora",
-                 "grouped-nf4-gemm"):
+                 "grouped-nf4-gemm", me):
         try:
             out.setdefault("versions", {})[dist] = version(dist)
         except PackageNotFoundError:
             pass
+    # the receipt names the package that wrote it even when it runs from a source tree with no installed distribution:
+    # the module's own version (no import: this module is part of it), beside the commit when the tree is a checkout
+    if me in out["sources"]:
+        from . import __version__
+
+        out["sources"][me]["module_version"] = __version__
     # the allocator setting the run starts under (None when unset): PyTorch's caching allocator reads it at CUDA init,
     # and it moves the reserved-but-unallocated bytes the planner learns its reserve from. Recorded only; nothing reads it
     out["pytorch_cuda_alloc_conf"] = os.environ.get("PYTORCH_CUDA_ALLOC_CONF")

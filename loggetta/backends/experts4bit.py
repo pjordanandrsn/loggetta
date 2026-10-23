@@ -275,8 +275,7 @@ def run_tag(setup: dict) -> str:
 
 def executor(kind: str):
     """What runs a feasible plan of this workload kind through experts4bit-qlora:
-    ``run(plan, *, seed, log, adapter_dir, run_id, **inputs)``, or None for a kind it does not execute. The serve
-    executor is a development executor until its registered GPU proof (see :func:`planned_only_reason`)."""
+    ``run(plan, *, seed, log, adapter_dir, run_id, **inputs)``, or None for a kind it does not execute."""
     if kind == "train":
         from .experts4bit_train import run
 
@@ -289,9 +288,6 @@ def executor(kind: str):
 
 
 def planned_only_reason(kind: str) -> str:
-    if kind == "serve":
-        return ("serve execution is a development executor pending its GPU proof (one rented smoke); use "
-                "--allow-development-executor (Constraints.allow_development_executor=True) to run it")
     return f"the experts4bit backend does not execute {kind!r} workloads"
 
 
