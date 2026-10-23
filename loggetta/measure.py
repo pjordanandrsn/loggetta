@@ -172,7 +172,53 @@ E4B_VALUE_KNOBS = (
     "GNF4_HOST_REUSE", "GNF4_PDL", "GNF4_PDL_MAX_ROWS", "GNF4_PINNED_RING", "GNF4_PINNED_RING_SLOTS",
     "GNF4_PINNED_RING_SLOT_INTS", "GNF4_PIN_ARENA_INTS", "GNF4_PREFILL_TILE_D", "GNF4_PREFILL_TILE_RULE",
     "GNF4_TRAIN_GEMM", "GNF4_TRITON_PREBIND",
+    # more switches that change the route, the numbers or the run's shape: the fused SwiGLU / combine / prefill glue
+    # (0 swaps the kernel), the speculative head, gpt-oss's expert-LoRA route, the arena poison (debug), remote code,
+    # the stop ids, the int4 calibration and GPTQ settings, a safety bypass, the device, the serving token limits and
+    # warmup, and the timing-affecting debug flags. A path-valued one (the spec head, the int4 assignment, the
+    # calibration source) is still recorded by its name only (see e4b_env)
+    "E4B_FUSE_SWIGLU", "E4B_FUSE_COMBINE", "E4B_FUSE_PREFILL_GLUE", "E4B_PAGED_SPEC_HEAD", "E4B_GPTOSS_EXPERT_LORA",
+    "E4B_ARENA_POISON", "E4B_TRUST_REMOTE_CODE", "E4B_PAGED_EOS_IDS", "E4B_CALIB_NSEQ", "E4B_CALIB_LAYERS_PER_PASS",
+    "E4B_INT4_GPTQ_DEVICE", "E4B_INT4_HESSIAN_BUDGET_GB", "E4B_INT4_DUMP_ALLOW_UNKNOWN_REVISION", "E4B_PAGED_DEVICE",
+    "E4B_MAX_NEW_TOKENS", "E4B_MAX_INPUT_TOKENS", "E4B_WARMUP_TOKENS", "E4B_LOAD_SYNC_DEBUG", "E4B_PROFILE_PHASE",
+    "E4B_OFFLOAD_STATS", "E4B_INT4_ASSIGNMENT", "E4B_CALIB_SOURCE",
+    "E4B_PAGED_ADAPTER_ACCEPT_UNVERIFIED_BASE", "E4B_PAGED_ADAPTER_ALLOW_UNVERIFIED_ARENA",
 )
+#: every other switch the backends read, recorded by NAME only, each with why its value stays out. Between them, this
+#: table and E4B_VALUE_KNOBS classify every E4B_/GNF4_ name in the installed backends' sources, and a test fails on a
+#: new one until someone decides whether its value is recorded (default: recorded, unless a path, an id or a secret)
+NAME_ONLY = {
+    "E4B_TOKEN": "a secret: the HTTP server's bearer token",
+    "E4B_HOST": "the HTTP server's bind address",
+    "E4B_PORT": "the HTTP server's port",
+    "E4B_QUEUE_MAX": "the HTTP server's queue limit (serving plumbing, not the engine)",
+    "E4B_REQUEST_TIMEOUT_S": "the HTTP server's request timeout (serving plumbing, not the engine)",
+    "E4B_RECEIPTS_PATH": "a path: where the server writes its receipts",
+    "E4B_ADAPTERS": "paths: the server's adapter directories",
+    "E4B_MODEL_ID": "an id: the served model, recorded in the receipt's model field by its label",
+    "E4B_PAGED_MODEL": "an id or path: the served model, recorded in the receipt's model field by its label",
+    "E4B_PAGED_REVISION": "an id: the served revision, recorded in the receipt's model field",
+    "E4B_PAGED_SERVED_NAME": "an id: the name the server answers to",
+    "E4B_PAGED_ARENA": "a path: the NF4 arena (a serve receipt names it with its sha256)",
+    "E4B_PAGED_CALIB": "a path: the calibration file (a serve receipt names it with its sha256)",
+    "E4B_PAGED_ADAPTER": "a path: the served adapter directory",
+    "E4B_PAGED_STEP_TRACE": "a path: the step-trace sink",
+    "E4B_PAGED_TRACE": "a path: the request-trace sink",
+    "E4B_OFFLOAD_ARENA": "a path: the offload arena",
+    "E4B_EXPERT_PROFILE": "a path: the routing profile",
+    "E4B_HOT_PROFILE": "a path: the hot-expert profile",
+    "E4B_INT4_ARTIFACT_DIR": "a path: the int4 artifact directory",
+    "E4B_INT4_DUMP_ARTIFACT_DIR": "a path: where int4 artifacts are dumped",
+    "E4B_INT4_EXPECTED_FINGERPRINT": "an id: the expected int4 artifact fingerprint (the artifact is checked against it)",
+    "E4B_SERVE_ATTN_INT4_ARTIFACT": "a path: the int4 attention artifact",
+    "E4B_SERVE_ATTN_INT4_CALIB": "a path: the int4 attention calibration",
+    "E4B_SERVE_ATTN_INT4_DUMP": "a path: where the int4 attention calibration is dumped",
+    "E4B_SERVE_ATTN_INT4_FINGERPRINT": "an id: the expected int4 attention fingerprint",
+    "E4B_SERVE_DENSE_INT4_CALIB": "a path: the dense int4 calibration",
+    "E4B_SERVE_EXP_INT4_CALIB": "a path: the expert int4 calibration",
+    "E4B_SERVE_LMHEAD_INT4_CALIB": "a path: the LM-head int4 calibration",
+    "GNF4_NATIVE_CACHE": "a path: the native build cache",
+}
 
 
 def e4b_env(environ=None) -> dict:

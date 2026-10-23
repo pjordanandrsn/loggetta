@@ -7,4 +7,9 @@
   switch except the build-cache directory `GNF4_NATIVE_CACHE`. Before, a receipt could not tell `E4B_K25_PLAN=c1` from
   `today`, or a `GNF4_*` switch on from off.
 - A listed switch whose value is nonetheless a path is recorded, and hashed, by its name only.
-- This is still recorded only: the planner reads none of it.
+- Every other switch the backends read is in `measure.NAME_ONLY` with its reason: a path, an id, a secret, or
+  HTTP-server plumbing. A test scans the installed experts4bit-qlora and grouped-nf4-gemm sources and fails on any name
+  in neither table. A backend release that adds a knob fails loggetta's CI until someone decides whether its value is
+  recorded.
+- This is still recorded only: the planner reads none of it and matches no receipt by this hash. Receipts written before
+  this change simply lack the new values.

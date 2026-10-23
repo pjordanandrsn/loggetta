@@ -503,3 +503,43 @@ def test_provenance_records_a_gnf4_switch_from_the_process_environment(monkeypat
     rec = provenance(modules=())["e4b_env"]
     assert rec["values"].get("GNF4_PDL") == "1" and "GNF4_NATIVE_CACHE" in rec["names"]
     assert "GNF4_NATIVE_CACHE" not in rec["values"]
+
+
+
+def test_every_backend_switch_is_classified_value_or_name_only():
+    """Every E4B_/GNF4_ name the INSTALLED backends read (their package sources, tests and conftest aside) is either
+    recorded by value (E4B_VALUE_KNOBS) or by name with a reason (NAME_ONLY), never both. A backend release that adds a
+    knob fails this until someone decides whether its value is recorded."""
+    import importlib.metadata as md
+    import os
+    import re
+
+    from loggetta.measure import E4B_VALUE_KNOBS, NAME_ONLY
+
+    pat = re.compile(r'"((?:E4B|GNF4)_[A-Z0-9_]*[A-Z0-9])"')
+    found = {}
+    for dist in ("experts4bit-qlora", "grouped-nf4-gemm"):
+        try:
+            files = md.files(dist) or ()
+        except md.PackageNotFoundError:
+            pytest.skip(f"{dist} is not installed")
+        for f in files:
+            p = str(f)
+            if p.endswith(".py") and "/tests/" not in "/" + p and not os.path.basename(p).startswith(("test_", "conftest")):
+                with open(f.locate(), encoding="utf-8", errors="replace") as fh:
+                    text = fh.read()
+                for name in pat.findall(text):
+                    found.setdefault(name, p)
+    assert found, "no backend switch found: the scan itself is broken"
+    assert not set(E4B_VALUE_KNOBS) & set(NAME_ONLY)
+    assert all(reason.strip() for reason in NAME_ONLY.values())
+    unclassified = {n: where for n, where in found.items() if n not in E4B_VALUE_KNOBS and n not in NAME_ONLY}
+    assert not unclassified, ("classify each new backend switch in loggetta.measure: E4B_VALUE_KNOBS if it can change a "
+                              "route, a kernel or a number, else NAME_ONLY with a reason", unclassified)
+
+
+def test_a_newly_valued_switch_is_recorded_and_a_secret_never_is():
+    rec = _e4b_env(E4B_FUSE_SWIGLU="0", E4B_TOKEN="tok-0123456789", E4B_PAGED_SPEC_HEAD="/srv/heads/eagle3")
+    assert rec["values"]["E4B_FUSE_SWIGLU"] == "0" and rec["values"]["E4B_PAGED_SPEC_HEAD"] == "local: eagle3"
+    assert "tok-0123456789" not in json.dumps(rec)
+    assert _e4b_env(E4B_FUSE_SWIGLU="1")["sha256"] != _e4b_env(E4B_FUSE_SWIGLU="0")["sha256"]
