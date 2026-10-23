@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.0 — 2026-10-23
+## 0.7.0 — 2026-10-24
 
 **0.7.0.** A first install now ends trained or with a named refusal. `inspect --torch-index` names the torch build
 for the NVIDIA driver before torch is installed, and `scripts/first_run.sh` runs the whole first install. A machine
