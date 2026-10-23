@@ -59,11 +59,23 @@ Installing a different torch build over an existing one does nothing: pip counts
 satisfied whatever CUDA it was built for. Start from a fresh environment (or `pip install --force-reinstall` from the
 build's index).
 
-From the next release, `loggetta inspect` also names the build for your driver, and `loggetta inspect --torch-index`
+`loggetta inspect` also names the build for your driver, and `loggetta inspect --torch-index`
 prints only its tag (for example `cu126`), with no torch installed yet. [`scripts/first_run.sh`](scripts/first_run.sh) does the whole first run
 in a new directory: it reads the driver, installs that torch first, then Loggetta, and runs `inspect`, `plan` and 10
 training steps on OLMoE-1B-7B-0924-Instruct at a pinned revision. Each step's exit status and time go to `first_run.json`, and it ends trained or with a
 named refusal.
+
+## New in 0.7.0
+
+- **A first install ends trained or with a named refusal.** `loggetta inspect --torch-index` names the torch build for
+  your driver before torch is installed, and `scripts/first_run.sh` runs the whole first install. A machine with no
+  working C compiler is refused before any download.
+- **`execute` runs serve plans** through experts4bit-qlora's paged engine and writes a receipt with the measured peaks
+  and, at one sequence, the decode step.
+- **MoE adapters record the quantized base they were trained on** (`backend-adapter/2`, with an experts4bit-qlora that
+  defines it), and `load_adapter` refuses a base that differs.
+- **Receipts carry no local path** and record the backend switches they ran under. A run whose device check took no
+  driver sample reads `UNMEASURED` and exits 4, not `OK`.
 
 ## New in 0.6.2
 
