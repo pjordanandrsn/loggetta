@@ -92,6 +92,24 @@ def run_accelerate(model, exe="accelerate"):
     return {"command": " ".join(cmd), "version": ver, "stdout": r.stdout, "sizes": parse_accelerate(r.stdout)}
 
 
+def installed(dist):
+    from importlib import metadata
+    try:
+        return metadata.version(dist)
+    except metadata.PackageNotFoundError:
+        return None
+
+
+def check_versions(expect, version_of=installed):
+    """``expect``: {distribution: version}. Refused unless every one is installed at exactly that version, so a missing
+    release reads "not read today" and is never replaced by whatever happens to be installed."""
+    got = {d: version_of(d) for d in expect}
+    wrong = {d: (v, got[d]) for d, v in expect.items() if got[d] != v}
+    if wrong:
+        raise Refused("not read today: " + "; ".join(f"{d} wants {v}, installed {g}" for d, (v, g) in sorted(wrong.items())))
+    return got
+
+
 def grade(cmp):
     """measured / estimated for each term the comparison carries."""
     return {t: (v["measured"] / v["estimated"] if v.get("estimated") and v.get("measured") else None)
@@ -149,15 +167,17 @@ def main():
     ap.add_argument("--e4b", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--accelerate", default="accelerate", help="the accelerate CLI to run (default: the one on PATH)")
+    ap.add_argument("--expect", action="append", default=[], metavar="DIST=VERSION",
+                    help="a release the read must run at (repeatable); any other installed version refuses")
     a = ap.parse_args()
     try:
+        versions = check_versions(dict(e.split("=", 1) for e in a.expect))
         doc, acc = build(json.load(open(a.split)), a.e4b, accelerate=a.accelerate)
     except Refused as e:
         print(f"refused: {e}", file=sys.stderr)
         return 2
     os.makedirs(a.out, exist_ok=True)
-    from loggetta import __version__ as lv
-    doc["versions"] = {"planner": lv}
+    doc["versions"] = {**versions, "accelerate": installed("accelerate")}
     open(os.path.join(a.out, "h2h-planner.json"), "w").write(json.dumps(doc, indent=1, sort_keys=True, default=str) + "\n")
     open(os.path.join(a.out, "accelerate.json"), "w").write(json.dumps(acc, indent=1, sort_keys=True) + "\n")
     for r in doc["rows"]:

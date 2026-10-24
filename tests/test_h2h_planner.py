@@ -69,3 +69,11 @@ def test_every_term_is_graded_measured_over_estimated():
 
 def test_the_split_has_the_registered_21_rows():
     assert len(SPLIT["held_out"]) == 21 and SPLIT["pinned_at"]["experts4bit-qlora"].startswith("a4b2b98f")
+
+
+def test_a_release_that_is_not_installed_reads_not_read_today():
+    t = _tool()
+    have = {"loggetta": "0.7.0", "experts4bit-qlora": "0.57.0", "grouped-nf4-gemm": None}.get
+    with pytest.raises(t.Refused, match="not read today: experts4bit-qlora wants 0.58.0, installed 0.57.0; grouped-nf4-gemm"):
+        t.check_versions({"loggetta": "0.7.0", "experts4bit-qlora": "0.58.0", "grouped-nf4-gemm": "0.51.0"}, have)
+    assert t.check_versions({"loggetta": "0.7.0"}, have) == {"loggetta": "0.7.0"}

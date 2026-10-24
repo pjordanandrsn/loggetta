@@ -62,7 +62,9 @@ and the negatives beside the wins. A row the planner refuses reads as refused.
 ## Launch and budget
 
 The read runs on a development host's CPU, from this registration's merge commit, after the tags exist and after an
-Approved that names the merge commit. It writes `evidence/<date>-h2h-planner/h2h-planner.json` and `accelerate.json`.
+Approved that names the merge commit, as `python bench/h2h_planner.py evidence/planner-split/SPLIT-v3.json --e4b
+E4B_CHECKOUT --out DIR --expect loggetta=0.7.0 --expect experts4bit-qlora=0.58.0 --expect grouped-nf4-gemm=0.51.0`:
+any other installed version refuses ("not read today"). It writes `evidence/<date>-h2h-planner/h2h-planner.json` and `accelerate.json`.
 The maintainer re-derives it by running the same command. USD 0.
 
 ## What was seen before this page (stated, not hidden)
