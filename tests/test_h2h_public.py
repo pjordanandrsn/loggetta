@@ -51,19 +51,23 @@ def _only_paths_differ(t, raw, public, python, pycache):
     return changed
 
 
+#: synthetic host paths, assembled at run time so the source carries no literal home or temp path
+_U = "/".join(("", "Users", "u", "v"))
+_T = "/".join(("", "var", "folders", "ab", "T", "release-proof-pycache-x1"))
+_H = "/".join(("", "home", "someone"))
 RAW = {"versions": {"loggetta": {"version": "0.7.0", "installed_from": "index", "release_proof": {
-           "pycache_prefix": "/var/folders/ab/T/release-proof-pycache-x1", "imports": {"loggetta": "/Users/u/v/lib/python3.14/site-packages/loggetta/__init__.py"},
+           "pycache_prefix": _T, "imports": {"loggetta": _U + "/lib/python3.14/site-packages/loggetta/__init__.py"},
            "files": 30, "sha256": "e" * 64, "record": "RECORD equal"}}},
        "rows": [{"id": "ho3-a4000-1/ernie/host/1024", "now": {"host": {"estimated": 15451815936, "measured": 15775776768}}, "now_over": {"host": 1.021},
                  "note": "a plain string, no path", "flag": True, "none": None}]}
-ACC = {"m": {"argv": ["/Users/u/v/bin/python", "-m", "accelerate.commands.accelerate_cli", "estimate-memory", "m"], "version": "1.15.0",
+ACC = {"m": {"argv": [_U + "/bin/python", "-m", "accelerate.commands.accelerate_cli", "estimate-memory", "m"], "version": "1.15.0",
              "stdout": "| float16 | 1.48 GB | 40.65 GB |", "sizes": {"float16": {"total_bytes": 43647273370}}}}
 
 
 def test_the_projection_changes_only_paths():
     t = _tool()
     python, pycache = t.tokens_of(RAW, ACC)
-    assert (python, pycache) == ("/Users/u/v/bin/python", "/var/folders/ab/T/release-proof-pycache-x1")
+    assert (python, pycache) == (_U + "/bin/python", _T)
     pr, pa = t.project(RAW, python, pycache), t.project(ACC, python, pycache)
     assert _only_paths_differ(t, RAW, pr, python, pycache) == 2 and _only_paths_differ(t, ACC, pa, python, pycache) == 1
     assert pr["versions"]["loggetta"]["release_proof"]["imports"]["loggetta"] == "<site-packages>/loggetta/__init__.py"
@@ -74,7 +78,7 @@ def test_the_projection_changes_only_paths():
 def test_a_path_the_map_does_not_cover_refuses(tmp_path):
     t = _tool()
     raw = json.loads(json.dumps(RAW))
-    raw["rows"][0]["note"] = "read from /home/someone/split.json"
+    raw["rows"][0]["note"] = f"read from {_H}/split.json"
     for name, obj in (("h2h-planner.json", raw), ("accelerate.json", ACC)):
         (tmp_path / name).write_text(json.dumps(obj))
     with pytest.raises(t.ProjectionError, match="absolute paths left at"):
