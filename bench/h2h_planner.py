@@ -31,12 +31,17 @@ import os
 import re
 import subprocess
 import sys
+from urllib.parse import urlsplit
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 #: the releases this row is registered at (PREREG "The subject"), always checked; each must be an index wheel or a git
 #: install at exactly its tag's commit, never a checkout, so a development tree that reports the same version string can
 #: never stand in for the release
 REGISTERED = {"loggetta": "0.7.0", "experts4bit-qlora": "0.58.0", "grouped-nf4-gemm": "0.51.0", "accelerate": "1.15.0"}
+#: each registered dist's own repository; a git install counts only from here, and its tag is read only from here (never
+#: from the URL the install recorded, which whoever made the install chose, tag and all)
+CANONICAL = {"loggetta": "github.com/pjordanandrsn/loggetta", "experts4bit-qlora": "github.com/pjordanandrsn/experts4bit-qlora",
+             "grouped-nf4-gemm": "github.com/pjordanandrsn/grouped-nf4-gemm", "accelerate": "github.com/huggingface/accelerate"}
 UNITS = {"bytes": 1, "KB": 1 << 10, "MB": 1 << 20, "GB": 1 << 30, "TB": 1 << 40}
 ROW = re.compile(r"^\W*(float32|float16|int8|int4)\W+([\d.]+ \w+)\W+([\d.]+ \w+)\W+([\d.]+ \w+|N/A)\W*$")
 
@@ -143,14 +148,31 @@ def tag_commit(url, version):
     return refs.get(f"refs/tags/v{version}^{{}}") or refs.get(f"refs/tags/v{version}")
 
 
+def repo_of(url):
+    """``host/owner/name`` for an https or ssh git URL (user, port, a trailing "/" and ".git" dropped); None for any
+    other scheme, file:// included."""
+    u = urlsplit(url or "")
+    if u.scheme not in ("https", "ssh", "git+https", "git+ssh") or not u.hostname:
+        return None
+    path = u.path.rstrip("/")
+    path = path[:-4] if path.endswith(".git") else path
+    return f"{u.hostname.lower()}{path}"
+
+
 def vcs_at_tag(dist, version, direct_url=_direct_url, tag_of=tag_commit):
-    """(commit, None) when ``dist`` was installed from git at exactly the commit tag ``v<version>`` names, else
-    (commit or None, why not)."""
+    """(commit, None) when ``dist`` was installed from git, from its :data:`CANONICAL` repository, at exactly the commit
+    that repository's tag ``v<version>`` names; else (commit or None, why not). The tag is read from the canonical
+    repository, never from the URL the install recorded."""
     d = direct_url(dist) or {}
     commit, url = (d.get("vcs_info") or {}).get("commit_id"), d.get("url")
     if not commit or not url:
         return None, "records no commit"
-    tag = tag_of(url, version)
+    canonical = CANONICAL.get(dist)
+    if canonical is None:
+        return commit, "has no canonical repository registered"
+    if repo_of(url) != canonical:
+        return commit, f"is from {url}, not {canonical}"
+    tag = tag_of(f"https://{canonical}", version)
     if tag is None:
         return commit, f"has no tag v{version}"
     if tag != commit:

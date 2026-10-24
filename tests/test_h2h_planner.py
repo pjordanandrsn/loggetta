@@ -100,7 +100,10 @@ def test_a_checkout_reporting_the_release_version_is_not_the_release(source):
 TAGGED, OTHER = "a1" * 20, "b2" * 20
 
 
-def _vcs(commit, url="https://example.invalid/r.git"):
+GNF4 = "https://github.com/pjordanandrsn/grouped-nf4-gemm.git"
+
+
+def _vcs(commit, url=GNF4):
     return lambda d: {"url": url, "vcs_info": {"vcs": "git", "commit_id": commit}}
 
 
@@ -116,13 +119,20 @@ def test_a_git_install_at_the_tags_commit_is_the_release():
         return t.vcs_at_tag(d, v, _vcs(TAGGED), tag_of)
     got = t.check_versions({"grouped-nf4-gemm": "0.51.0"}, lambda d: "0.51.0", lambda d: "vcs", at_tag)
     assert got == {"grouped-nf4-gemm": {"version": "0.51.0", "installed_from": "vcs", "commit": TAGGED}}
-    assert seen == [("https://example.invalid/r.git", "0.51.0")]
+    assert seen == [("https://github.com/pjordanandrsn/grouped-nf4-gemm", "0.51.0")]       # the canonical repo's tag
 
 
 @pytest.mark.parametrize("direct, tag, why", [
     (_vcs(OTHER), TAGGED, f"is at {OTHER[:12]}, not tag v0.51.0's {TAGGED[:12]}"),
     (_vcs(TAGGED), None, "has no tag v0.51.0"),
-    (lambda d: {"url": "https://example.invalid/r.git", "vcs_info": {"vcs": "git"}}, TAGGED, "records no commit"),
+    (lambda d: {"url": GNF4, "vcs_info": {"vcs": "git"}}, TAGGED, "records no commit"),
+    # a fork, a mirror or a local repository carrying a tag of the same name, at that tag's commit: not the release
+    (_vcs(TAGGED, "https://github.com/someone/grouped-nf4-gemm.git"), TAGGED,
+     "is from https://github.com/someone/grouped-nf4-gemm.git, not github.com/pjordanandrsn/grouped-nf4-gemm"),
+    (_vcs(TAGGED, "file:///tmp/grouped-nf4-gemm"), TAGGED,
+     "is from file:///tmp/grouped-nf4-gemm, not github.com/pjordanandrsn/grouped-nf4-gemm"),
+    (_vcs(TAGGED, "https://gitlab.com/pjordanandrsn/grouped-nf4-gemm.git"), TAGGED,
+     "is from https://gitlab.com/pjordanandrsn/grouped-nf4-gemm.git, not github.com/pjordanandrsn/grouped-nf4-gemm"),
 ])
 def test_a_git_install_at_any_other_commit_is_not_the_release(direct, tag, why):
     t = _tool()
@@ -131,6 +141,31 @@ def test_a_git_install_at_any_other_commit_is_not_the_release(direct, tag, why):
         return t.vcs_at_tag(d, v, direct, lambda url, v: tag)
     with pytest.raises(t.Refused, match=re.escape(f"grouped-nf4-gemm 0.51.0 is a git install that {why}, not a release")):
         t.check_versions({"grouped-nf4-gemm": "0.51.0"}, lambda d: "0.51.0", lambda d: "vcs", at_tag)
+
+
+def test_a_fork_is_refused_before_any_tag_is_read():
+    t = _tool()
+
+    def tag_of(url, v):
+        raise AssertionError("a non-canonical install must not reach ls-remote")
+    assert t.vcs_at_tag("grouped-nf4-gemm", "0.51.0", _vcs(TAGGED, "file:///x"), tag_of)[1].startswith("is from file:///x")
+
+
+@pytest.mark.parametrize("url", [GNF4, "https://github.com/pjordanandrsn/grouped-nf4-gemm", "ssh://git@github.com/pjordanandrsn/grouped-nf4-gemm.git",
+                                 "git+https://GitHub.com/pjordanandrsn/grouped-nf4-gemm/"])
+def test_every_spelling_of_the_canonical_repo_reads_as_it(url):
+    assert _tool().repo_of(url) == "github.com/pjordanandrsn/grouped-nf4-gemm"
+
+
+@pytest.mark.parametrize("url", ["file://github.com/pjordanandrsn/grouped-nf4-gemm", "file:///github.com/pjordanandrsn/grouped-nf4-gemm",
+                                 "http://github.com/pjordanandrsn/grouped-nf4-gemm.git", "/github.com/pjordanandrsn/grouped-nf4-gemm"])
+def test_a_local_or_plain_http_url_is_never_the_canonical_repo(url):
+    assert _tool().repo_of(url) is None                         # file:// is refused even when its path spells the repo
+
+
+def test_every_registered_release_has_its_canonical_repo():
+    t = _tool()
+    assert set(t.CANONICAL) == set(t.REGISTERED)
 
 
 def test_an_index_wheel_never_asks_for_a_tag():

@@ -26,10 +26,12 @@ unless its sha256 equals the split's. No row is added, dropped or re-tagged.
 - **The planner:** Loggetta 0.7.0, installed from PyPI, with the backends' estimators from experts4bit-qlora 0.58.0
   and grouped-nf4-gemm 0.51.0, the releases tagged today, and Accelerate 1.15.0. These four are registered in the
   driver (`REGISTERED`) and always checked: each must be installed at exactly that version AND as that release: a
-  wheel from a package index (no `direct_url.json`), or a git install whose recorded commit is exactly the commit its
-  tag `v<version>` names (read with `git ls-remote` from the install's own URL, the annotated tag peeled). A missing
-  release, another version, or a checkout reporting the same version string (editable, local file, or git at any other
-  commit) refuses: the row reads "not read today", and no other install stands in. The output records each version, how
+  wheel from a package index (no `direct_url.json`; preferred), or a git install from that dist's own repository
+  (`CANONICAL` in the driver: `github.com/pjordanandrsn/<repo>`, or `github.com/huggingface/accelerate`, compared by
+  parsed host and path exactly; `file://` and plain http never match) whose recorded commit is exactly the commit that
+  repository's tag `v<version>` names. The tag is read with `git ls-remote` from the canonical repository, the annotated
+  tag peeled, never from the URL the install recorded. A missing release, another version, or a checkout reporting the
+  same version string (editable, local file, a fork, a mirror, or git at any other commit) refuses: the row reads "not read today", and no other install stands in. The output records each version, how
   it was installed and, for a git install, its commit. A newer Accelerate is a new reading, not this one.
 - **The harness:** `bench/insample_replan.py`'s own planning (`_plan`: the receipt's recorded card, workload and setup,
   no receipts on file; the dense row through `dense.describe` from DQ7's committed config, as its `dense` mode does).
