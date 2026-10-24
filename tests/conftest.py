@@ -9,7 +9,7 @@ import pytest
 
 from loggetta import hardware
 
-REAL_STATE = Path.home() / ".local" / "state"
+REAL_STATE = Path.home().resolve() / ".local" / "state"   # resolved, as KEY_FILE is: a symlinked home must not disarm it
 
 
 @pytest.fixture(autouse=True)
