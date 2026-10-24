@@ -55,6 +55,34 @@ The planner uses the profile to:
 - warn about examples longer than `--seq`: concatenated packing splits them across rows, and isolated packing
   truncates them (the plan states the tokens dropped and how many of them trained).
 
+### The held-out band
+
+A training plan prints one more line under its device and host totals: what held-out rows observed for the same model,
+card and placement. Held-out rows are training runs that no planner constant was set or tuned on (the frozen split,
+`evidence/planner-split/`). For each term the line gives the range of measured / estimate those rows showed:
+- the sampled driver peak over the plan's device total;
+- the allocated peak over the allocator estimate;
+- with the experts on the host, the host peak over the host estimate.
+
+```
+  held-out band      observed on 4 held-out rows from 2 machines (seq 1,024 and 2,048; SPLIT-v3.json):
+                     measured / estimate device driver 0.732-0.788; allocator 0.858-0.881; host 0.996-1.055
+```
+
+It is an observation, not a prediction: it says what those rows showed on the machines they ran on, and a further
+machine may fall outside it. Where an estimate ran low on any held-out row, the plan also warns, for example that the
+host estimate "ran LOW on 3 of 4 held-out rows" for ERNIE-4.5-21B-A3B with its experts on the host of an RTX A4000.
+Keep headroom for it.
+
+- A band needs at least 2 held-out rows from at least 2 boxes on distinct machines. A cohort whose rows come from one
+  box prints `held-out rows from one box only: no band`.
+- The match is exact: the model's repository id, the card, and where the experts sit. Anything else prints
+  `unmeasured family/card: no band`.
+- The band never changes an estimate, a budget, feasibility or which plan is chosen. The plan file records it under
+  `band`, so a saved plan keeps what was printed.
+- `loggetta/planner_bands.json` holds each row's bytes, id and sha256; `bench/build_planner_bands.py` rebuilds it from
+  the split and the receipts it cites.
+
 `execute` tokenizes the data again and stops before loading any weights if the result differs from the plan's
 profile: the file changed, or the tokenizer did. Plans made before 0.3 have no profile; they, and the Alpaca
 demonstration, read only the rows the token budget needs, as before.

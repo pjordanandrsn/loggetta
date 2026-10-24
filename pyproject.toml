@@ -54,7 +54,7 @@ Changelog = "https://github.com/pjordanandrsn/loggetta/blob/main/CHANGELOG.md"
 include = ["loggetta*"]
 
 [tool.setuptools.package-data]
-loggetta = ["dense_dq10_policy.json"]
+loggetta = ["dense_dq10_policy.json", "planner_bands.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,0 +1,458 @@
+{
+ "cohorts": {
+  "ERNIE-4.5-21B-A3B-PT / host offload / RTX A4000": {
+   "band": {
+    "device_allocator": {
+     "max": 0.880835411303396,
+     "min": 0.857828866682339,
+     "rows_over": 0
+    },
+    "device_driver": {
+     "max": 0.7881094646121556,
+     "min": 0.7323370273188894,
+     "rows_over": 0
+    },
+    "host": {
+     "max": 1.0548380666395223,
+     "min": 0.9958692254512758,
+     "rows_over": 3
+    }
+   },
+   "boxes": 2,
+   "card": "RTX A4000",
+   "distinct_machines": true,
+   "held_out_rows": 4,
+   "model": "baidu/ERNIE-4.5-21B-A3B-PT",
+   "placement": "host",
+   "rows": [
+    {
+     "box": "ho3-a4000-1",
+     "file": "bench/ho3/receipts/ho3-a4000-1/public/run/receipts_ernie_1024/ERNIE-4.5-21B-A3B-PT-host-grouped_nf4-t2048-20261023T145707Z-03d050d2.json",
+     "id": "ho3-a4000-1/ernie/host/1024",
+     "seq": 1024,
+     "sha256": "95beb384c2dc0ca57d75e37f5585881984aa2c1d22f2ea862bbbb68a099e4c99",
+     "terms": {
+      "device_allocator": {
+       "estimated": 7675281856,
+       "measured": 6584078336,
+       "ratio": 0.857828866682339
+      },
+      "device_driver": {
+       "estimated": 9747209139,
+       "measured": 7681867776,
+       "ratio": 0.7881094646121556
+      },
+      "host": {
+       "estimated": 15451815936,
+       "measured": 15775776768,
+       "ratio": 1.020965874389251
+      }
+     }
+    },
+    {
+     "box": "ho3-a4000-1",
+     "file": "bench/ho3/receipts/ho3-a4000-1/public/run/receipts_ernie_2048/ERNIE-4.5-21B-A3B-PT-host-grouped_nf4-t4096-20261023T150029Z-239fb25a.json",
+     "id": "ho3-a4000-1/ernie/host/2048",
+     "seq": 2048,
+     "sha256": "9a820b5719dbb7d4c75fe765c937055777c5d503b8712188c24bb8d4f4ff8285",
+     "terms": {
+      "device_allocator": {
+       "estimated": 6866829760,
+       "measured": 6048546816,
+       "ratio": 0.880835411303396
+      },
+      "device_driver": {
+       "estimated": 8777066624,
+       "measured": 6427770880,
+       "ratio": 0.7323370273188894
+      },
+      "host": {
+       "estimated": 15451815936,
+       "measured": 15387987968,
+       "ratio": 0.9958692254512758
+      }
+     }
+    },
+    {
+     "box": "ho3-a4000-r2",
+     "file": "bench/ho3/receipts/ho3-a4000-r2/public/run/receipts_ernie_1024/ERNIE-4.5-21B-A3B-PT-host-grouped_nf4-t2048-20261024T092235Z-23199e10.json",
+     "id": "ho3-a4000-r2/ernie/host/1024",
+     "seq": 1024,
+     "sha256": "4010b0c6fad399042bc862b4abd74bbd9ffcc1b8e7c341fc1e6e51eea5769543",
+     "terms": {
+      "device_allocator": {
+       "estimated": 7675281856,
+       "measured": 6584078336,
+       "ratio": 0.857828866682339
+      },
+      "device_driver": {
+       "estimated": 9747209139,
+       "measured": 7681867776,
+       "ratio": 0.7881094646121556
+      },
+      "host": {
+       "estimated": 15451815936,
+       "measured": 15538192384,
+       "ratio": 1.0055900515743756
+      }
+     }
+    },
+    {
+     "box": "ho3-a4000-r2",
+     "file": "bench/ho3/receipts/ho3-a4000-r2/public/run/receipts_ernie_2048/ERNIE-4.5-21B-A3B-PT-host-grouped_nf4-t4096-20261024T092732Z-5d7476c0.json",
+     "id": "ho3-a4000-r2/ernie/host/2048",
+     "seq": 2048,
+     "sha256": "0ce2e2a3dae4eb97d4c5ea9b1a61496bfa96b1f9bd2e883a5f2ff47234a6e155",
+     "terms": {
+      "device_allocator": {
+       "estimated": 6866829760,
+       "measured": 6044531200,
+       "ratio": 0.880250626746279
+      },
+      "device_driver": {
+       "estimated": 8777066624,
+       "measured": 6429868032,
+       "ratio": 0.7325759627274763
+      },
+      "host": {
+       "estimated": 15451815936,
+       "measured": 16299163648,
+       "ratio": 1.0548380666395223
+      }
+     }
+    }
+   ]
+  },
+  "ERNIE-4.5-21B-A3B-PT / resident / RTX 4090": {
+   "band": null,
+   "boxes": 1,
+   "card": "RTX 4090",
+   "distinct_machines": true,
+   "held_out_rows": 2,
+   "model": "baidu/ERNIE-4.5-21B-A3B-PT",
+   "placement": "device",
+   "why": "one box"
+  },
+  "ERNIE-4.5-21B-A3B-PT / resident / RTX 5090": {
+   "band": {
+    "device_allocator": {
+     "max": 0.9624849732240952,
+     "min": 0.951482780240683,
+     "rows_over": 0
+    },
+    "device_driver": {
+     "max": 0.841012479411308,
+     "min": 0.816618584495216,
+     "rows_over": 0
+    }
+   },
+   "boxes": 2,
+   "card": "RTX 5090",
+   "distinct_machines": true,
+   "held_out_rows": 4,
+   "model": "baidu/ERNIE-4.5-21B-A3B-PT",
+   "placement": "device",
+   "rows": [
+    {
+     "box": "ho2-5090-1",
+     "file": "bench/ho2/receipts/ho2-5090-1/public/run/receipts_ernie_1024/ERNIE-4.5-21B-A3B-PT-device-grouped_nf4-t2048-20261022T103355Z-90852e7b.json",
+     "id": "ho2-5090-1/ernie/device/1024",
+     "seq": 1024,
+     "sha256": "9c966b4c7eec036f8e0b875c66e5f460e63c43a2818c77b9062173b00d0cff76",
+     "terms": {
+      "device_allocator": {
+       "estimated": 17766306072,
+       "measured": 17099802624,
+       "ratio": 0.9624849732240952
+      },
+      "device_driver": {
+       "estimated": 21856438198,
+       "measured": 18381537280,
+       "ratio": 0.841012479411308
+      }
+     }
+    },
+    {
+     "box": "ho2-5090-1",
+     "file": "bench/ho2/receipts/ho2-5090-1/public/run/receipts_ernie_2048/ERNIE-4.5-21B-A3B-PT-device-grouped_nf4-t4096-20261022T103621Z-298af42a.json",
+     "id": "ho2-5090-1/ernie/device/2048",
+     "seq": 2048,
+     "sha256": "5086c2d0ba7579287f794b9aaecfe9e67551841fca5dc39220bbf393cfe1896d",
+     "terms": {
+      "device_allocator": {
+       "estimated": 16957853976,
+       "measured": 16135106048,
+       "ratio": 0.951482780240683
+      },
+      "device_driver": {
+       "estimated": 20886295683,
+       "measured": 17066622976,
+       "ratio": 0.8171206246922498
+      }
+     }
+    },
+    {
+     "box": "ho3-5090-r1",
+     "file": "bench/ho3/receipts/ho3-5090-r1/public/run/receipts_ernie_1024/ERNIE-4.5-21B-A3B-PT-device-grouped_nf4-t2048-20261023T144905Z-29ef8c04.json",
+     "id": "ho3-5090-r1/ernie/device/1024",
+     "seq": 1024,
+     "sha256": "b7d6bcbec54a4ec282478ac8f2702c2dd46507a08d42a61c8421db326e9e4152",
+     "terms": {
+      "device_allocator": {
+       "estimated": 17766306072,
+       "measured": 17099802624,
+       "ratio": 0.9624849732240952
+      },
+      "device_driver": {
+       "estimated": 21856438198,
+       "measured": 18352177152,
+       "ratio": 0.8396691622736288
+      }
+     }
+    },
+    {
+     "box": "ho3-5090-r1",
+     "file": "bench/ho3/receipts/ho3-5090-r1/public/run/receipts_ernie_2048/ERNIE-4.5-21B-A3B-PT-device-grouped_nf4-t4096-20261023T145035Z-ef925b13.json",
+     "id": "ho3-5090-r1/ernie/device/2048",
+     "seq": 2048,
+     "sha256": "88582f7e00e93af395e41a7b21ff5bbfbd3ae2e8a294049421abb8ac6bdb700f",
+     "terms": {
+      "device_allocator": {
+       "estimated": 16957853976,
+       "measured": 16142833152,
+       "ratio": 0.9519384454451915
+      },
+      "device_driver": {
+       "estimated": 20886295683,
+       "measured": 17056137216,
+       "ratio": 0.816618584495216
+      }
+     }
+    }
+   ]
+  },
+  "LFM2-8B-A1B / resident / RTX 4090": {
+   "band": null,
+   "boxes": 1,
+   "card": "RTX 4090",
+   "distinct_machines": true,
+   "held_out_rows": 2,
+   "model": "LiquidAI/LFM2-8B-A1B",
+   "placement": "device",
+   "why": "one box"
+  },
+  "LFM2-8B-A1B / resident / RTX 5090": {
+   "band": {
+    "device_allocator": {
+     "max": 0.953884684943257,
+     "min": 0.9151045108173532,
+     "rows_over": 0
+    },
+    "device_driver": {
+     "max": 0.8742274429433147,
+     "min": 0.8199785590464683,
+     "rows_over": 0
+    }
+   },
+   "boxes": 2,
+   "card": "RTX 5090",
+   "distinct_machines": true,
+   "held_out_rows": 4,
+   "model": "LiquidAI/LFM2-8B-A1B",
+   "placement": "device",
+   "rows": [
+    {
+     "box": "ho2-5090-1",
+     "file": "bench/ho2/receipts/ho2-5090-1/public/run/receipts_lfm2_1024/LFM2-8B-A1B-device-grouped_nf4-t2048-20261022T103131Z-b9b53bd7.json",
+     "id": "ho2-5090-1/lfm2/device/1024",
+     "seq": 1024,
+     "sha256": "6fb6670991b132e827bc80781ac836b06d9e11b6708040899f9b319f250b2669",
+     "terms": {
+      "device_allocator": {
+       "estimated": 7692749872,
+       "measured": 7337996288,
+       "ratio": 0.953884684943257
+      },
+      "device_driver": {
+       "estimated": 9768170758,
+       "measured": 8539602944,
+       "ratio": 0.8742274429433147
+      }
+     }
+    },
+    {
+     "box": "ho2-5090-1",
+     "file": "bench/ho2/receipts/ho2-5090-1/public/run/receipts_lfm2_2048/LFM2-8B-A1B-device-grouped_nf4-t4096-20261022T103258Z-da5d7b32.json",
+     "id": "ho2-5090-1/lfm2/device/2048",
+     "seq": 2048,
+     "sha256": "8f6d0fdca0ed7702cd6297688c1a5711b75f276a85e3eeec1f8a740a11619dbe",
+     "terms": {
+      "device_allocator": {
+       "estimated": 7374507056,
+       "measured": 6749620736,
+       "ratio": 0.9152639877818567
+      },
+      "device_driver": {
+       "estimated": 9386279379,
+       "measured": 7725907968,
+       "ratio": 0.8231065426504603
+      }
+     }
+    },
+    {
+     "box": "ho3-5090-r1",
+     "file": "bench/ho3/receipts/ho3-5090-r1/public/run/receipts_lfm2_1024/LFM2-8B-A1B-device-grouped_nf4-t2048-20261023T144636Z-a7b3e5be.json",
+     "id": "ho3-5090-r1/lfm2/device/1024",
+     "seq": 1024,
+     "sha256": "1afd9da29f4c9b1139b0b38a29eb402f8d77ab729b2330761602f9d0ea794c16",
+     "terms": {
+      "device_allocator": {
+       "estimated": 7692749872,
+       "measured": 7337996288,
+       "ratio": 0.953884684943257
+      },
+      "device_driver": {
+       "estimated": 9768170758,
+       "measured": 8510242816,
+       "ratio": 0.8712217493772031
+      }
+     }
+    },
+    {
+     "box": "ho3-5090-r1",
+     "file": "bench/ho3/receipts/ho3-5090-r1/public/run/receipts_lfm2_2048/LFM2-8B-A1B-device-grouped_nf4-t4096-20261023T144748Z-298722a6.json",
+     "id": "ho3-5090-r1/lfm2/device/2048",
+     "seq": 2048,
+     "sha256": "fba0d7610e8694684e638abc24d668a54704e02d5ad23851918ac3a6eaccd003",
+     "terms": {
+      "device_allocator": {
+       "estimated": 7374507056,
+       "measured": 6748444672,
+       "ratio": 0.9151045108173532
+      },
+      "device_driver": {
+       "estimated": 9386279379,
+       "measured": 7696547840,
+       "ratio": 0.8199785590464683
+      }
+     }
+    }
+   ]
+  },
+  "LFM2-8B-A1B / resident / RTX A4000": {
+   "band": {
+    "device_allocator": {
+     "max": 0.953884684943257,
+     "min": 0.9150124487995337,
+     "rows_over": 0
+    },
+    "device_driver": {
+     "max": 0.8293567318492202,
+     "min": 0.7761867885905807,
+     "rows_over": 0
+    }
+   },
+   "boxes": 2,
+   "card": "RTX A4000",
+   "distinct_machines": true,
+   "held_out_rows": 4,
+   "model": "LiquidAI/LFM2-8B-A1B",
+   "placement": "device",
+   "rows": [
+    {
+     "box": "ho3-a4000-1",
+     "file": "bench/ho3/receipts/ho3-a4000-1/public/run/receipts_lfm2_1024/LFM2-8B-A1B-device-grouped_nf4-t2048-20261023T145252Z-fbf03882.json",
+     "id": "ho3-a4000-1/lfm2/device/1024",
+     "seq": 1024,
+     "sha256": "7d147e3057b8dad2ec08904275936e81cd5cf75437dc9731d9db246c4a25889a",
+     "terms": {
+      "device_allocator": {
+       "estimated": 7692749872,
+       "measured": 7337996288,
+       "ratio": 0.953884684943257
+      },
+      "device_driver": {
+       "estimated": 9768170758,
+       "measured": 8101298176,
+       "ratio": 0.8293567318492202
+      }
+     }
+    },
+    {
+     "box": "ho3-a4000-1",
+     "file": "bench/ho3/receipts/ho3-a4000-1/public/run/receipts_lfm2_2048/LFM2-8B-A1B-device-grouped_nf4-t4096-20261023T145441Z-b8430a7d.json",
+     "id": "ho3-a4000-1/lfm2/device/2048",
+     "seq": 2048,
+     "sha256": "5ae83bedf8c7c96e8b5f50154c45d473b3e115523c3f01af66e8cad9fae39249",
+     "terms": {
+      "device_allocator": {
+       "estimated": 7374507056,
+       "measured": 6754891264,
+       "ratio": 0.9159786834164227
+      },
+      "device_driver": {
+       "estimated": 9386279379,
+       "measured": 7289700352,
+       "ratio": 0.7766336433911509
+      }
+     }
+    },
+    {
+     "box": "ho3-a4000-r2",
+     "file": "bench/ho3/receipts/ho3-a4000-r2/public/run/receipts_lfm2_1024/LFM2-8B-A1B-device-grouped_nf4-t2048-20261024T091707Z-b8a07478.json",
+     "id": "ho3-a4000-r2/lfm2/device/1024",
+     "seq": 1024,
+     "sha256": "7d13e32b5be72f9264f003bd701d26db2f48b820e1b3fa934c939391a7b85f82",
+     "terms": {
+      "device_allocator": {
+       "estimated": 7692749872,
+       "measured": 7337996288,
+       "ratio": 0.953884684943257
+      },
+      "device_driver": {
+       "estimated": 9768170758,
+       "measured": 8101298176,
+       "ratio": 0.8293567318492202
+      }
+     }
+    },
+    {
+     "box": "ho3-a4000-r2",
+     "file": "bench/ho3/receipts/ho3-a4000-r2/public/run/receipts_lfm2_2048/LFM2-8B-A1B-device-grouped_nf4-t4096-20261024T091937Z-e0460bde.json",
+     "id": "ho3-a4000-r2/lfm2/device/2048",
+     "seq": 2048,
+     "sha256": "6a2d6df80028bc7f733eb6002ad582172da231a5fbf42d05445a3e0786970772",
+     "terms": {
+      "device_allocator": {
+       "estimated": 7374507056,
+       "measured": 6747765760,
+       "ratio": 0.9150124487995337
+      },
+      "device_driver": {
+       "estimated": 9386279379,
+       "measured": 7285506048,
+       "ratio": 0.7761867885905807
+      }
+     }
+    }
+   ]
+  },
+  "Qwen3-14B / resident / RTX 5090": {
+   "band": null,
+   "boxes": 1,
+   "card": "RTX 5090",
+   "distinct_machines": true,
+   "held_out_rows": 1,
+   "model": "Qwen/Qwen3-14B",
+   "placement": "device",
+   "why": "unmeasured"
+  }
+ },
+ "pinned_at": {
+  "experts4bit-qlora": "a4b2b98f7d0a077681849b5631ae01b3486faaa1",
+  "loggetta": "9e005d68e377c65642f8e026a397b0c70edc19db"
+ },
+ "schema": "loggetta-planner-bands/1",
+ "split": "SPLIT-v3.json",
+ "split_version": 3
+}
