@@ -2,10 +2,12 @@
 and execute still recognizes the card a plan was made for. The key is per install, owner-only, and never written out.
 
 Every UUID here is assembled at run time, so no UUID-shaped literal sits in the source."""
+import errno
 import json
 import os
 import re
 import stat
+import threading
 
 import pytest
 
@@ -15,6 +17,12 @@ from loggetta.hardware import GPU, Fact, HardwareProfile, Host, gpu_identity, in
 from loggetta.plan import Constraints, ExecutionPlan, Workload
 
 GiB = 1 << 30
+
+
+@pytest.fixture(autouse=True)
+def _own_key_file(tmp_path, monkeypatch):
+    """Every test here writes its key under its own tmp_path, whatever conftest does (test_key_redirect guards that)."""
+    monkeypatch.setattr(hardware, "KEY_FILE", tmp_path / "state" / "gpu-id.key")
 UUID_SHAPE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 
 
@@ -65,24 +73,87 @@ def test_an_existing_key_with_a_wider_mode_is_narrowed_and_kept():
     assert install_key() == k and stat.S_IMODE(os.stat(hardware.KEY_FILE).st_mode) == 0o600
 
 
-def test_a_key_file_of_the_wrong_length_is_refused():
+def test_a_key_file_of_the_wrong_length_is_refused(monkeypatch):
+    monkeypatch.setattr(hardware, "KEY_READ_TRIES", 2)
+    monkeypatch.setattr(hardware, "KEY_READ_WAIT_S", 0)
     hardware.KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
     hardware.KEY_FILE.write_bytes(b"short")
     with pytest.raises(RuntimeError, match="holds 5 bytes, not 32"):
         install_key()
 
 
-def test_a_concurrent_first_use_reads_the_key_the_other_process_made(monkeypatch):
-    other = b"\x05" * 32
-    real_open = os.open
+def test_a_key_still_being_placed_is_waited_for_never_used_short(monkeypatch):
+    full = b"\x03" * 32
+    hardware.KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    hardware.KEY_FILE.write_bytes(b"")
+    monkeypatch.setattr(hardware.time, "sleep", lambda s: hardware.KEY_FILE.write_bytes(full))
+    assert install_key() == full
 
-    def racing_open(path, flags, mode=0o777):           # the other process writes its key just before ours
-        if flags & os.O_EXCL:
-            hardware.KEY_FILE.write_bytes(other)
-            os.chmod(hardware.KEY_FILE, 0o600)
-        return real_open(path, flags, mode)
-    monkeypatch.setattr(hardware.os, "open", racing_open)
-    assert install_key() == other
+
+def test_many_concurrent_first_uses_agree_on_one_whole_key(tmp_path, monkeypatch):
+    # one read, no waiting: the key's name must never hold a partial key, so a reader never needs the retry
+    monkeypatch.setattr(hardware, "KEY_READ_TRIES", 1)
+    for trial in range(200):
+        path = tmp_path / f"t{trial}" / "gpu-id.key"
+        start, got, errors = threading.Barrier(8), [], []
+
+        def first_use():
+            start.wait()
+            try:
+                got.append(install_key(path))
+            except Exception as e:  # noqa: BLE001 -- every caller must succeed; collected and asserted below
+                errors.append(e)
+        threads = [threading.Thread(target=first_use) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert not errors and len(got) == 8 and len(set(got)) == 1 and len(got[0]) == 32, (trial, errors, {len(k) for k in got})
+        assert sorted(p.name for p in path.parent.iterdir()) == ["gpu-id.key"], trial   # no temporary file left behind
+
+
+def test_a_first_use_that_dies_mid_write_leaves_no_key_behind(monkeypatch):
+    real_fdopen = os.fdopen
+
+    def dies(fd, *a, **k):                                # the process is killed before the key's bytes are written
+        os.close(fd)
+        raise KeyboardInterrupt
+    monkeypatch.setattr(hardware.os, "fdopen", dies)
+    with pytest.raises(KeyboardInterrupt):
+        install_key()
+    monkeypatch.setattr(hardware.os, "fdopen", real_fdopen)
+    assert not hardware.KEY_FILE.exists()                 # never an empty key under the name
+    k = install_key()                                     # so the next use simply makes one
+    assert len(k) == 32 and hardware.KEY_FILE.read_bytes() == k
+
+
+def test_a_first_use_that_loses_the_link_reads_the_winners_key(monkeypatch):
+    winner = b"\x05" * 32
+    real_link = os.link
+
+    def lose(src, dst):                                   # another process links its whole key in first
+        other = os.path.join(os.path.dirname(dst), ".winner.tmp")
+        with open(other, "wb") as f:
+            f.write(winner)
+        real_link(other, dst)
+        os.unlink(other)
+        raise FileExistsError(errno.EEXIST, "exists", dst)
+    monkeypatch.setattr(hardware.os, "link", lose)
+    assert install_key() == winner and hardware.KEY_FILE.read_bytes() == winner
+
+
+def test_a_filesystem_without_hard_links_fails_closed_and_never_renames(monkeypatch):
+    def no_link(src, dst):
+        raise OSError(errno.EPERM, "Operation not permitted")
+
+    def never(*a, **k):
+        raise AssertionError("the key is never renamed into place")
+    monkeypatch.setattr(hardware.os, "link", no_link)
+    monkeypatch.setattr(hardware.os, "rename", never)
+    monkeypatch.setattr(hardware.os, "replace", never)
+    with pytest.raises(RuntimeError, match="refused a hard link"):
+        install_key()
+    assert not hardware.KEY_FILE.exists() and list(hardware.KEY_FILE.parent.iterdir()) == []
 
 
 def test_the_key_comes_from_secrets(monkeypatch):
