@@ -147,6 +147,11 @@ optimizer-resume checkpoints. Save/reload passes real-adapter CPU tests; the ful
 | Plan serving placement | `loggetta plan MODEL --workload serve --context 4096 --concurrency 1` |
 | Measure a serve plan | `loggetta execute plan.json --arena ARENA --calib CALIB` |
 
+**The held-out band.** A training plan also prints what held-out rows observed for the same model, card and placement:
+measured / estimate, "observed on N held-out rows from M machines". It is not a prediction, and a further machine may
+fall outside it. Where an estimate ran low on a held-out row, the plan warns. See
+[the held-out band](docs/TRAINING.md#the-held-out-band).
+
 `train` combines planning and execution. Dense training can be planned and executed with the development opt-in.
 Multi-GPU execution, server launch and throughput prediction remain outside the current command surface.
 

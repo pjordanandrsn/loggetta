@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Plans: the held-out band
+
+A training plan prints, under its totals, what held-out rows observed for the same model, card and placement: the range
+of measured / estimate for the device driver peak, the allocated peak and, with the experts on the host, the host peak,
+"observed on N held-out rows from M machines". It is not a prediction, and a further machine may fall outside it.
+Where an estimate ran low on a held-out row, the plan warns. The first such warning: ERNIE-4.5-21B-A3B with its experts
+on the host of an RTX A4000, whose host estimate ran low on 3 of 4 held-out rows (up to 1.055x). A band needs 2 rows
+from 2 distinct machines; a one-box cohort prints a named no-band, and anything else is unmeasured. The band never
+changes the plan, and the plan file records it under `band`. It reads `loggetta/planner_bands.json`, built from
+`evidence/planner-split/SPLIT-v3.json` by `bench/build_planner_bands.py`.
+
 ## 0.7.0 — 2026-10-24
 
 **0.7.0.** A first install now ends trained or with a named refusal. `inspect --torch-index` names the torch build

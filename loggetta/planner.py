@@ -15,6 +15,7 @@ import math
 import re
 from dataclasses import replace
 
+from . import bands
 from .backends import BACKENDS
 from .plan import Candidate, Constraints, ExecutionPlan, MemoryLine, Workload
 from .shareable import match_key as shared_label
@@ -846,9 +847,13 @@ def plan(topology, hardware, workload: Workload, constraints: Constraints = Cons
         prov["load_bound"] = lb
         if lb["exceeds_available"]:
             warnings.append(load_bound_warning(lb))
+    band = None
+    if workload.kind == "train":                           # display-only: read after the plan is chosen, changing nothing in it
+        band = bands.lookup((common["model"] or {}).get("model"), gpu.name if gpu else None, sel.setup.get("expert_residency"))
+        warnings += bands.warnings(band)
     return ExecutionPlan(status="feasible", selected=sel, alternatives=tuple(feasible[1:]) + tuple(infeasible),
                          reasons=tuple(reasons), warnings=tuple(warnings), performance=perf,
-                         provenance=prov, **common)
+                         provenance=prov, band=band, **common)
 
 
 def _suggest(topology, workload, constraints, budget, closest, backends, statuses, dev_over, host_over,

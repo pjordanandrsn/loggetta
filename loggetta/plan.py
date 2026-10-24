@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import math
 
+from . import bands
 from .schedule import describe as describe_lr
 from dataclasses import asdict, dataclass, field
 
@@ -162,6 +163,8 @@ class ExecutionPlan:
     schema: str = PLAN_SCHEMA
     #: the training data's profile (``data.encode_dataset``), when the dataset was read before planning
     data_profile: dict | None = None
+    #: the held-out band for this model, card and placement (``bands.lookup``): display-only, it never changes the plan
+    band: dict | None = None
 
     def to_dict(self) -> dict:
         out = asdict(self)
@@ -183,6 +186,8 @@ class ExecutionPlan:
             del out["workload"]["warmup_steps"]
         if out["data_profile"] is None:
             del out["data_profile"]
+        if out["band"] is None:
+            del out["band"]
         return out
 
     def to_json(self) -> str:
@@ -252,6 +257,8 @@ class ExecutionPlan:
             out += _lines(c.lines)
             out += [f"  {'device total':44s} {gb(c.device_bytes)}   of {gb(self.budget['device'])} budget",
                     f"  {'host total':44s} {gb(c.host_bytes)}   of {gb(self.budget['host'])} budget"]
+            if self.band is not None:
+                out += bands.render(self.band)
             if c.unmodelled:
                 out += ["", "Not modelled (each can make the real peak higher)"] + [f"  - {u}" for u in c.unmodelled]
         out += ["", "Why"] + [f"  - {r}" for r in self.reasons]
