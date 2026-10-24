@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### The planner head-to-head at the release
+
+`bench/h2h-planner/RESULTS-h2h-planner.md`: Loggetta 0.7.0, installed from PyPI, re-planned SPLIT-v3's 21 held-out rows with no
+receipts on file. Every row's outcome is the one its receipt recorded when it ran: 18 COVERED and 3 HOST_UNDER, the three being
+ERNIE-4.5-21B-A3B with its experts on the host of an RTX A4000, which the held-out band already warns about. The estimates are
+byte-identical to the recorded ones on 20 of the 21 rows. Hugging Face Accelerate 1.15.0's `estimate-memory` is reported beside them
+as a full-precision Adam estimate, never like-for-like. The read's public copies are in `evidence/2026-10-24-h2h-planner/`, made by
+`bench/h2h-planner/project_public.py`, which replaces local paths and nothing else.
+
 ### Plans and receipts record a card id, not the GPU's UUID
 
 Plans, receipts and saved hardware profiles (`inspect --json`) now record `hardware.gpu.uuid_hash`: a keyed hash of the
