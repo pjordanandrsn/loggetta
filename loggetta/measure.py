@@ -183,6 +183,11 @@ E4B_VALUE_KNOBS = (
     "E4B_MAX_NEW_TOKENS", "E4B_MAX_INPUT_TOKENS", "E4B_WARMUP_TOKENS", "E4B_LOAD_SYNC_DEBUG", "E4B_PROFILE_PHASE",
     "E4B_OFFLOAD_STATS", "E4B_INT4_ASSIGNMENT", "E4B_CALIB_SOURCE",
     "E4B_PAGED_ADAPTER_ACCEPT_UNVERIFIED_BASE", "E4B_PAGED_ADAPTER_ALLOW_UNVERIFIED_ARENA",
+    # experts4bit-qlora 0.58.0's new switches, each able to change a route, a kernel, a plan or a number: the attention split
+    # fixed at a count, the pinned cuBLASLt dense GEMM, the int8 head's 2..8-row route, serving despite a measured base mismatch,
+    # the shared KV pool's sizing, the prefill cadence and chunk cap, the merged arena, and the deterministic training paths
+    "E4B_ATTN_SPLIT_FIXED", "E4B_DENSE_LT_PIN", "E4B_INT8_HEAD_ROWS", "E4B_PAGED_ADAPTER_ACCEPT_BASE_MISMATCH", "E4B_PAGED_KV_POOL",
+    "E4B_PAGED_LOADED_CHUNK_TOKENS", "E4B_PAGED_MERGED_ARENA", "E4B_PAGED_PREFILL_EVERY", "E4B_TRAIN_DETERMINISTIC", "E4B_TRAIN_DET_GATHER",
 )
 #: a name with one of these as a whole "_"-separated word names a credential: its value is NEVER recorded or hashed, even
 #: if it is ever added to E4B_VALUE_KNOBS by mistake (a test also keeps it off that list). "TOKENS" (a count) is not one
