@@ -53,17 +53,25 @@ def check_here(plan: ExecutionPlan, hardware=None) -> None:
     """Raise ``PlanNotExecutable`` unless ``plan`` was made for the device it would run on here. A plan made for a
     saved profile of another card (``plan --hardware``) is fine to read, but running it here would write a receipt
     whose hardware names the other card, and later plans would learn this card's overheads under that card's name."""
-    from .hardware import probe
+    from .hardware import gpu_identity, probe
 
     want = plan.hardware.get("gpu") or {}
     gpu = (hardware or probe(torch=False)).gpu(plan.constraints.device)    # GPU facts only: no torch child
     if gpu is None:
         raise PlanNotExecutable(f"no GPU at index {plan.constraints.device} here; the plan was made for "
                                 f"{want.get('name')}")
-    same = (want.get("uuid") == gpu.uuid) if want.get("uuid") and gpu.uuid else (want.get("name") == gpu.name)
-    if not same:
-        raise PlanNotExecutable(f"the plan was made for {want.get('name')} ({want.get('uuid') or 'no uuid'}); device "
-                                f"{gpu.index} here is {gpu.name} ({gpu.uuid or 'no uuid'}): plan again on this machine")
+    here = gpu_identity(gpu)
+    if want.get("uuid_hash") and here:          # the card id this install records (hardware.uuid_hash)
+        same = want["uuid_hash"] == here
+        why = ("it is a different card, or the plan was made by another install (each install has its own card ids, "
+               "so a plan carried from another machine or install reads as a different card)")
+    elif want.get("uuid") and gpu.uuid:         # a plan saved before card ids: its raw UUID, compared as before
+        same, why = want["uuid"] == gpu.uuid, "it is a different card"
+    else:
+        same, why = want.get("name") == gpu.name, "it is a different model of card"
+    if not same:                                # never prints a UUID
+        raise PlanNotExecutable(f"the plan was made for a {want.get('name')}, and device {gpu.index} here ({gpu.name}) "
+                                f"is not that card: {why}; plan again on this machine")
 
 
 def compare(plan: ExecutionPlan, measured: dict) -> dict:

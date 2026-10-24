@@ -14,16 +14,99 @@ a list from the start; no code below assumes there is exactly one.
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import os
 import platform
 import re
+import secrets
 import shutil
 import subprocess
 import sys
+import time
 from dataclasses import asdict, dataclass, field, replace
+from pathlib import Path
 
 GiB = 1 << 30
+
+#: the per-install key that turns a GPU's UUID into the card id plans and receipts record (:func:`uuid_hash`). Created on
+#: first use, owner-only, and never written into any plan, receipt or log. The directory is named after this package's
+#: own directory, so a rename moves it with the package.
+KEY_FILE = Path.home() / ".local" / "state" / Path(__file__).resolve().parent.name / "gpu-id.key"
+UUID_HASH_PREFIX = "hmac-sha256:"
+
+
+KEY_BYTES = 32
+#: how long a reader waits for a key another process is still placing: KEY_READ_TRIES reads, KEY_READ_WAIT_S apart
+KEY_READ_TRIES, KEY_READ_WAIT_S = 50, 0.02
+
+
+def _read_key(path: Path) -> bytes:
+    """An existing key, owner-only: a wider mode is narrowed to 0600 (the key is this user's). Only a key of exactly
+    :data:`KEY_BYTES` bytes is ever used. The name only ever holds a whole key (:func:`install_key` links it into place
+    after writing it), so a short read is retried briefly and then refused, never used."""
+    for attempt in range(KEY_READ_TRIES):
+        if os.stat(path).st_mode & 0o077:
+            os.chmod(path, 0o600)
+        key = path.read_bytes()
+        if len(key) == KEY_BYTES:
+            return key
+        if attempt + 1 < KEY_READ_TRIES:
+            time.sleep(KEY_READ_WAIT_S)
+    raise RuntimeError(f"the card-id key file holds {len(key)} bytes, not {KEY_BYTES}: move it aside and a new one is "
+                       f"made (plans made with the old key will then ask to be made again)")
+
+
+def install_key(path: Path | None = None) -> bytes:
+    """This install's key (:data:`KEY_BYTES` random bytes from :mod:`secrets`), created owner-only (0600) in an
+    owner-only directory (0700) the first time it is asked for. Never printed, logged or written into a plan or receipt.
+
+    A first use writes the key to a private temporary file, flushes it to disk, and then hard-links it to the key's
+    name. ``os.link`` refuses an existing name, so when several processes start at once exactly one whole key wins and
+    every other process reads that one: the name never holds a partial key, and no key is ever replaced (``rename``
+    would replace it, which is why it is not used). A filesystem without hard links fails closed."""
+    path = Path(path or KEY_FILE)
+    if path.exists():
+        return _read_key(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(path.parent, 0o700)
+    key = secrets.token_bytes(KEY_BYTES)
+    tmp = path.parent / f".{path.name}.{os.getpid()}.{secrets.token_hex(8)}.tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(key)
+            f.flush()
+            os.fsync(f.fileno())
+        try:
+            os.link(tmp, path)
+        except FileExistsError:             # another process placed its key first: use theirs, so both hash alike
+            return _read_key(path)
+        except OSError as e:
+            raise RuntimeError(f"cannot place the card-id key at {path.name}: this filesystem refused a hard link "
+                               f"({e.strerror or e}), and the key is never put in place any other way") from e
+        return key
+    finally:
+        try:
+            os.unlink(tmp)
+        except FileNotFoundError:
+            pass
+
+
+def uuid_hash(uuid: str | None, key: bytes | None = None) -> str | None:
+    """The card id a plan or receipt records in place of the GPU's UUID: a truncated HMAC-SHA256 of the UUID under this
+    install's key. Stable for one card on one install, so a plan still recognizes the card it was made for; not
+    reversible without the key, and not comparable across installs, so a shared receipt does not name the card."""
+    if not uuid:
+        return None
+    k = key if key is not None else install_key()
+    return UUID_HASH_PREFIX + hmac.new(k, str(uuid).encode("utf-8"), hashlib.sha256).hexdigest()[:32]
+
+
+def gpu_identity(gpu) -> str | None:
+    """The card id to record or compare for ``gpu``: the one it was loaded with, else its UUID's hash."""
+    return getattr(gpu, "uuid_hash", None) or uuid_hash(getattr(gpu, "uuid", None))
 
 
 @dataclass(frozen=True)
@@ -59,6 +142,8 @@ class GPU:
     #: ``compute_capability`` stays unknown on purpose: ROCm's capability tuple is a gfx number (gfx942 reports
     #: ``(9, 4)``), and every gate that reads it is written for sm numbers.
     arch: str | None = None
+    #: the card id (:func:`uuid_hash`) of a GPU loaded from a saved profile, which keeps no UUID; None when probed here
+    uuid_hash: str | None = None
 
 
 @dataclass(frozen=True)
@@ -114,7 +199,12 @@ class HardwareProfile:
         return None
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        """The profile as ``inspect --json`` saves it. Each GPU carries its card id (``uuid_hash``), never its UUID."""
+        d = asdict(self)
+        for g, gpu in zip(d["gpus"], self.gpus):
+            g.pop("uuid", None)
+            g["uuid_hash"] = gpu_identity(gpu)
+        return d
 
     @classmethod
     def from_dict(cls, d: dict, *, origin: str | None = None) -> "HardwareProfile":
@@ -124,7 +214,8 @@ class HardwareProfile:
             v = x["value"]
             return Fact(tuple(v) if isinstance(v, list) else v, x["source"], x.get("note", ""))
 
-        gpus = tuple(GPU(**{k: (fact(v) if isinstance(v, dict) and "source" in v else v) for k, v in g.items()})
+        gpus = tuple(GPU(**{"uuid": None,          # a profile saved with a card id keeps no UUID; an older one keeps it
+                            **{k: (fact(v) if isinstance(v, dict) and "source" in v else v) for k, v in g.items()}})
                      for g in d["gpus"])
         host = Host(**{k: fact(v) for k, v in d["host"].items()})
         notes = tuple(d.get("notes", ())) + ((f"profile loaded from {origin}, not probed by this process",)
