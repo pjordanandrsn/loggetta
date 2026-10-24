@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Receipts record experts4bit-qlora 0.58.0's new switches by value
+
+experts4bit-qlora 0.58.0 reads ten new `E4B_*` switches. Each can change a route, a kernel, a plan or a number, so each is now
+recorded by value (`loggetta.measure.E4B_VALUE_KNOBS`), and two runs that differ only in one of them hash apart:
+`E4B_ATTN_SPLIT_FIXED`, `E4B_DENSE_LT_PIN`, `E4B_INT8_HEAD_ROWS`, `E4B_PAGED_ADAPTER_ACCEPT_BASE_MISMATCH`, `E4B_PAGED_KV_POOL`,
+`E4B_PAGED_LOADED_CHUNK_TOKENS`, `E4B_PAGED_MERGED_ARENA`, `E4B_PAGED_PREFILL_EVERY`, `E4B_TRAIN_DETERMINISTIC` and
+`E4B_TRAIN_DET_GATHER`. The test that every installed backend switch is classified failed against the 0.58.0 wheel until now.
+
 ### Plans and receipts record a card id, not the GPU's UUID
 
 Plans, receipts and saved hardware profiles (`inspect --json`) now record `hardware.gpu.uuid_hash`: a keyed hash of the
