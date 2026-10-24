@@ -14,6 +14,8 @@ a list from the start; no code below assumes there is exactly one.
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import os
 import platform
@@ -22,8 +24,48 @@ import shutil
 import subprocess
 import sys
 from dataclasses import asdict, dataclass, field, replace
+from pathlib import Path
 
 GiB = 1 << 30
+
+#: the per-install key that turns a GPU's UUID into the card id plans and receipts record (:func:`uuid_hash`). Created on
+#: first use, owner-only, and never written into any plan, receipt or log. The directory is named after this package's
+#: own directory, so a rename moves it with the package.
+KEY_FILE = Path.home() / ".local" / "state" / Path(__file__).resolve().parent.name / "gpu-id.key"
+UUID_HASH_PREFIX = "hmac-sha256:"
+
+
+def install_key(path: Path | None = None) -> bytes:
+    """This install's 32-byte key, created owner-only (0600) the first time it is asked for."""
+    path = Path(path or KEY_FILE)
+    try:
+        return path.read_bytes()
+    except FileNotFoundError:
+        pass
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    key = os.urandom(32)
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:                 # another process made it first: use theirs, so both hash alike
+        return path.read_bytes()
+    with os.fdopen(fd, "wb") as f:
+        f.write(key)
+    return key
+
+
+def uuid_hash(uuid: str | None, key: bytes | None = None) -> str | None:
+    """The card id a plan or receipt records in place of the GPU's UUID: a truncated HMAC-SHA256 of the UUID under this
+    install's key. Stable for one card on one install, so a plan still recognizes the card it was made for; not
+    reversible without the key, and not comparable across installs, so a shared receipt does not name the card."""
+    if not uuid:
+        return None
+    k = key if key is not None else install_key()
+    return UUID_HASH_PREFIX + hmac.new(k, str(uuid).encode("utf-8"), hashlib.sha256).hexdigest()[:32]
+
+
+def gpu_identity(gpu) -> str | None:
+    """The card id to record or compare for ``gpu``: the one it was loaded with, else its UUID's hash."""
+    return getattr(gpu, "uuid_hash", None) or uuid_hash(getattr(gpu, "uuid", None))
 
 
 @dataclass(frozen=True)
@@ -59,6 +101,8 @@ class GPU:
     #: ``compute_capability`` stays unknown on purpose: ROCm's capability tuple is a gfx number (gfx942 reports
     #: ``(9, 4)``), and every gate that reads it is written for sm numbers.
     arch: str | None = None
+    #: the card id (:func:`uuid_hash`) of a GPU loaded from a saved profile, which keeps no UUID; None when probed here
+    uuid_hash: str | None = None
 
 
 @dataclass(frozen=True)
@@ -114,7 +158,12 @@ class HardwareProfile:
         return None
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        """The profile as ``inspect --json`` saves it. Each GPU carries its card id (``uuid_hash``), never its UUID."""
+        d = asdict(self)
+        for g, gpu in zip(d["gpus"], self.gpus):
+            g.pop("uuid", None)
+            g["uuid_hash"] = gpu_identity(gpu)
+        return d
 
     @classmethod
     def from_dict(cls, d: dict, *, origin: str | None = None) -> "HardwareProfile":
@@ -124,7 +173,8 @@ class HardwareProfile:
             v = x["value"]
             return Fact(tuple(v) if isinstance(v, list) else v, x["source"], x.get("note", ""))
 
-        gpus = tuple(GPU(**{k: (fact(v) if isinstance(v, dict) and "source" in v else v) for k, v in g.items()})
+        gpus = tuple(GPU(**{"uuid": None,          # a profile saved with a card id keeps no UUID; an older one keeps it
+                            **{k: (fact(v) if isinstance(v, dict) and "source" in v else v) for k, v in g.items()}})
                      for g in d["gpus"])
         host = Host(**{k: fact(v) for k, v in d["host"].items()})
         notes = tuple(d.get("notes", ())) + ((f"profile loaded from {origin}, not probed by this process",)

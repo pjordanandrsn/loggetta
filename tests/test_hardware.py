@@ -64,7 +64,11 @@ def test_a_saved_profile_round_trips_and_says_where_it_came_from():
     hw = probe()
     hw = HardwareProfile(gpus=tuple(parse_nvidia_smi(SMI)), host=hw.host, platform=hw.platform)
     back = HardwareProfile.from_dict(json.loads(json.dumps(hw.to_dict())), origin="seat.json")
-    assert back.gpus == hw.gpus and back.host == hw.host
+    # a saved profile keeps the card id (hardware.uuid_hash), never the UUID; every other fact round-trips
+    from dataclasses import replace
+
+    from loggetta.hardware import gpu_identity
+    assert back.gpus == tuple(replace(g, uuid=None, uuid_hash=gpu_identity(g)) for g in hw.gpus) and back.host == hw.host
     assert back.gpus[0].compute_capability.value == (8, 6)
     assert any("seat.json" in n for n in back.notes)
 

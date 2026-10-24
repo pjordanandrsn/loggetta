@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Plans and receipts record a card id, not the GPU's UUID
+
+Plans, receipts and saved hardware profiles (`inspect --json`) now record `hardware.gpu.uuid_hash`: a keyed hash of the
+GPU's UUID under a random per-install key, created owner-only on first use and never written out. They no longer record
+the UUID itself, so a shared receipt does not name the exact card it ran on. `execute` still refuses a plan made for
+another card, by comparing card ids; a plan saved by an older version is compared by its UUID as before. One deliberate
+limit: a plan made on one install and run from another install on the same machine reads as another card, because the
+keys differ, and asks you to plan again there. `evidence/README.md` notes which receipts predate the change.
+
 ### Plans: the held-out band
 
 A training plan prints, under its totals, what held-out rows observed for the same model, card and placement: the range

@@ -413,9 +413,12 @@ def _observed(observations, model, setup, workload, gpu):
 
 
 def _hw_dict(hardware, gpu) -> dict:
+    from .hardware import gpu_identity
+
     h = hardware.host
     g = None if gpu is None else {
-        "index": gpu.index, "name": gpu.name, "uuid": gpu.uuid, "compute_capability": gpu.compute_capability.value,
+        "index": gpu.index, "name": gpu.name, "uuid_hash": gpu_identity(gpu),
+        "compute_capability": gpu.compute_capability.value,
         "driver": gpu.driver.value, "memory_total": gpu.memory_total.value, "memory_free": gpu.memory_free.value,
         "memory_free_source": gpu.memory_free.source,
         "pcie": [gpu.pcie_gen_current.value, gpu.pcie_width_current.value, gpu.pcie_gen_max.value,
