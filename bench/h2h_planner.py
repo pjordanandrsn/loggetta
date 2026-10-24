@@ -12,8 +12,9 @@ For every held-out row of the split:
   receipt's ``comparison`` comes from, and set beside the estimates the receipt recorded when it ran.
 
 Then, once per model, Hugging Face Accelerate's own CLI, exactly as a user runs it:
-``accelerate estimate-memory MODEL --library_name transformers --dtypes float16 int4``. Its command, version and full
-stdout are kept. It sizes the weights from the model's config (at the Hub's current revision; the CLI takes no revision)
+``accelerate estimate-memory MODEL --library_name transformers --dtypes float16 int4``, run as
+``python -m accelerate.commands.accelerate_cli`` (what the ``accelerate`` entry point calls) from this interpreter, so the
+CLI is the Accelerate the version check read. Its argv, version and full stdout are kept. It sizes the weights from the model's config (at the Hub's current revision; the CLI takes no revision)
 and prints a full-precision Adam training figure; it does not model QLoRA, LoRA, activations or offload, so it is a
 reference column, never like-for-like. Its sizes are read as printed, in its own 1024-based units.
 
@@ -32,8 +33,9 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-#: the releases this row is registered at (PREREG "The subject"), always checked; each must be an index wheel, never a
-#: checkout, so a development tree that reports the same version string can never stand in for the release
+#: the releases this row is registered at (PREREG "The subject"), always checked; each must be an index wheel or a git
+#: install at exactly its tag's commit, never a checkout, so a development tree that reports the same version string can
+#: never stand in for the release
 REGISTERED = {"loggetta": "0.7.0", "experts4bit-qlora": "0.58.0", "grouped-nf4-gemm": "0.51.0", "accelerate": "1.15.0"}
 UNITS = {"bytes": 1, "KB": 1 << 10, "MB": 1 << 20, "GB": 1 << 30, "TB": 1 << 40}
 ROW = re.compile(r"^\W*(float32|float16|int8|int4)\W+([\d.]+ \w+)\W+([\d.]+ \w+)\W+([\d.]+ \w+|N/A)\W*$")
@@ -86,13 +88,21 @@ def parse_accelerate(stdout):
     return out
 
 
-def run_accelerate(model, exe="accelerate"):
-    cmd = [exe, "estimate-memory", model, "--library_name", "transformers", "--dtypes", "float16", "int4"]
-    r = subprocess.run(cmd, capture_output=True, text=True)
+def accelerate_argv(model, python=sys.executable):
+    """``accelerate estimate-memory`` as the ``accelerate`` entry point runs it (``accelerate_cli:main``), but from this
+    interpreter, so the CLI that runs is the dist :func:`check_versions` read, never another env's ``accelerate`` on PATH."""
+    return [python, "-m", "accelerate.commands.accelerate_cli", "estimate-memory", model,
+            "--library_name", "transformers", "--dtypes", "float16", "int4"]
+
+
+def run_accelerate(model, version, python=sys.executable, run=subprocess.run):
+    """One estimate-memory run. ``version`` is the one check_versions read for this interpreter's dist (the 1.15.0 CLI
+    has no ``--version``)."""
+    argv = accelerate_argv(model, python)
+    r = run(argv, capture_output=True, text=True)
     if r.returncode != 0:
-        raise Refused(f"{' '.join(cmd)} exited {r.returncode}: {r.stderr.strip()[-300:]}")
-    ver = subprocess.run([exe, "--version"], capture_output=True, text=True).stdout.strip()
-    return {"command": " ".join(cmd), "version": ver, "stdout": r.stdout, "sizes": parse_accelerate(r.stdout)}
+        raise Refused(f"{' '.join(argv)} exited {r.returncode}: {r.stderr.strip()[-300:]}")
+    return {"argv": argv, "version": version, "stdout": r.stdout, "sizes": parse_accelerate(r.stdout)}
 
 
 def installed(dist):
@@ -103,34 +113,74 @@ def installed(dist):
         return None
 
 
+def _direct_url(dist):
+    from importlib import metadata
+    raw = metadata.distribution(dist).read_text("direct_url.json")
+    return json.loads(raw) if raw else None
+
+
 def installed_from(dist):
     """How ``dist`` was installed: "index" for a wheel from a package index (no ``direct_url.json``), else the
-    direct-URL kind ("editable", "local file", "vcs"), which is a checkout, not a release."""
+    direct-URL kind ("editable", "local file", "vcs"). Only an index wheel, or a VCS install at the release's tag
+    (:func:`vcs_at_tag`), is the release."""
     from importlib import metadata
     try:
-        raw = metadata.distribution(dist).read_text("direct_url.json")
+        d = _direct_url(dist)
     except metadata.PackageNotFoundError:
         return None
-    if not raw:
+    if d is None:
         return "index"
-    d = json.loads(raw)
     if (d.get("dir_info") or {}).get("editable"):
         return "editable"
     return "vcs" if "vcs_info" in d else "local file"
 
 
-def check_versions(expect=None, version_of=installed, source_of=installed_from):
+def tag_commit(url, version):
+    """The commit tag ``v<version>`` names at ``url`` (the peeled commit of an annotated tag), or None."""
+    r = subprocess.run(["git", "ls-remote", url, f"refs/tags/v{version}", f"refs/tags/v{version}^{{}}"],
+                       capture_output=True, text=True)
+    refs = dict(reversed(line.split("\t")) for line in r.stdout.splitlines() if "\t" in line)
+    return refs.get(f"refs/tags/v{version}^{{}}") or refs.get(f"refs/tags/v{version}")
+
+
+def vcs_at_tag(dist, version, direct_url=_direct_url, tag_of=tag_commit):
+    """(commit, None) when ``dist`` was installed from git at exactly the commit tag ``v<version>`` names, else
+    (commit or None, why not)."""
+    d = direct_url(dist) or {}
+    commit, url = (d.get("vcs_info") or {}).get("commit_id"), d.get("url")
+    if not commit or not url:
+        return None, "records no commit"
+    tag = tag_of(url, version)
+    if tag is None:
+        return commit, f"has no tag v{version}"
+    if tag != commit:
+        return commit, f"is at {commit[:12]}, not tag v{version}'s {tag[:12]}"
+    return commit, None
+
+
+def check_versions(expect=None, version_of=installed, source_of=installed_from, at_tag=vcs_at_tag):
     """Refused unless every registered release (``expect``, default :data:`REGISTERED`) is installed at exactly its
-    version AND from a package index. A missing release, another version, or a checkout reporting the same version
-    string reads "not read today"; whatever happens to be installed never stands in."""
+    version AND as that release: a package-index wheel, or a git install at exactly the commit its tag names. A missing
+    release, another version, or a checkout reporting the same version string reads "not read today"; whatever happens to
+    be installed never stands in."""
     expect = REGISTERED if expect is None else expect
     got = {d: (version_of(d), source_of(d)) for d in expect}
     wrong = [f"{d} wants {v}, installed {got[d][0]}" for d, v in sorted(expect.items()) if got[d][0] != v]
-    wrong += [f"{d} {v} is installed from a {got[d][1]} install, not a release" for d, v in sorted(expect.items())
-              if got[d][0] == v and got[d][1] != "index"]
+    commits = {}
+    for d, v in sorted(expect.items()):
+        if got[d][0] != v or got[d][1] == "index":
+            continue
+        if got[d][1] != "vcs":
+            wrong.append(f"{d} {v} is installed from a {got[d][1]} install, not a release")
+            continue
+        commit, why = at_tag(d, v)
+        if why:
+            wrong.append(f"{d} {v} is a git install that {why}, not a release")
+        commits[d] = commit
     if wrong:
         raise Refused("not read today: " + "; ".join(wrong))
-    return {d: {"version": v, "installed_from": src} for d, (v, src) in got.items()}
+    return {d: {"version": v, "installed_from": src, **({"commit": commits[d]} if d in commits else {})}
+            for d, (v, src) in got.items()}
 
 
 def outcome(cmp, host_row):
@@ -185,7 +235,7 @@ def replan_row(rec, ir, config_reader, topos):
             "then_outcome": outcome(then, host_row)}
 
 
-def build(split, e4b, reader=None, accelerate="accelerate"):
+def build(split, e4b, accelerate_version, reader=None, run=subprocess.run):
     ir = _replan_module()
     reader = reader or (lambda c, p: git_show(e4b, c, p))
     pin = split["pinned_at"]["experts4bit-qlora"]
@@ -197,7 +247,7 @@ def build(split, e4b, reader=None, accelerate="accelerate"):
                      "model": row["model"], "card": row["card"], "placement": row["placement"], "seq": row["seq"],
                      "file": row["file"], "sha256": row["sha256"], **r})
         models.setdefault(row["model"], None)
-    acc = {m: run_accelerate(m, accelerate) for m in models}
+    acc = {m: run_accelerate(m, accelerate_version, run=run) for m in models}
     return ({"split": f"SPLIT-v{split['version']}.json", "pinned_at": split["pinned_at"], "rows": rows}, acc)
 
 
@@ -206,11 +256,10 @@ def main():
     ap.add_argument("split")
     ap.add_argument("--e4b", required=True)
     ap.add_argument("--out", required=True)
-    ap.add_argument("--accelerate", default="accelerate", help="the accelerate CLI to run (default: the one on PATH)")
     a = ap.parse_args()
     try:
         versions = check_versions()
-        doc, acc = build(json.load(open(a.split)), a.e4b, accelerate=a.accelerate)
+        doc, acc = build(json.load(open(a.split)), a.e4b, versions["accelerate"]["version"])
     except Refused as e:
         print(f"refused: {e}", file=sys.stderr)
         return 2

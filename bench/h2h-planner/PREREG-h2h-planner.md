@@ -25,10 +25,12 @@ unless its sha256 equals the split's. No row is added, dropped or re-tagged.
 
 - **The planner:** Loggetta 0.7.0, installed from PyPI, with the backends' estimators from experts4bit-qlora 0.58.0
   and grouped-nf4-gemm 0.51.0, the releases tagged today, and Accelerate 1.15.0. These four are registered in the
-  driver (`REGISTERED`) and always checked: each must be installed at exactly that version AND from a package index (a
-  wheel with no `direct_url.json`). A missing release, another version, or a checkout reporting the same version string
-  (editable, local file or VCS) refuses: the row reads "not read today", and no other install stands in. The output
-  records each version and how it was installed. A newer Accelerate is a new reading, not this one.
+  driver (`REGISTERED`) and always checked: each must be installed at exactly that version AND as that release: a
+  wheel from a package index (no `direct_url.json`), or a git install whose recorded commit is exactly the commit its
+  tag `v<version>` names (read with `git ls-remote` from the install's own URL, the annotated tag peeled). A missing
+  release, another version, or a checkout reporting the same version string (editable, local file, or git at any other
+  commit) refuses: the row reads "not read today", and no other install stands in. The output records each version, how
+  it was installed and, for a git install, its commit. A newer Accelerate is a new reading, not this one.
 - **The harness:** `bench/insample_replan.py`'s own planning (`_plan`: the receipt's recorded card, workload and setup,
   no receipts on file; the dense row through `dense.describe` from DQ7's committed config, as its `dense` mode does).
   `bench/h2h_planner.py` feeds it the split's rows and grades each new plan against the receipt's own measured peaks with
@@ -46,7 +48,10 @@ Hugging Face Accelerate 1.15.0 (its latest release), through its own CLI exactly
 accelerate estimate-memory MODEL --library_name transformers --dtypes float16 int4
 ```
 
-Its command, version and full stdout are kept in the output. It sizes a model's weights from its config on the meta
+It runs as `python -m accelerate.commands.accelerate_cli estimate-memory ...`, the module the `accelerate` entry point
+calls, from the driver's own interpreter, so the CLI that runs is the Accelerate the version check read and not
+whatever `accelerate` is first on PATH. Its argv, the checked version (the 1.15.0 CLI has no `--version`) and full stdout
+are kept in the output. It sizes a model's weights from its config on the meta
 device, at the Hub's current revision (the CLI takes no revision), and prints a "Training using Adam" figure for full
 precision. **It does not model QLoRA, LoRA, activations, the allocator or offload.** Its column is labelled "a
 full-precision Adam estimate, not like-for-like" and is a reference: no row is ruled on it, and no "win" is claimed
@@ -71,8 +76,8 @@ and the negatives beside the wins.
 
 The read runs on a development host's CPU, from this registration's merge commit, after the tags exist and after an
 Approved that names the merge commit, as `python bench/h2h_planner.py evidence/planner-split/SPLIT-v3.json --e4b
-E4B_CHECKOUT --out DIR`, in an environment with the four registered releases installed from the package index (the
-driver refuses any other). It writes `evidence/<date>-h2h-planner/h2h-planner.json` and `accelerate.json`.
+E4B_CHECKOUT --out DIR`, in an environment with the four registered releases installed as releases (index wheels, or git at the tag's
+commit; the driver refuses any other). It writes `evidence/<date>-h2h-planner/h2h-planner.json` and `accelerate.json`.
 The maintainer re-derives it by running the same command. USD 0.
 
 ## What was seen before this page (stated, not hidden)

@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import json
 import pathlib
+import re
 
 import pytest
 
@@ -88,11 +89,91 @@ def test_the_registered_releases_are_always_checked():
         t.check_versions(version_of=lambda d: None, source_of=lambda d: None)       # nothing installed: no default pass
 
 
-@pytest.mark.parametrize("source", ["editable", "local file", "vcs"])
+@pytest.mark.parametrize("source", ["editable", "local file"])
 def test_a_checkout_reporting_the_release_version_is_not_the_release(source):
     t = _tool()
     with pytest.raises(t.Refused, match=f"experts4bit-qlora 0.58.0 is installed from a {source} install, not a release"):
         t.check_versions({"experts4bit-qlora": "0.58.0"}, lambda d: "0.58.0", lambda d: source)
+
+
+#: two distinct commit ids, assembled at run time
+TAGGED, OTHER = "a1" * 20, "b2" * 20
+
+
+def _vcs(commit, url="https://example.invalid/r.git"):
+    return lambda d: {"url": url, "vcs_info": {"vcs": "git", "commit_id": commit}}
+
+
+def test_a_git_install_at_the_tags_commit_is_the_release():
+    t = _tool()
+    seen = []
+
+    def tag_of(url, v):
+        seen.append((url, v))
+        return TAGGED
+
+    def at_tag(d, v):
+        return t.vcs_at_tag(d, v, _vcs(TAGGED), tag_of)
+    got = t.check_versions({"grouped-nf4-gemm": "0.51.0"}, lambda d: "0.51.0", lambda d: "vcs", at_tag)
+    assert got == {"grouped-nf4-gemm": {"version": "0.51.0", "installed_from": "vcs", "commit": TAGGED}}
+    assert seen == [("https://example.invalid/r.git", "0.51.0")]
+
+
+@pytest.mark.parametrize("direct, tag, why", [
+    (_vcs(OTHER), TAGGED, f"is at {OTHER[:12]}, not tag v0.51.0's {TAGGED[:12]}"),
+    (_vcs(TAGGED), None, "has no tag v0.51.0"),
+    (lambda d: {"url": "https://example.invalid/r.git", "vcs_info": {"vcs": "git"}}, TAGGED, "records no commit"),
+])
+def test_a_git_install_at_any_other_commit_is_not_the_release(direct, tag, why):
+    t = _tool()
+
+    def at_tag(d, v):
+        return t.vcs_at_tag(d, v, direct, lambda url, v: tag)
+    with pytest.raises(t.Refused, match=re.escape(f"grouped-nf4-gemm 0.51.0 is a git install that {why}, not a release")):
+        t.check_versions({"grouped-nf4-gemm": "0.51.0"}, lambda d: "0.51.0", lambda d: "vcs", at_tag)
+
+
+def test_an_index_wheel_never_asks_for_a_tag():
+    t = _tool()
+
+    def at_tag(d, v):
+        raise AssertionError("an index wheel is the release as installed")
+    assert t.check_versions({"loggetta": "0.7.0"}, lambda d: "0.7.0", lambda d: "index", at_tag)["loggetta"] == {
+        "version": "0.7.0", "installed_from": "index"}
+
+
+def test_the_tag_is_read_peeled():
+    t = _tool()
+
+    class R:
+        stdout = f"{OTHER}\trefs/tags/v0.51.0\n{TAGGED}\trefs/tags/v0.51.0^{{}}\n"
+    import subprocess
+    orig = subprocess.run
+    try:
+        subprocess.run = lambda *a, **k: R()
+        assert t.tag_commit("u", "0.51.0") == TAGGED                                  # the annotated tag's commit
+        R.stdout = f"{TAGGED}\trefs/tags/v0.51.0\n"
+        assert t.tag_commit("u", "0.51.0") == TAGGED                                  # a lightweight tag
+        R.stdout = ""
+        assert t.tag_commit("u", "0.51.0") is None
+    finally:
+        subprocess.run = orig
+
+
+def test_accelerate_runs_from_the_checked_interpreter():
+    import sys
+    t = _tool()
+    calls = []
+
+    class R:
+        returncode, stdout, stderr = 0, STDOUT, ""
+    got = t.run_accelerate("baidu/ERNIE-4.5-21B-A3B-PT", "1.15.0", run=lambda argv, **k: (calls.append(argv), R())[1])
+    argv = calls[0]
+    assert argv[0] == sys.executable and argv[1:3] == ["-m", "accelerate.commands.accelerate_cli"]
+    assert argv[3:] == ["estimate-memory", "baidu/ERNIE-4.5-21B-A3B-PT", "--library_name", "transformers",
+                        "--dtypes", "float16", "int4"]
+    assert got["argv"] == argv and got["version"] == "1.15.0"
+    assert got["sizes"]["float16"]["printed"]["total"] == "40.65 GB"
 
 
 def test_an_editable_install_reads_as_editable(tmp_path, monkeypatch):
