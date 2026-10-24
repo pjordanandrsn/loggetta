@@ -91,3 +91,7 @@ adertha://
 #added-only: /Users/[a-z][a-z0-9._-]*/
 # Any /home/<name>/ except /home/node/, a container home that many records name legitimately:
 #added-only: /home/(n|no|nod|[^n/][^/]*|n[^o/][^/]*|no[^d/][^/]*|nod[^e/][^/]*|node[^/]+)/
+# A card's GPU UUID (nvidia-smi's GPU-xxxxxxxx-...) identifies one physical card on a rented host: a public receipt never
+# needs it. A receipt that carries one keeps its original in the private store (STORE-ONLY.sha256 beside it) and commits
+# a projection with the value replaced. Records merged before this rule keep theirs (2026-10-24).
+#added-only: GPU-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}

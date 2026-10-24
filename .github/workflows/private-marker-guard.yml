@@ -70,6 +70,7 @@ jobs:
           a venv under /home/n/.venvs/z
           ingested by pjordanandrsn/org-corpus
           the run lock lives at ~/.adertha/rent-live.lock
+          the card reads GPU-01234567-89ab-cdef-0123-456789abcdef
           CANARY
           grep -vE '^[[:space:]]*(#|$)' .github/private-markers.txt > /tmp/patterns.txt
           np=$(wc -l < /tmp/patterns.txt | tr -d ' ')
