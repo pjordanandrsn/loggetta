@@ -34,12 +34,16 @@ unless its sha256 equals the split's. No row is added, dropped or re-tagged.
   tag peeled, never from the URL the install recorded. A missing release, another version, or a checkout reporting the
   same version string (editable, local file, a fork, a mirror, or git at any other commit) refuses. "No
   `direct_url.json`" alone only proves that SOME index served the wheel, and a wheel built locally at the release's
-  version passes it, so every index install also goes through `bench/release_proof.py` (sha256 `341dd130b1cf681a86f3fa1aad2b3e1bf9a2e4e6c22388e0e35b5736fc446713`;
+  version passes it, so every index install also goes through `bench/release_proof.py` (sha256 `199d4f2faa49419090ef57e73fc34a86787ad5dcfe67060e92aaaf88a9bf6a63`;
   standalone and stdlib-only, so the other rows stage it byte-identical): it downloads the published wheel whose tags
   are the install's `WHEEL` tags, checks PyPI's listed sha256, and requires every file the wheel's `RECORD` lists to
   hash the same on disk, and every other entry in the install's `RECORD` to be `__pycache__` bytecode or a launcher
-  the dist's own `entry_points.txt` names. The output records the wheel, its sha256 and "RECORD equal". Any miss
-  refuses: the row reads "not read today", and no other install stands in. The output records each version, how
+  the dist's own `entry_points.txt` names. Every top-level name the wheel installs must also IMPORT from that install
+  in the driver's own interpreter (`find_spec`), so a checkout earlier on `sys.path` (`PYTHONPATH=<repo>`, as the
+  test suite runs) cannot shadow it; the proof runs in `main()`, the process that does the read. `main()` first
+  re-executes under `PYTHONPYCACHEPREFIX` set to a fresh empty directory, so no `__pycache__` beside the proven
+  sources stands in for them, and a proof not made under it refuses. The output records the wheel, its sha256,
+  "RECORD equal", where each name imports from, and the bytecode prefix. Any miss refuses: the row reads "not read today", and no other install stands in. The output records each version, how
   it was installed and, for a git install, its commit. A newer Accelerate is a new reading, not this one.
 - **The harness:** `bench/insample_replan.py`'s own planning (`_plan`: the receipt's recorded card, workload and setup,
   no receipts on file; the dense row through `dense.describe` from DQ7's committed config, as its `dense` mode does).

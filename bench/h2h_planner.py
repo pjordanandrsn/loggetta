@@ -215,6 +215,10 @@ def check_versions(expect=None, version_of=installed, source_of=installed_from, 
                 proofs[d] = proof(d, v)
             except err as e:
                 wrong.append(f"{d} {v} is an index install whose bytes are not the published release: {e}")
+                continue
+            if proofs[d].get("pycache_fresh") is not True:
+                wrong.append(f"{d} {v} was proven outside a fresh PYTHONPYCACHEPREFIX, so cached bytecode could stand in "
+                             f"for its proven sources")
             continue
         if got[d][1] != "vcs":
             wrong.append(f"{d} {v} is installed from a {got[d][1]} install, not a release")
@@ -303,6 +307,9 @@ def main():
     ap.add_argument("--e4b", required=True)
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
+    # Before anything under proof is imported: re-execute under a fresh, empty bytecode prefix (release_proof (b)/R2), so
+    # no __pycache__ beside the proven sources can stand in for them; the proof records it.
+    _release_proof().fresh_pycache()
     try:
         versions = check_versions()
         doc, acc = build(json.load(open(a.split)), a.e4b, versions["accelerate"]["version"])

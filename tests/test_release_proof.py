@@ -7,6 +7,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import sys
 import zipfile
 from importlib import metadata
 
@@ -78,8 +79,14 @@ def _pypi(*wheels):
     return get, fetch_to
 
 
+def _in_site(dist):
+    """A finder that sees only the install's own directory: the files are what these tests vary, not sys.path."""
+    from importlib.machinery import PathFinder
+    return lambda name: PathFinder.find_spec(name, [str(dist.locate_file(""))])
+
+
 def _prove(t, dist, get, fetch_to):
-    return t.prove(NAME, VER, get, fetch_to, lambda d: dist)
+    return t.prove(NAME, VER, get, fetch_to, lambda d: dist, _in_site(dist))
 
 
 def test_the_published_wheel_as_installed_is_the_release(tmp_path):
@@ -88,7 +95,72 @@ def test_the_published_wheel_as_installed_is_the_release(tmp_path):
     dist = _install(whl, tmp_path / "site")
     got = _prove(t, dist, *_pypi((whl, None)))
     assert got == {"dist": NAME, "version": VER, "wheel": whl.name, "sha256": hashlib.sha256(whl.read_bytes()).hexdigest(),
-                   "files": 5, "record": "RECORD equal", "record_equal": True, "first_diff": None}
+                   "files": 5, "record": "RECORD equal", "record_equal": True, "first_diff": None,
+                   "imports": {"fakerel": os.path.realpath(tmp_path / "site" / "fakerel" / "__init__.py")},
+                   "pycache_prefix": sys.pycache_prefix, "pycache_fresh": False}
+
+
+def test_a_checkout_earlier_on_sys_path_shadows_the_proof_and_is_refused(tmp_path, monkeypatch):
+    import importlib
+    t = _tool()
+    whl = _wheel(tmp_path / f"{NAME}-{VER}-py3-none-any.whl")
+    dist = _install(whl, tmp_path / "site")
+    (tmp_path / "checkout" / "fakerel").mkdir(parents=True)
+    (tmp_path / "checkout" / "fakerel" / "__init__.py").write_bytes(b"RELEASE = False\n")
+    monkeypatch.syspath_prepend(str(tmp_path / "site"))
+    importlib.invalidate_caches()
+    assert t.prove(NAME, VER, *_pypi((whl, None)), lambda d: dist)["imports"] == {
+        "fakerel": os.path.realpath(tmp_path / "site" / "fakerel" / "__init__.py")}      # the real find_spec, unshadowed
+    monkeypatch.syspath_prepend(str(tmp_path / "checkout"))                             # PYTHONPATH=<checkout>
+    importlib.invalidate_caches()
+    with pytest.raises(t.ReleaseProofError, match="fakerel imports from .*checkout/fakerel/__init__.py, not the proven "
+                                                  "install") as e:
+        t.prove(NAME, VER, *_pypi((whl, None)), lambda d: dist)
+    assert e.value.first_diff == "fakerel/__init__.py"
+
+
+def test_a_name_the_wheel_installs_that_does_not_import_is_refused(tmp_path):
+    t = _tool()
+    whl = _wheel(tmp_path / f"{NAME}-{VER}-py3-none-any.whl")
+    dist = _install(whl, tmp_path / "site")
+    with pytest.raises(t.ReleaseProofError, match="fakerel is not importable here"):
+        t.prove(NAME, VER, *_pypi((whl, None)), lambda d: dist, lambda name: None)
+
+
+def test_a_namespace_package_must_search_only_the_install(tmp_path):
+    t = _tool()
+    src = {"fakerel/core.py": b"X = 1\n"}                                               # no __init__.py: a namespace
+    whl = _wheel(tmp_path / f"{NAME}-{VER}-py3-none-any.whl", src)
+    dist = _install(whl, tmp_path / "site")
+    assert t.top_level({"fakerel/core.py": "h", "solo.py": "h", "_ext.cpython-312-x86_64-linux-gnu.so": "h",
+                        f"{DI}/METADATA": "h"}) == {"fakerel": (None, "fakerel"), "solo": ("solo.py", "solo.py"),
+                                                    "_ext": ("_ext.cpython-312-x86_64-linux-gnu.so",) * 2}
+    assert _prove(t, dist, *_pypi((whl, None)))["imports"] == {"fakerel": os.path.realpath(tmp_path / "site" / "fakerel")}
+    (tmp_path / "other" / "fakerel").mkdir(parents=True)
+    from importlib.machinery import PathFinder
+
+    def both(name):
+        return PathFinder.find_spec(name, [str(tmp_path / "site"), str(tmp_path / "other")])
+    with pytest.raises(t.ReleaseProofError, match="namespace fakerel searches .*, not only the proven install"):
+        t.prove(NAME, VER, *_pypi((whl, None)), lambda d: dist, both)
+
+
+def test_fresh_pycache_reexecs_under_a_new_empty_prefix(monkeypatch):
+    t = _tool()
+    calls = []
+    monkeypatch.delenv(t.FRESH_MARK, raising=False)
+    d = t.fresh_pycache(["run.py", "--x"], execve=lambda exe, argv, env: calls.append((exe, argv, env)))
+    (exe, argv, env), = calls
+    assert exe == sys.executable and argv == [sys.executable, "run.py", "--x"]
+    assert env["PYTHONPYCACHEPREFIX"] == env[t.FRESH_MARK] == d and os.path.isdir(d) and not os.listdir(d)
+    os.rmdir(d)
+    monkeypatch.setattr(sys, "pycache_prefix", "/somewhere/else")                      # a prefix it did not make: re-exec
+    monkeypatch.setenv(t.FRESH_MARK, "/not/that/one")
+    t.fresh_pycache(["run.py"], execve=lambda *a: calls.append(a))
+    assert len(calls) == 2
+    os.rmdir(calls[1][2]["PYTHONPYCACHEPREFIX"])
+    monkeypatch.setenv(t.FRESH_MARK, "/somewhere/else")                                # its own: no re-exec
+    assert t.fresh_pycache(["run.py"], execve=lambda *a: calls.append(a)) == "/somewhere/else" and len(calls) == 2
 
 
 def test_a_locally_built_wheel_at_the_release_version_is_refused(tmp_path):

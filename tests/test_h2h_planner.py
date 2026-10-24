@@ -82,7 +82,32 @@ def test_a_release_that_is_not_installed_reads_not_read_today():
 
 
 def _proved(d, v):
-    return {"dist": d, "version": v, "record": "RECORD equal"}
+    return {"dist": d, "version": v, "record": "RECORD equal", "pycache_fresh": True}
+
+
+def test_a_proof_outside_a_fresh_bytecode_prefix_is_refused():
+    t = _tool()
+    with pytest.raises(t.Refused, match="loggetta 0.7.0 was proven outside a fresh PYTHONPYCACHEPREFIX"):
+        t.check_versions({"loggetta": "0.7.0"}, lambda d: "0.7.0", lambda d: "index",
+                         proof=lambda d, v: {**_proved(d, v), "pycache_fresh": False})
+
+
+def test_main_reexecs_under_a_fresh_prefix_before_anything_is_read(monkeypatch):
+    t = _tool()
+    order = []
+
+    class Stop(Exception):
+        pass
+    monkeypatch.setattr(t._release_proof(), "fresh_pycache", lambda *a, **k: order.append("fresh"))
+
+    def check(*a, **k):
+        order.append("check")
+        raise Stop
+    monkeypatch.setattr(t, "check_versions", check)
+    monkeypatch.setattr("sys.argv", ["h2h_planner.py", "split.json", "--e4b", "e", "--out", "o"])
+    with pytest.raises(Stop):
+        t.main()
+    assert order == ["fresh", "check"]
 
 
 def test_an_index_install_whose_bytes_are_not_the_release_is_refused():
