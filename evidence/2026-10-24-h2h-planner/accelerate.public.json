@@ -1,0 +1,116 @@
+{
+ "LiquidAI/LFM2-8B-A1B": {
+  "argv": [
+   "<python>",
+   "-m",
+   "accelerate.commands.accelerate_cli",
+   "estimate-memory",
+   "LiquidAI/LFM2-8B-A1B",
+   "--library_name",
+   "transformers",
+   "--dtypes",
+   "float16",
+   "int4"
+  ],
+  "sizes": {
+   "float16": {
+    "largest_layer_bytes": 738344305,
+    "printed": {
+     "largest_layer": "704.14 MB",
+     "total": "15.53 GB",
+     "training_adam": "62.14 GB"
+    },
+    "total_bytes": 16675210527,
+    "training_adam_bytes": 66722316943
+   },
+   "int4": {
+    "largest_layer_bytes": 184591319,
+    "printed": {
+     "largest_layer": "176.04 MB",
+     "total": "3.88 GB",
+     "training_adam": "N/A"
+    },
+    "total_bytes": 4166118277,
+    "training_adam_bytes": null
+   }
+  },
+  "stdout": "Loading pretrained config for `LiquidAI/LFM2-8B-A1B` from `transformers`...\n\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n\u2502  Memory Usage for loading `LiquidAI/LFM2-8B-A1B`   \u2502\n\u251c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524\n\u2502 dtype \u2502Largest Layer\u2502Total Size\u2502Training using Adam\u2502\n\u251c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524\n\u2502float16\u2502  704.14 MB  \u2502 15.53 GB \u2502      62.14 GB     \u2502\n\u2502  int4 \u2502  176.04 MB  \u2502 3.88 GB  \u2502        N/A        \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\n",
+  "version": "1.15.0"
+ },
+ "Qwen/Qwen3-14B": {
+  "argv": [
+   "<python>",
+   "-m",
+   "accelerate.commands.accelerate_cli",
+   "estimate-memory",
+   "Qwen/Qwen3-14B",
+   "--library_name",
+   "transformers",
+   "--dtypes",
+   "float16",
+   "int4"
+  ],
+  "sizes": {
+   "float16": {
+    "largest_layer_bytes": 1556925645,
+    "printed": {
+     "largest_layer": "1.45 GB",
+     "total": "26.06 GB",
+     "training_adam": "104.24 GB"
+    },
+    "total_bytes": 27981711933,
+    "training_adam_bytes": 111926847734
+   },
+   "int4": {
+    "largest_layer_bytes": 388958781,
+    "printed": {
+     "largest_layer": "370.94 MB",
+     "total": "6.51 GB",
+     "training_adam": "N/A"
+    },
+    "total_bytes": 6990059274,
+    "training_adam_bytes": null
+   }
+  },
+  "stdout": "Loading pretrained config for `Qwen/Qwen3-14B` from `transformers`...\n\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n\u2502     Memory Usage for loading `Qwen/Qwen3-14B`      \u2502\n\u251c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524\n\u2502 dtype \u2502Largest Layer\u2502Total Size\u2502Training using Adam\u2502\n\u251c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524\n\u2502float16\u2502   1.45 GB   \u2502 26.06 GB \u2502     104.24 GB     \u2502\n\u2502  int4 \u2502  370.94 MB  \u2502 6.51 GB  \u2502        N/A        \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\n",
+  "version": "1.15.0"
+ },
+ "baidu/ERNIE-4.5-21B-A3B-PT": {
+  "argv": [
+   "<python>",
+   "-m",
+   "accelerate.commands.accelerate_cli",
+   "estimate-memory",
+   "baidu/ERNIE-4.5-21B-A3B-PT",
+   "--library_name",
+   "transformers",
+   "--dtypes",
+   "float16",
+   "int4"
+  ],
+  "sizes": {
+   "float16": {
+    "largest_layer_bytes": 1589137900,
+    "printed": {
+     "largest_layer": "1.48 GB",
+     "total": "40.65 GB",
+     "training_adam": "162.61 GB"
+    },
+    "total_bytes": 43647605146,
+    "training_adam_bytes": 174601158001
+   },
+   "int4": {
+    "largest_layer_bytes": 397232046,
+    "printed": {
+     "largest_layer": "378.83 MB",
+     "total": "10.16 GB",
+     "training_adam": "N/A"
+    },
+    "total_bytes": 10909216932,
+    "training_adam_bytes": null
+   }
+  },
+  "stdout": "Loading pretrained config for `baidu/ERNIE-4.5-21B-A3B-PT` from `transformers`...\n\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n\u2502Memory Usage for loading `baidu/ERNIE-4.5-21B-A3B-PT` \u2502\n\u251c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524\n\u2502 dtype \u2502Largest Layer\u2502Total Size\u2502 Training using Adam \u2502\n\u251c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524\n\u2502float16\u2502   1.48 GB   \u2502 40.65 GB \u2502      162.61 GB      \u2502\n\u2502  int4 \u2502  378.83 MB  \u2502 10.16 GB \u2502         N/A         \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\n",
+  "version": "1.15.0"
+ }
+}

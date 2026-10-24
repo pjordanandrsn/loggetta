@@ -1,0 +1,5 @@
+# The planner head-to-head's raw outputs, kept only in the private receipt store (receipts/loggetta/2026-10-24/h2h-planner/), byte-exact.
+# They record local absolute paths, so the public copies beside this file are their projection (bench/h2h-planner/project_public.py).
+cead8935422a89b0d5fddaa863db89107c236868d5ad7aa19e838ed361265856  h2h-planner.json
+e6a2e2671ba997fd923cbfad85d3794c9d403ee947de997ff6fde10548dd2492  accelerate.json
+3491848590ab183177815c7c261540d39b125ee94cd052783340505808c81256  run.log
