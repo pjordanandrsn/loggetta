@@ -62,14 +62,16 @@ def check_here(plan: ExecutionPlan, hardware=None) -> None:
                                 f"{want.get('name')}")
     here = gpu_identity(gpu)
     if want.get("uuid_hash") and here:          # the card id this install records (hardware.uuid_hash)
-        same, how = want["uuid_hash"] == here, "a different card id"
+        same = want["uuid_hash"] == here
+        why = ("it is a different card, or the plan was made by another install (each install has its own card ids, "
+               "so a plan carried from another machine or install reads as a different card)")
     elif want.get("uuid") and gpu.uuid:         # a plan saved before card ids: its raw UUID, compared as before
-        same, how = want["uuid"] == gpu.uuid, "a different card"
+        same, why = want["uuid"] == gpu.uuid, "it is a different card"
     else:
-        same, how = want.get("name") == gpu.name, "a different card name"
+        same, why = want.get("name") == gpu.name, "it is a different model of card"
     if not same:                                # never prints a UUID
-        raise PlanNotExecutable(f"the plan was made for {want.get('name')}; device {gpu.index} here is {gpu.name}, with "
-                                f"{how}: plan again on this machine")
+        raise PlanNotExecutable(f"the plan was made for a {want.get('name')}, and device {gpu.index} here ({gpu.name}) "
+                                f"is not that card: {why}; plan again on this machine")
 
 
 def compare(plan: ExecutionPlan, measured: dict) -> dict:

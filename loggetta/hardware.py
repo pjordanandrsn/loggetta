@@ -20,6 +20,7 @@ import json
 import os
 import platform
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -35,19 +36,35 @@ KEY_FILE = Path.home() / ".local" / "state" / Path(__file__).resolve().parent.na
 UUID_HASH_PREFIX = "hmac-sha256:"
 
 
+KEY_BYTES = 32
+
+
+def _read_key(path: Path) -> bytes:
+    """An existing key, owner-only: a wider mode is narrowed to 0600 (the key is this user's), and a file that is not a
+    key of :data:`KEY_BYTES` bytes is refused rather than used."""
+    mode = os.stat(path).st_mode & 0o777
+    if mode & 0o077:
+        os.chmod(path, 0o600)
+    key = path.read_bytes()
+    if len(key) != KEY_BYTES:
+        raise RuntimeError(f"the card-id key file holds {len(key)} bytes, not {KEY_BYTES}: move it aside and a new one is "
+                           f"made (plans made with the old key will then ask to be made again)")
+    return key
+
+
 def install_key(path: Path | None = None) -> bytes:
-    """This install's 32-byte key, created owner-only (0600) the first time it is asked for."""
+    """This install's key (:data:`KEY_BYTES` random bytes from :mod:`secrets`), created owner-only (0600) in an
+    owner-only directory (0700) the first time it is asked for. Never printed, logged or written into a plan or receipt."""
     path = Path(path or KEY_FILE)
-    try:
-        return path.read_bytes()
-    except FileNotFoundError:
-        pass
-    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    key = os.urandom(32)
+    if path.exists():
+        return _read_key(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(path.parent, 0o700)
+    key = secrets.token_bytes(KEY_BYTES)
     try:
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     except FileExistsError:                 # another process made it first: use theirs, so both hash alike
-        return path.read_bytes()
+        return _read_key(path)
     with os.fdopen(fd, "wb") as f:
         f.write(key)
     return key

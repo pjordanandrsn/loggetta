@@ -53,6 +53,43 @@ def test_the_key_is_created_once_owner_only_and_reused():
     assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
 
 
+def test_the_key_directory_is_owner_only(tmp_path, monkeypatch):
+    monkeypatch.setattr(hardware, "KEY_FILE", tmp_path / "new" / "state" / "gpu-id.key")   # a directory not made yet
+    install_key()
+    assert stat.S_IMODE(os.stat(hardware.KEY_FILE.parent).st_mode) == 0o700
+
+
+def test_an_existing_key_with_a_wider_mode_is_narrowed_and_kept():
+    k = install_key()
+    os.chmod(hardware.KEY_FILE, 0o644)
+    assert install_key() == k and stat.S_IMODE(os.stat(hardware.KEY_FILE).st_mode) == 0o600
+
+
+def test_a_key_file_of_the_wrong_length_is_refused():
+    hardware.KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    hardware.KEY_FILE.write_bytes(b"short")
+    with pytest.raises(RuntimeError, match="holds 5 bytes, not 32"):
+        install_key()
+
+
+def test_a_concurrent_first_use_reads_the_key_the_other_process_made(monkeypatch):
+    other = b"\x05" * 32
+    real_open = os.open
+
+    def racing_open(path, flags, mode=0o777):           # the other process writes its key just before ours
+        if flags & os.O_EXCL:
+            hardware.KEY_FILE.write_bytes(other)
+            os.chmod(hardware.KEY_FILE, 0o600)
+        return real_open(path, flags, mode)
+    monkeypatch.setattr(hardware.os, "open", racing_open)
+    assert install_key() == other
+
+
+def test_the_key_comes_from_secrets(monkeypatch):
+    monkeypatch.setattr(hardware.secrets, "token_bytes", lambda n: b"\x09" * n)
+    assert install_key() == b"\x09" * 32
+
+
 def test_the_hash_is_stable_per_install_and_differs_across_installs():
     u = a_uuid(1)
     a, b = uuid_hash(u, b"\x01" * 32), uuid_hash(u, b"\x02" * 32)
@@ -108,7 +145,9 @@ def test_a_new_plan_refuses_another_card_of_the_same_model_without_printing_a_uu
     u, other = a_uuid(7), a_uuid(8)
     with pytest.raises(PlanNotExecutable, match="plan again on this machine") as e:
         check_here(a_plan({"name": "NVIDIA RTX A4000", "uuid_hash": uuid_hash(u)}), a_profile(a_gpu(other)))
-    assert "a different card id" in str(e.value) and not UUID_SHAPE.search(str(e.value))
+    msg = str(e.value)
+    assert "is not that card" in msg and "a plan carried from another machine or install reads as a different card" in msg
+    assert not UUID_SHAPE.search(msg)
 
 
 def test_a_new_plan_from_another_install_refuses_even_on_the_same_card():
@@ -127,5 +166,5 @@ def test_a_plan_saved_before_card_ids_still_checks_its_raw_uuid():
 
 def test_without_any_card_id_the_name_decides_as_before():
     check_here(a_plan({"name": "NVIDIA RTX A4000"}), a_profile(a_gpu(None)))
-    with pytest.raises(PlanNotExecutable, match="a different card name"):
+    with pytest.raises(PlanNotExecutable, match="a different model of card"):
         check_here(a_plan({"name": "NVIDIA RTX A4000"}), a_profile(a_gpu(None, name="NVIDIA RTX A6000")))
