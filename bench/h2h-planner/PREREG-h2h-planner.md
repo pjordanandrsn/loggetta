@@ -24,14 +24,19 @@ unless its sha256 equals the split's. No row is added, dropped or re-tagged.
 ## The subject and the harness
 
 - **The planner:** Loggetta 0.7.0, installed from PyPI, with the backends' estimators from experts4bit-qlora 0.58.0
-  and grouped-nf4-gemm 0.51.0, the releases tagged today. The installed versions are recorded. If either tag does not
-  exist when the read runs, the row reads "not read today" and no older number stands in.
+  and grouped-nf4-gemm 0.51.0, the releases tagged today, and Accelerate 1.15.0. These four are registered in the
+  driver (`REGISTERED`) and always checked: each must be installed at exactly that version AND from a package index (a
+  wheel with no `direct_url.json`). A missing release, another version, or a checkout reporting the same version string
+  (editable, local file or VCS) refuses: the row reads "not read today", and no other install stands in. The output
+  records each version and how it was installed. A newer Accelerate is a new reading, not this one.
 - **The harness:** `bench/insample_replan.py`'s own planning (`_plan`: the receipt's recorded card, workload and setup,
   no receipts on file; the dense row through `dense.describe` from DQ7's committed config, as its `dense` mode does).
   `bench/h2h_planner.py` feeds it the split's rows and grades each new plan against the receipt's own measured peaks with
   `execution.compare`, the function every receipt's `comparison` comes from.
-- **Beside it, the previous release:** each receipt's recorded `comparison`, the estimates made when it ran
-  (Loggetta 0.6.2 for HO2 and HO3), quoted as recorded and not re-measured.
+- **Beside it, the planner that made each row's plan:** each receipt's recorded `comparison`, the estimates made when
+  it ran, quoted as recorded and not re-measured. For HO2 and HO3 that is Loggetta 0.6.2 (each run's `versions.txt`;
+  the receipts themselves record no Loggetta version). For DQ7 it is Loggetta `1dd862f7` (the read's `dq7.loggetta_sha`,
+  first released in 0.4.0), so its column says so and does not read as 0.6.2.
 
 ## The comparator
 
@@ -51,20 +56,23 @@ against it. Its sizes are read as printed, in its own 1024-based units.
 
 For each row:
 - **Loggetta now and then:** plan total / sampled driver peak and allocator estimate / allocated peak, with host estimate
-  / host peak on the host-offload rows. The row's outcome is the planner's own rule from HO2 and HO3: COVERED when every
-  estimate is at least its peak; otherwise UNDER, SHORT or HOST_UNDER, each named.
+  / host peak on the host-offload rows. The row's outcome, now and then, is computed by the driver with the planner's own
+  rule from HO2 and HO3: COVERED when the plan total bounds the driver peak and the allocator estimate bounds the
+  allocated peak, and, on a row whose receipt records `expert_residency` host, the host estimate bounds the host peak.
+  Otherwise each failed bound is named (UNDER, SHORT, HOST_UNDER). A missing term voids that row (never COVERED), and a
+  row the planner refuses reads as refused.
 - **Accelerate:** its int4 total, its float16 total and its float16 "Training using Adam" figure, each beside the row's
   sampled driver peak.
 
 The results quote the held-out band's wording ("observed on N held-out rows from M machines"; one-box cohorts say so),
-and the negatives beside the wins. A row the planner refuses reads as refused.
+and the negatives beside the wins.
 
 ## Launch and budget
 
 The read runs on a development host's CPU, from this registration's merge commit, after the tags exist and after an
 Approved that names the merge commit, as `python bench/h2h_planner.py evidence/planner-split/SPLIT-v3.json --e4b
-E4B_CHECKOUT --out DIR --expect loggetta=0.7.0 --expect experts4bit-qlora=0.58.0 --expect grouped-nf4-gemm=0.51.0`:
-any other installed version refuses ("not read today"). It writes `evidence/<date>-h2h-planner/h2h-planner.json` and `accelerate.json`.
+E4B_CHECKOUT --out DIR`, in an environment with the four registered releases installed from the package index (the
+driver refuses any other). It writes `evidence/<date>-h2h-planner/h2h-planner.json` and `accelerate.json`.
 The maintainer re-derives it by running the same command. USD 0.
 
 ## What was seen before this page (stated, not hidden)

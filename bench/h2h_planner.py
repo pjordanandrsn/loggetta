@@ -32,6 +32,9 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+#: the releases this row is registered at (PREREG "The subject"), always checked; each must be an index wheel, never a
+#: checkout, so a development tree that reports the same version string can never stand in for the release
+REGISTERED = {"loggetta": "0.7.0", "experts4bit-qlora": "0.58.0", "grouped-nf4-gemm": "0.51.0", "accelerate": "1.15.0"}
 UNITS = {"bytes": 1, "KB": 1 << 10, "MB": 1 << 20, "GB": 1 << 30, "TB": 1 << 40}
 ROW = re.compile(r"^\W*(float32|float16|int8|int4)\W+([\d.]+ \w+)\W+([\d.]+ \w+)\W+([\d.]+ \w+|N/A)\W*$")
 
@@ -100,14 +103,48 @@ def installed(dist):
         return None
 
 
-def check_versions(expect, version_of=installed):
-    """``expect``: {distribution: version}. Refused unless every one is installed at exactly that version, so a missing
-    release reads "not read today" and is never replaced by whatever happens to be installed."""
-    got = {d: version_of(d) for d in expect}
-    wrong = {d: (v, got[d]) for d, v in expect.items() if got[d] != v}
+def installed_from(dist):
+    """How ``dist`` was installed: "index" for a wheel from a package index (no ``direct_url.json``), else the
+    direct-URL kind ("editable", "local file", "vcs"), which is a checkout, not a release."""
+    from importlib import metadata
+    try:
+        raw = metadata.distribution(dist).read_text("direct_url.json")
+    except metadata.PackageNotFoundError:
+        return None
+    if not raw:
+        return "index"
+    d = json.loads(raw)
+    if (d.get("dir_info") or {}).get("editable"):
+        return "editable"
+    return "vcs" if "vcs_info" in d else "local file"
+
+
+def check_versions(expect=None, version_of=installed, source_of=installed_from):
+    """Refused unless every registered release (``expect``, default :data:`REGISTERED`) is installed at exactly its
+    version AND from a package index. A missing release, another version, or a checkout reporting the same version
+    string reads "not read today"; whatever happens to be installed never stands in."""
+    expect = REGISTERED if expect is None else expect
+    got = {d: (version_of(d), source_of(d)) for d in expect}
+    wrong = [f"{d} wants {v}, installed {got[d][0]}" for d, v in sorted(expect.items()) if got[d][0] != v]
+    wrong += [f"{d} {v} is installed from a {got[d][1]} install, not a release" for d, v in sorted(expect.items())
+              if got[d][0] == v and got[d][1] != "index"]
     if wrong:
-        raise Refused("not read today: " + "; ".join(f"{d} wants {v}, installed {g}" for d, (v, g) in sorted(wrong.items())))
-    return got
+        raise Refused("not read today: " + "; ".join(wrong))
+    return {d: {"version": v, "installed_from": src} for d, (v, src) in got.items()}
+
+
+def outcome(cmp, host_row):
+    """The planner's own per-row rule (HO2's and HO3's reducers): COVERED when the plan total bounds the driver peak and
+    the allocator estimate bounds the allocated peak, and, on a host-offload row, the host estimate bounds the host
+    peak; otherwise each failed bound by name (UNDER, SHORT, HOST_UNDER). A missing term voids the row."""
+    terms = ("device_driver", "device_allocator") + (("host",) if host_row else ())
+    missing = [t for t in terms if not (isinstance((cmp or {}).get(t), dict) and isinstance(cmp[t].get("estimated"), int)
+                                        and isinstance(cmp[t].get("measured"), int) and cmp[t]["estimated"] > 0)]
+    if missing:
+        return "VOID: no " + ", ".join(missing)
+    failed = [name for t, name in (("device_driver", "UNDER"), ("device_allocator", "SHORT"), ("host", "HOST_UNDER"))
+              if t in terms and cmp[t]["measured"] > cmp[t]["estimated"]]
+    return "+".join(failed) or "COVERED"
 
 
 def grade(cmp):
@@ -141,8 +178,11 @@ def replan_row(rec, ir, config_reader, topos):
     p = ir._plan(topo, be, rec)
     now = compare(p, rec["measured"]) if p.status == "feasible" else None
     then = rec.get("comparison") or {}
+    host_row = (rec.get("setup") or {}).get("expert_residency") == "host"
     return {"status": p.status, "residency": (p.selected.setup or {}).get("expert_residency") if p.selected else None,
-            "now": now, "then": then, "now_over": grade(now) if now else None, "then_over": grade(then)}
+            "now": now, "then": then, "now_over": grade(now) if now else None, "then_over": grade(then),
+            "now_outcome": outcome(now, host_row) if now else f"REFUSED: the plan is {p.status}",
+            "then_outcome": outcome(then, host_row)}
 
 
 def build(split, e4b, reader=None, accelerate="accelerate"):
@@ -167,21 +207,19 @@ def main():
     ap.add_argument("--e4b", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--accelerate", default="accelerate", help="the accelerate CLI to run (default: the one on PATH)")
-    ap.add_argument("--expect", action="append", default=[], metavar="DIST=VERSION",
-                    help="a release the read must run at (repeatable); any other installed version refuses")
     a = ap.parse_args()
     try:
-        versions = check_versions(dict(e.split("=", 1) for e in a.expect))
+        versions = check_versions()
         doc, acc = build(json.load(open(a.split)), a.e4b, accelerate=a.accelerate)
     except Refused as e:
         print(f"refused: {e}", file=sys.stderr)
         return 2
     os.makedirs(a.out, exist_ok=True)
-    doc["versions"] = {**versions, "accelerate": installed("accelerate")}
+    doc["versions"] = versions
     open(os.path.join(a.out, "h2h-planner.json"), "w").write(json.dumps(doc, indent=1, sort_keys=True, default=str) + "\n")
     open(os.path.join(a.out, "accelerate.json"), "w").write(json.dumps(acc, indent=1, sort_keys=True) + "\n")
     for r in doc["rows"]:
-        print(r["id"], r["status"], {k: (round(v, 4) if v else v) for k, v in (r["now_over"] or {}).items()})
+        print(r["id"], r["now_outcome"], {k: (round(v, 4) if v else v) for k, v in (r["now_over"] or {}).items()})
     return 0
 
 

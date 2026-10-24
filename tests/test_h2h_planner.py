@@ -73,7 +73,63 @@ def test_the_split_has_the_registered_21_rows():
 
 def test_a_release_that_is_not_installed_reads_not_read_today():
     t = _tool()
-    have = {"loggetta": "0.7.0", "experts4bit-qlora": "0.57.0", "grouped-nf4-gemm": None}.get
+    have = {"loggetta": "0.7.0", "experts4bit-qlora": "0.57.0", "grouped-nf4-gemm": None, "accelerate": "1.15.0"}.get
     with pytest.raises(t.Refused, match="not read today: experts4bit-qlora wants 0.58.0, installed 0.57.0; grouped-nf4-gemm"):
-        t.check_versions({"loggetta": "0.7.0", "experts4bit-qlora": "0.58.0", "grouped-nf4-gemm": "0.51.0"}, have)
-    assert t.check_versions({"loggetta": "0.7.0"}, have) == {"loggetta": "0.7.0"}
+        t.check_versions(None, have, lambda d: "index")
+    got = t.check_versions({"loggetta": "0.7.0"}, have, lambda d: "index")
+    assert got == {"loggetta": {"version": "0.7.0", "installed_from": "index"}}
+
+
+def test_the_registered_releases_are_always_checked():
+    t = _tool()
+    assert t.REGISTERED == {"loggetta": "0.7.0", "experts4bit-qlora": "0.58.0", "grouped-nf4-gemm": "0.51.0",
+                            "accelerate": "1.15.0"}
+    with pytest.raises(t.Refused, match="not read today"):
+        t.check_versions(version_of=lambda d: None, source_of=lambda d: None)       # nothing installed: no default pass
+
+
+@pytest.mark.parametrize("source", ["editable", "local file", "vcs"])
+def test_a_checkout_reporting_the_release_version_is_not_the_release(source):
+    t = _tool()
+    with pytest.raises(t.Refused, match=f"experts4bit-qlora 0.58.0 is installed from a {source} install, not a release"):
+        t.check_versions({"experts4bit-qlora": "0.58.0"}, lambda d: "0.58.0", lambda d: source)
+
+
+def test_an_editable_install_reads_as_editable(tmp_path, monkeypatch):
+    from importlib import metadata
+
+    t = _tool()
+
+    class Dist:
+        def read_text(self, name):
+            return json.dumps({"dir_info": {"editable": True}, "url": "file:///x"}) if name == "direct_url.json" else None
+    monkeypatch.setattr(metadata, "distribution", lambda d: Dist())
+    assert t.installed_from("experts4bit-qlora") == "editable"
+
+    class Wheel:
+        def read_text(self, name):
+            return None
+    monkeypatch.setattr(metadata, "distribution", lambda d: Wheel())
+    assert t.installed_from("experts4bit-qlora") == "index"
+
+
+def _cmp(drv=(100, 90), alloc=(90, 80), host=None):
+    c = {"device_driver": {"estimated": drv[0], "measured": drv[1]}, "device_allocator": {"estimated": alloc[0], "measured": alloc[1]}}
+    if host:
+        c["host"] = {"estimated": host[0], "measured": host[1]}
+    return c
+
+
+@pytest.mark.parametrize("cmp, host_row, want", [
+    (_cmp(), False, "COVERED"),
+    (_cmp(drv=(100, 101)), False, "UNDER"),
+    (_cmp(alloc=(90, 91)), False, "SHORT"),
+    (_cmp(drv=(100, 101), alloc=(90, 91)), False, "UNDER+SHORT"),
+    (_cmp(host=(10, 11)), True, "HOST_UNDER"),
+    (_cmp(host=(10, 11)), False, "COVERED"),          # a host term on a device row is never ruled (HO3's rule)
+    (_cmp(host=(10, 10)), True, "COVERED"),            # at the estimate exactly is covered
+    (_cmp(), True, "VOID: no host"),                   # a host row without its host term voids, never reads covered
+    ({"device_driver": {"estimated": 100, "measured": 90}}, False, "VOID: no device_allocator"),
+])
+def test_each_rows_outcome_is_the_planners_own_rule(cmp, host_row, want):
+    assert _tool().outcome(cmp, host_row) == want
