@@ -94,7 +94,7 @@ def test_the_published_wheel_as_installed_is_the_release(tmp_path):
     whl = _wheel(tmp_path / f"{NAME}-{VER}-py3-none-any.whl")
     dist = _install(whl, tmp_path / "site")
     got = _prove(t, dist, *_pypi((whl, None)))
-    assert got == {"dist": NAME, "version": VER, "wheel": whl.name, "sha256": hashlib.sha256(whl.read_bytes()).hexdigest(),
+    assert got == {"dist": NAME, "version": VER, "wheel": whl.name, "wheel_pick": "filename", "sha256": hashlib.sha256(whl.read_bytes()).hexdigest(),
                    "files": 5, "record": "RECORD equal", "record_equal": True, "first_diff": None,
                    "imports": {"fakerel": os.path.realpath(tmp_path / "site" / "fakerel" / "__init__.py")},
                    "pycache_prefix": sys.pycache_prefix, "pycache_fresh": False}
@@ -242,6 +242,66 @@ def test_the_wheel_is_picked_by_the_installed_tag(tmp_path):
         _prove(t, dist, *_pypi((other, None)))
 
 
+VLLM_TAG = "cp38-abi3-linux_x86_64"                      # what vLLM's own WHEEL says inside a manylinux-named wheel
+
+
+def _named(tmp_path, sub, plat, files=None):
+    (tmp_path / sub).mkdir()
+    return _wheel(tmp_path / sub / f"{NAME}-{VER}-cp38-abi3-{plat}.whl", files, tag=VLLM_TAG)
+
+
+def test_a_manylinux_named_wheel_whose_wheel_says_linux_is_picked_by_arch(tmp_path):
+    t = _tool()
+    mine = _named(tmp_path, "x86", "manylinux_2_28_x86_64")
+    other = _named(tmp_path, "arm", "manylinux_2_28_aarch64", {**SRC, "fakerel/cli.py": b"arm\n"})
+    dist = _install(mine, tmp_path / "site")
+    got = _prove(t, dist, *_pypi((other, None), (mine, None)))
+    assert got["wheel"] == mine.name and got["wheel_pick"] == "arch" and got["record_equal"]
+
+
+def test_the_arch_fallback_needs_exactly_one_candidate(tmp_path):
+    t = _tool()
+    a = _named(tmp_path, "a", "manylinux_2_28_x86_64")
+    b = _named(tmp_path, "b", "manylinux2014_x86_64")
+    dist = _install(a, tmp_path / "site")
+    with pytest.raises(t.ReleaseProofError, match="2 published wheels carry the installed tags .* or match their python, "
+                                                  "abi and arch, not exactly one"):
+        _prove(t, dist, *_pypi((a, None), (b, None)))
+
+
+def test_the_arch_fallback_never_picks_another_arch_or_abi(tmp_path):
+    t = _tool()
+    mine = _named(tmp_path, "x86", "manylinux_2_28_x86_64")
+    dist = _install(mine, tmp_path / "site")
+    arm = _named(tmp_path, "arm", "manylinux_2_28_aarch64")
+    (tmp_path / "abi").mkdir()
+    cp312 = _wheel(tmp_path / "abi" / f"{NAME}-{VER}-cp312-cp312-manylinux_2_28_x86_64.whl", tag=VLLM_TAG)
+    for published in (arm, cp312):
+        with pytest.raises(t.ReleaseProofError, match="0 published wheels"):
+            _prove(t, dist, *_pypi((published, None)))
+
+
+def test_the_arch_fallback_is_for_linux_installs_only():
+    t = _tool()
+    urls = [{"filename": f"{NAME}-{VER}-cp312-cp312-macosx_14_0_arm64.whl"}]
+    assert t.arch_candidates(urls, {"cp312-cp312-macosx_14_0_arm64"}) == []
+    assert t.arch_candidates(urls, {"cp312-cp312-macosx_11_0_arm64"}) == []
+    linux = [{"filename": f"{NAME}-{VER}-cp38-abi3-manylinux_2_28_x86_64.whl"}]
+    assert t.arch_candidates(linux, {"cp38-abi3-mingw_x86_64"}) == []   # another platform with an arch suffix: no fallback
+    many = [{"filename": f"{NAME}-{VER}-cp38-abi3-manylinux_2_28_x86_64.manylinux2014_x86_64.whl"},
+            {"filename": f"{NAME}-{VER}-cp38-abi3-manylinux_2_28_x86_64.macosx_14_0_x86_64.whl"}]
+    assert t.arch_candidates(many, {VLLM_TAG}) == many[:1]       # every platform in the name must be that arch's linux
+
+
+def test_a_wrong_wheel_file_under_the_arch_pick_still_fails_the_bytes(tmp_path):
+    t = _tool()
+    mine = _named(tmp_path, "x86", "manylinux_2_28_x86_64")
+    dist = _install(mine, tmp_path / "site")
+    (tmp_path / "site" / DI / "WHEEL").write_text(f"Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: {VLLM_TAG}\nBuild: 9\n")
+    with pytest.raises(t.ReleaseProofError, match=f"{DI}/WHEEL differs from the published wheel's"):
+        _prove(t, dist, *_pypi((mine, None)))
+
+
 def test_compressed_tag_sets_expand():
     assert _tool().wheel_tags("x-1-py2.py3-none-any.whl") == {"py2-none-any", "py3-none-any"}
 
@@ -301,8 +361,22 @@ def test_the_real_accelerate_1_15_0_wheel_matches_its_install():
     assert got["wheel"] == "accelerate-1.15.0-py3-none-any.whl" and got["record_equal"] and got["files"] > 50
 
 
-def test_the_prereg_names_this_files_sha256():
+#: every version of this file other kits stage byte-identical, by sha256. A change adds a line here (and is posted for the
+#: rows to re-pin); a registration keeps naming the version its read runs with.
+HELPER_SHAS = {
+    "199d4f2faa49419090ef57e73fc34a86787ad5dcfe67060e92aaaf88a9bf6a63":
+        "the h2h-planner PREREG's registered read (#125); exact filename-tag pick only",
+    "aff3fc80db8d35bbf94a9aaeed125c9d424cfe93bf16eb0e6868b6f9d03f13e0":
+        "adds the arch fallback: a manylinux-named wheel whose own WHEEL says linux_<arch> (vLLM's)",
+}
+
+
+def test_this_file_is_a_named_version():
+    assert hashlib.sha256((ROOT / "bench" / "release_proof.py").read_bytes()).hexdigest() in HELPER_SHAS
+
+
+def test_the_prereg_names_a_named_version():
     import re
     text = (ROOT / "bench" / "h2h-planner" / "PREREG-h2h-planner.md").read_text()
     named = re.search(r"`bench/release_proof\.py` \(sha256 `([0-9a-f]{64})`", text).group(1)
-    assert named == hashlib.sha256((ROOT / "bench" / "release_proof.py").read_bytes()).hexdigest()
+    assert named in HELPER_SHAS
