@@ -77,7 +77,8 @@ Keep headroom for it.
 - A band needs at least 2 held-out rows from at least 2 boxes on distinct machines. A cohort whose rows come from one
   box prints `held-out rows from one box only: no band`.
 - The match is exact: the model's repository id, the card, and where the experts sit. Anything else prints
-  `unmeasured family/card: no band`.
+  `unmeasured family/card: no band`. The id is the Hub's (`baidu/ERNIE-4.5-21B-A3B-PT`), so a model loaded from a
+  local directory reads unmeasured even when it holds the same weights.
 - The band never changes an estimate, a budget, feasibility or which plan is chosen. The plan file records it under
   `band`, so a saved plan keeps what was printed.
 - `loggetta/planner_bands.json` holds each row's bytes, id and sha256; `bench/build_planner_bands.py` rebuilds it from
