@@ -79,3 +79,39 @@ RTX 4090"), registered in experts4bit-qlora before any measurement (`bench/ho2/P
 - **Pins:** `pinned_at` moves to experts4bit-qlora `512614e6` and loggetta `9e005d68`. `fills_next` drops the HO2 item it now holds.
 
 v2 is frozen at merge like v1: any change is a new versioned file.
+
+## SPLIT-v3: HO3's twelve held-out rows, the MISS rows included
+
+`SPLIT-v3.json` is version 3. `SPLIT-v2.json` stays frozen; every v2 row and reason is carried over unchanged. v3 adds the twelve
+valid rows of HO3, registered in experts4bit-qlora before any measurement (`bench/ho3/PREREG-ho3.md`, #2044) and read in #2108. HO3
+gave HO2's cohorts a second box, and ran the first held-out rows with the experts on the host.
+
+| cohort | held-out rows | boxes | what HO3 added |
+|---|---|---|---|
+| LFM2-8B-A1B / resident / RTX 5090 | 4 | `ho2-5090-1`, `ho3-5090-r1` | 2 rows, COVERED |
+| ERNIE-4.5-21B-A3B-PT / resident / RTX 5090 | 4 | `ho2-5090-1`, `ho3-5090-r1` | 2 rows, COVERED |
+| LFM2-8B-A1B / resident / RTX A4000 | 4 | `ho3-a4000-1`, `ho3-a4000-r2` | a new cohort, all 4 COVERED |
+| ERNIE-4.5-21B-A3B-PT / host offload / RTX A4000 | 4 | `ho3-a4000-1`, `ho3-a4000-r2` | a new cohort: 3 HOST_UNDER, 1 COVERED |
+| LFM2-8B-A1B / resident / RTX 4090 | 2 | `ho2-4090-2` | nothing (see below) |
+| ERNIE-4.5-21B-A3B-PT / resident / RTX 4090 | 2 | `ho2-4090-2` | nothing |
+
+- **UNSEEN, whatever they read:** HO3 named its families and cards before any measurement, and no planner constant was set or tuned
+  after any of these rows. A held-out row is entered whatever its outcome, so ERNIE's three HOST_UNDER rows are in: its host
+  estimate was below the measured host peak (`host_over_estimate` 1.0210, 1.0056 and 1.0548; the fourth row 0.9959). Each row
+  records its box and its outcome.
+- **The host-offload cohort is the planner's first:** on a 16 GB RTX A4000 it kept ERNIE's experts on the host, as registered. Its
+  device side held on all four rows; the miss is the host estimate's.
+- **Cited by sha256:** as in v2, each row cites the derived public copy of its Loggetta receipt in experts4bit-qlora (`sha256`) and
+  the private store's original (`store_sha256`). They differ only in the GPU-UUID values, which the copy sets to `null`.
+- **Not entered:** HO3's two started RTX 4090 boxes, `ho3-4090-r1` and `ho3-4090-2`, both read VOID (a host that listed no
+  per-process GPU memory; then a numerics failure). Their rows are not valid. The RTX 4090 cohorts keep their one HO2 box.
+- **Loss branch:** as in v2, inferred and not counted: the 1,024-token rows the stock loss, the 2,048-token rows the chunked loss.
+- **Two boxes, two machines:** each cohort records `boxes` and `distinct_machines`. The drivers that rented these boxes refuse a
+  repeat machine: HO3's Part A refuses HO2's machines, and Part B a second box on the first box's. `check_split_machines.py`
+  confirms it from the private receipt store, reading each box's recorded machine, and `SPLIT-v3-machines.json` is its output
+  (box names and counts only; no machine id). Every cohort's boxes ran on distinct machines. A cohort whose boxes shared one would
+  fail the build.
+- **Bands:** four cohorts now have 4 held-out rows on 2 boxes, so a band that requires two boxes per cohort can read them. The band
+  itself is L2's; v3 computes none.
+- **Pins:** `pinned_at` moves to experts4bit-qlora at #2108's merge; loggetta's pin is v2's. `fills_next` adds a second box for the
+  RTX 4090 cohorts.

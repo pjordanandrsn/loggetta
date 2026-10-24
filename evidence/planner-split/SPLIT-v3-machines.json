@@ -1,0 +1,68 @@
+{
+ "schema": "loggetta-split-machines/1",
+ "split": "SPLIT-v3.json",
+ "version": 3,
+ "source": "the private receipt store: each box's instance.json machine_id, else its receipt's vast_machine_id",
+ "cohorts": {
+  "ERNIE-4.5-21B-A3B-PT / host offload / RTX A4000": {
+   "boxes": [
+    "ho3-a4000-1",
+    "ho3-a4000-r2"
+   ],
+   "n_boxes": 2,
+   "n_machines": 2,
+   "distinct_machines": true
+  },
+  "ERNIE-4.5-21B-A3B-PT / resident / RTX 4090": {
+   "boxes": [
+    "ho2-4090-2"
+   ],
+   "n_boxes": 1,
+   "n_machines": 1,
+   "distinct_machines": true
+  },
+  "ERNIE-4.5-21B-A3B-PT / resident / RTX 5090": {
+   "boxes": [
+    "ho2-5090-1",
+    "ho3-5090-r1"
+   ],
+   "n_boxes": 2,
+   "n_machines": 2,
+   "distinct_machines": true
+  },
+  "LFM2-8B-A1B / resident / RTX 4090": {
+   "boxes": [
+    "ho2-4090-2"
+   ],
+   "n_boxes": 1,
+   "n_machines": 1,
+   "distinct_machines": true
+  },
+  "LFM2-8B-A1B / resident / RTX 5090": {
+   "boxes": [
+    "ho2-5090-1",
+    "ho3-5090-r1"
+   ],
+   "n_boxes": 2,
+   "n_machines": 2,
+   "distinct_machines": true
+  },
+  "LFM2-8B-A1B / resident / RTX A4000": {
+   "boxes": [
+    "ho3-a4000-1",
+    "ho3-a4000-r2"
+   ],
+   "n_boxes": 2,
+   "n_machines": 2,
+   "distinct_machines": true
+  },
+  "Qwen3-14B / resident / RTX 5090": {
+   "boxes": [
+    "dq7-5090-1"
+   ],
+   "n_boxes": 1,
+   "n_machines": 1,
+   "distinct_machines": true
+  }
+ }
+}
