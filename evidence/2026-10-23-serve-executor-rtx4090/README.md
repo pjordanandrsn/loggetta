@@ -15,7 +15,7 @@ This is a smoke test of the executor path, not a performance reading.
 | Paths in the receipt | none |
 | `execute` with an inherited `E4B_K25_PLAN` set | refused by name, value not printed, no receipt ([refusal.txt](refusal.txt)) |
 
-Files: [receipt.json](receipt.json) (the receipt as written, renamed) with its step trace
+Files: [receipt.public.json](receipt.public.json) (the receipt as written, renamed; the card's GPU UUID is replaced by "GPU-<store-only>", and the original is listed by sha256 in [STORE-ONLY.sha256](STORE-ONLY.sha256)) with its step trace
 [steps.jsonl](steps.jsonl), [smoke_verdict.json](smoke_verdict.json) (every check the smoke script made),
 [gpu.txt](gpu.txt).
 

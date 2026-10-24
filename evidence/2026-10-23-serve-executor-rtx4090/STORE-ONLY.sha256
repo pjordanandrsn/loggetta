@@ -1,0 +1,4 @@
+# Files of this run kept only in the private receipt store, by sha256.
+# receipt.json carries the card's GPU UUID (a rented RTX 4090). receipt.public.json is its public projection: the same
+# bytes with only the two uuid values replaced by "GPU-<store-only>"; every other field, and every number, is unchanged.
+28290042751c23a7c25fd0851bec60ec293fa4e4ded9aa6e021559966d09c89a  receipt.json

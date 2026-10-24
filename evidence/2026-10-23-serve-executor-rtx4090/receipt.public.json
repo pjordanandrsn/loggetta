@@ -208,7 +208,7 @@
     4,
     16
    ],
-   "uuid": "GPU-0cdfcb30-221f-4ada-400c-48d0e2c49000"
+   "uuid": "GPU-<store-only>"
   },
   "gpus": 1,
   "platform": "Linux x86_64",
@@ -579,7 +579,7 @@
      4,
      16
     ],
-    "uuid": "GPU-0cdfcb30-221f-4ada-400c-48d0e2c49000"
+    "uuid": "GPU-<store-only>"
    },
    "gpus": 1,
    "platform": "Linux x86_64",
