@@ -76,9 +76,38 @@ def test_a_release_that_is_not_installed_reads_not_read_today():
     t = _tool()
     have = {"loggetta": "0.7.0", "experts4bit-qlora": "0.57.0", "grouped-nf4-gemm": None, "accelerate": "1.15.0"}.get
     with pytest.raises(t.Refused, match="not read today: experts4bit-qlora wants 0.58.0, installed 0.57.0; grouped-nf4-gemm"):
-        t.check_versions(None, have, lambda d: "index")
-    got = t.check_versions({"loggetta": "0.7.0"}, have, lambda d: "index")
-    assert got == {"loggetta": {"version": "0.7.0", "installed_from": "index"}}
+        t.check_versions(None, have, lambda d: "index", proof=_proved)
+    got = t.check_versions({"loggetta": "0.7.0"}, have, lambda d: "index", proof=_proved)
+    assert got == {"loggetta": {"version": "0.7.0", "installed_from": "index", "release_proof": _proved("loggetta", "0.7.0")}}
+
+
+def _proved(d, v):
+    return {"dist": d, "version": v, "record": "RECORD equal"}
+
+
+def test_an_index_install_whose_bytes_are_not_the_release_is_refused():
+    t = _tool()
+    err = t._release_proof().ReleaseProofError
+
+    def proof(d, v):
+        raise err(f"{d}: {d}/__init__.py differs from the published wheel's", f"{d}/__init__.py")
+    with pytest.raises(t.Refused, match="not read today: loggetta 0.7.0 is an index install whose bytes are not the published "
+                                        "release: loggetta: loggetta/__init__.py differs from the published wheel's"):
+        t.check_versions({"loggetta": "0.7.0"}, lambda d: "0.7.0", lambda d: "index", proof=proof)
+
+
+def test_the_proof_is_release_proofs_own():
+    t = _tool()
+    seen = []
+    mod = t._release_proof()
+    orig = mod.prove
+    try:
+        t._release_proof = lambda: mod
+        mod.prove = lambda d, v: (seen.append((d, v)), {"record": "RECORD equal"})[1]
+        assert t.prove_release("accelerate", "1.15.0") == {"record": "RECORD equal"}
+    finally:
+        mod.prove = orig
+    assert seen == [("accelerate", "1.15.0")]
 
 
 def test_the_registered_releases_are_always_checked():
@@ -173,8 +202,8 @@ def test_an_index_wheel_never_asks_for_a_tag():
 
     def at_tag(d, v):
         raise AssertionError("an index wheel is the release as installed")
-    assert t.check_versions({"loggetta": "0.7.0"}, lambda d: "0.7.0", lambda d: "index", at_tag)["loggetta"] == {
-        "version": "0.7.0", "installed_from": "index"}
+    assert t.check_versions({"loggetta": "0.7.0"}, lambda d: "0.7.0", lambda d: "index", at_tag, _proved)["loggetta"] == {
+        "version": "0.7.0", "installed_from": "index", "release_proof": _proved("loggetta", "0.7.0")}
 
 
 def test_the_tag_is_read_peeled():

@@ -23,6 +23,7 @@ Nothing here changes a plan, a constant or a band. Writes ``OUT_DIR/h2h-planner.
 from __future__ import annotations
 
 import argparse
+import functools
 import hashlib
 import importlib
 import importlib.util
@@ -48,6 +49,20 @@ ROW = re.compile(r"^\W*(float32|float16|int8|int4)\W+([\d.]+ \w+)\W+([\d.]+ \w+)
 
 class Refused(Exception):
     pass
+
+
+@functools.lru_cache(maxsize=1)
+def _release_proof():
+    """bench/release_proof.py, loaded once, so its ReleaseProofError is one class."""
+    spec = importlib.util.spec_from_file_location("release_proof", os.path.join(HERE, "release_proof.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def prove_release(dist, version):
+    """``release_proof.prove``: the installed index wheel's bytes against the wheel PyPI publishes for ``version``."""
+    return _release_proof().prove(dist, version)
 
 
 def _replan_module():
@@ -180,17 +195,26 @@ def vcs_at_tag(dist, version, direct_url=_direct_url, tag_of=tag_commit):
     return commit, None
 
 
-def check_versions(expect=None, version_of=installed, source_of=installed_from, at_tag=vcs_at_tag):
+def check_versions(expect=None, version_of=installed, source_of=installed_from, at_tag=vcs_at_tag, proof=prove_release):
     """Refused unless every registered release (``expect``, default :data:`REGISTERED`) is installed at exactly its
-    version AND as that release: a package-index wheel, or a git install at exactly the commit its tag names. A missing
+    version AND as that release: an index wheel whose installed bytes ``release_proof`` matches to the wheel PyPI
+    publishes (no ``direct_url.json`` only proves SOME index served it), or a git install at exactly the commit its
+    canonical repository's tag names. A missing
     release, another version, or a checkout reporting the same version string reads "not read today"; whatever happens to
     be installed never stands in."""
     expect = REGISTERED if expect is None else expect
     got = {d: (version_of(d), source_of(d)) for d in expect}
     wrong = [f"{d} wants {v}, installed {got[d][0]}" for d, v in sorted(expect.items()) if got[d][0] != v]
-    commits = {}
+    commits, proofs = {}, {}
     for d, v in sorted(expect.items()):
-        if got[d][0] != v or got[d][1] == "index":
+        if got[d][0] != v:
+            continue
+        if got[d][1] == "index":
+            err = _release_proof().ReleaseProofError
+            try:
+                proofs[d] = proof(d, v)
+            except err as e:
+                wrong.append(f"{d} {v} is an index install whose bytes are not the published release: {e}")
             continue
         if got[d][1] != "vcs":
             wrong.append(f"{d} {v} is installed from a {got[d][1]} install, not a release")
@@ -201,8 +225,8 @@ def check_versions(expect=None, version_of=installed, source_of=installed_from, 
         commits[d] = commit
     if wrong:
         raise Refused("not read today: " + "; ".join(wrong))
-    return {d: {"version": v, "installed_from": src, **({"commit": commits[d]} if d in commits else {})}
-            for d, (v, src) in got.items()}
+    return {d: {"version": v, "installed_from": src, **({"commit": commits[d]} if d in commits else {}),
+                **({"release_proof": proofs[d]} if d in proofs else {})} for d, (v, src) in got.items()}
 
 
 def outcome(cmp, host_row):

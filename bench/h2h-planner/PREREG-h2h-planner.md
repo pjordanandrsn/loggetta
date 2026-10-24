@@ -26,12 +26,20 @@ unless its sha256 equals the split's. No row is added, dropped or re-tagged.
 - **The planner:** Loggetta 0.7.0, installed from PyPI, with the backends' estimators from experts4bit-qlora 0.58.0
   and grouped-nf4-gemm 0.51.0, the releases tagged today, and Accelerate 1.15.0. These four are registered in the
   driver (`REGISTERED`) and always checked: each must be installed at exactly that version AND as that release: a
-  wheel from a package index (no `direct_url.json`; preferred), or a git install from that dist's own repository
+  wheel from a package index whose installed bytes are the wheel PyPI publishes for that version (preferred), or a git
+  install from that dist's own repository
   (`CANONICAL` in the driver: `github.com/pjordanandrsn/<repo>`, or `github.com/huggingface/accelerate`, compared by
   parsed host and path exactly; `file://` and plain http never match) whose recorded commit is exactly the commit that
   repository's tag `v<version>` names. The tag is read with `git ls-remote` from the canonical repository, the annotated
   tag peeled, never from the URL the install recorded. A missing release, another version, or a checkout reporting the
-  same version string (editable, local file, a fork, a mirror, or git at any other commit) refuses: the row reads "not read today", and no other install stands in. The output records each version, how
+  same version string (editable, local file, a fork, a mirror, or git at any other commit) refuses. "No
+  `direct_url.json`" alone only proves that SOME index served the wheel, and a wheel built locally at the release's
+  version passes it, so every index install also goes through `bench/release_proof.py` (sha256 `341dd130b1cf681a86f3fa1aad2b3e1bf9a2e4e6c22388e0e35b5736fc446713`;
+  standalone and stdlib-only, so the other rows stage it byte-identical): it downloads the published wheel whose tags
+  are the install's `WHEEL` tags, checks PyPI's listed sha256, and requires every file the wheel's `RECORD` lists to
+  hash the same on disk, and every other entry in the install's `RECORD` to be `__pycache__` bytecode or a launcher
+  the dist's own `entry_points.txt` names. The output records the wheel, its sha256 and "RECORD equal". Any miss
+  refuses: the row reads "not read today", and no other install stands in. The output records each version, how
   it was installed and, for a git install, its commit. A newer Accelerate is a new reading, not this one.
 - **The harness:** `bench/insample_replan.py`'s own planning (`_plan`: the receipt's recorded card, workload and setup,
   no receipts on file; the dense row through `dense.describe` from DQ7's committed config, as its `dense` mode does).
